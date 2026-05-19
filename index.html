@@ -405,36 +405,35 @@ async function loadUsers(){
   const el=document.getElementById('users-list');
   el.innerHTML='<div class="comments-loading">загрузка…</div>';
   try{
-    const r=await fetch(SB_URL+'/auth/v1/admin/users',{
-      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+currentUser.token}
+    // Get unique users from report + comments tables
+    const [r1,r2]=await Promise.all([
+      fetch(API+'?select=user_name,user_id,updated_at&order=updated_at.desc',{headers:authHeaders()}),
+      fetch(COMMENTS_API+'?select=user_name,user_id,created_at&order=created_at.desc',{headers:authHeaders()})
+    ]);
+    const rows1=await r1.json();
+    const rows2=await r2.json();
+    const all=[...rows1,...rows2];
+    // deduplicate by user_id or user_name
+    const seen=new Map();
+    all.forEach(r=>{
+      const key=r.user_id||r.user_name;
+      if(!seen.has(key)||r.updated_at>seen.get(key).updated_at)
+        seen.set(key,r);
     });
-    const data=await r.json();
-    const users=data.users||[];
-    if(!users.length){el.innerHTML='<div class="comments-loading">Нет пользователей</div>';return;}
+    const users=[...seen.values()];
+    if(!users.length){el.innerHTML='<div class="comments-loading">Нет данных</div>';return;}
     el.innerHTML=users.map(u=>{
-      const name=u.user_metadata?.full_name||u.email||'—';
+      const name=u.user_name||'—';
       const initial=name[0].toUpperCase();
-      const last=u.last_sign_in_at?new Date(u.last_sign_in_at).toLocaleDateString('ru'):'—';
+      const isCurrent=u.user_id===currentUser.id;
       return `<div class="user-card">
-        <div class="user-avatar">${initial}</div>
+        <div class="user-avatar" style="${isCurrent?'background:var(--green);color:#000':''}">${initial}</div>
         <div class="user-info">
-          <div class="user-name">${name}</div>
-          <div class="user-email">${u.email||''}</div>
+          <div class="user-name">${name}${isCurrent?' <span style="font-size:10px;color:var(--green)">(вы)</span>':''}</div>
         </div>
-        <div class="user-date">вход: ${last}</div>
       </div>`;
     }).join('');
-  }catch(e){
-    // fallback: show from report table who column
-    const r=await fetch(API+'?select=user_name&order=updated_at.desc',{headers:authHeaders()});
-    const rows=await r.json();
-    const names=[...new Set(rows.map(r=>r.user_name).filter(Boolean))];
-    if(!names.length){el.innerHTML='<div class="comments-loading">Нет данных</div>';return;}
-    el.innerHTML=names.map(name=>`<div class="user-card">
-      <div class="user-avatar">${name[0].toUpperCase()}</div>
-      <div class="user-info"><div class="user-name">${name}</div></div>
-    </div>`).join('');
-  }
+  }catch(e){el.innerHTML='<div class="comments-loading">Ошибка загрузки</div>';}
 }
 
 // ── COMMENTS ──────────────────────────────────────────
@@ -450,15 +449,27 @@ async function loadComments(){
     el.innerHTML=rows.map(c=>{
       const dt=new Date(c.created_at);
       const dateStr=dt.toLocaleDateString('ru')+' '+dt.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'});
-      return `<div class="comment-card">
+      const isMine=c.user_id===currentUser.id;
+      return `<div class="comment-card" id="cm-${c.id}">
         <div class="comment-header">
           <span class="comment-author">${c.user_name||'—'}</span>
-          <span class="comment-time">${dateStr}</span>
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="comment-time">${dateStr}</span>
+            ${isMine?`<button onclick="deleteComment('${c.id}')" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;padding:0;line-height:1;">✕</button>`:''}
+          </div>
         </div>
         <div class="comment-text">${c.text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
       </div>`;
     }).join('');
   }catch(e){el.innerHTML='<div class="comments-loading">Ошибка загрузки</div>';}
+}
+
+async function deleteComment(id){
+  if(!confirm('Удалить запись?'))return;
+  try{
+    await fetch(COMMENTS_API+'?id=eq.'+id,{method:'DELETE',headers:authHeaders()});
+    document.getElementById('cm-'+id)?.remove();
+  }catch(e){alert('Ошибка удаления');}
 }
 
 async function sendComment(){
