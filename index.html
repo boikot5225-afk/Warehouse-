@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Arbeit macht frei</title>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Unbounded:wght@700&display=swap');
 :root{--bg:#0f0f0f;--surface:#1a1a1a;--border:#2e2e2e;--accent:#ff5a1f;--accent2:#ffb800;--red:#ff3b3b;--green:#3ddc84;--text:#f0f0f0;--muted:#777;}
@@ -81,6 +82,25 @@ main{padding:12px 16px;}
 .qty-val.saving{color:var(--accent);}
 .qty-val.saved{color:var(--green);}
 .who-col{font-size:10px;color:var(--muted);max-width:70px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;text-align:right;}
+.tab.users-tab.active{border-bottom-color:#a78bfa;color:#a78bfa;}
+.tab.comments-tab.active{border-bottom-color:#38bdf8;color:#38bdf8;}
+.section-title{font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:14px;padding-top:4px;}
+.user-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px;display:flex;align-items:center;gap:12px;}
+.user-avatar{width:38px;height:38px;border-radius:50%;background:var(--accent);display:flex;align-items:center;justify-content:center;font-size:16px;font-family:'Unbounded',sans-serif;color:#fff;flex-shrink:0;}
+.user-info{}
+.user-name{font-size:13px;color:var(--text);margin-bottom:2px;}
+.user-email{font-size:11px;color:var(--muted);}
+.user-date{font-size:10px;color:var(--muted);margin-left:auto;white-space:nowrap;}
+.comment-input-wrap{margin-bottom:16px;}
+#comment-input{width:100%;background:#fff;border:2px solid #ccc;border-radius:10px;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:14px;color:#111;outline:none;resize:none;min-height:80px;display:block;margin-bottom:8px;-webkit-appearance:none;}
+#comment-input:focus{border-color:#38bdf8;}
+.comment-send-btn{width:100%;background:#38bdf8;border:none;border-radius:10px;padding:12px;font-family:'Unbounded',sans-serif;font-size:12px;color:#000;cursor:pointer;font-weight:700;}
+.comment-card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:12px 14px;margin-bottom:8px;}
+.comment-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;}
+.comment-author{font-size:12px;color:#38bdf8;font-weight:600;}
+.comment-time{font-size:10px;color:var(--muted);}
+.comment-text{font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap;}
+.comments-loading{text-align:center;padding:40px;color:var(--muted);font-size:13px;}
 </style>
 </head>
 <body>
@@ -119,6 +139,8 @@ main{padding:12px 16px;}
   <div class="tab active" onclick="switchTab('catalog')">📦 Товары</div>
   <div class="tab brak-tab" onclick="switchTab('brak')">🚫 Брак</div>
   <div class="tab report-tab" onclick="switchTab('report')">📊 Отчёт</div>
+  <div class="tab users-tab" onclick="switchTab('users')">👥 Люди</div>
+  <div class="tab comments-tab" onclick="switchTab('comments')">💬 Смена</div>
 </div>
 <main>
   <div id="tab-catalog"><div id="results"></div></div>
@@ -138,6 +160,17 @@ main{padding:12px 16px;}
       <thead><tr><th>Задача</th><th class="right">Кол-во</th><th class="right">Кто</th></tr></thead>
       <tbody id="report-body"></tbody>
     </table>
+  </div>
+  <div id="tab-users" style="display:none">
+    <div class="section-title">Пользователи</div>
+    <div id="users-list"></div>
+  </div>
+  <div id="tab-comments" style="display:none">
+    <div class="comment-input-wrap">
+      <textarea id="comment-input" placeholder="Написать заметку о смене…"></textarea>
+      <button class="comment-send-btn" onclick="sendComment()">Отправить</button>
+    </div>
+    <div id="comments-list"></div>
   </div>
 </main>
 </div>
@@ -296,37 +329,21 @@ async function exportXLS(){
     status.textContent='готово ✓';status.className='report-status ok';
   }catch(e){status.textContent='ошибка';status.className='report-status err';return;}
 
-  function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
-  const allRows=[['Дата','Задача','Кол-во','Кто внёс']].concat(TASKS.map((task,i)=>[i===0?date:'',task,(reportData[task]||{qty:0}).qty,(reportData[task]||{user_name:''}).user_name||'']));
-  let sd='<sheetData>';
-  allRows.forEach((row,ri)=>{
-    sd+='<row r="'+(ri+1)+'">';
-    row.forEach((val,ci)=>{
-      const addr=String.fromCharCode(65+ci)+(ri+1);
-      if(typeof val==='number')sd+='<c r="'+addr+'"><v>'+val+'</v></c>';
-      else sd+='<c r="'+addr+'" t="inlineStr"><is><t>'+escXml(val)+'</t></is></c>';
-    });
-    sd+='</row>';
+  if(typeof XLSX==='undefined'){status.textContent='нет интернета для экспорта';status.className='report-status err';return;}
+
+  const wsData=[['Дата','Задача','Кол-во','Кто внёс']];
+  TASKS.forEach((task,i)=>{
+    const d=reportData[task]||{qty:0,user_name:''};
+    wsData.push([i===0?date:'',task,d.qty,d.user_name||'']);
   });
-  sd+='</sheetData>';
-  const merge='<mergeCells count="1"><mergeCell ref="A2:A'+allRows.length+'"/></mergeCells>';
-  const cols='<cols><col min="1" max="1" width="13" customWidth="1"/><col min="2" max="2" width="54" customWidth="1"/><col min="3" max="3" width="10" customWidth="1"/><col min="4" max="4" width="16" customWidth="1"/></cols>';
-  const sheetXml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'+cols+sd+merge+'</worksheet>';
-  const wbXml='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="\u041e\u0442\u0447\u0451\u0442" sheetId="1" r:id="rId1"/></sheets></workbook>';
-  const wbRels='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>';
-  const rootRels='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>';
-  const ct='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>';
 
-  function strToBytes(s){return new TextEncoder().encode(s);}
-  function u16(n){return[n&0xff,(n>>8)&0xff];}
-  function u32(n){return[n&0xff,(n>>8)&0xff,(n>>16)&0xff,(n>>24)&0xff];}
-  function crc32(data){let c=0xffffffff;const t=crc32.t||(crc32.t=(()=>{const t=[];for(let i=0;i<256;i++){let c=i;for(let j=0;j<8;j++)c=c&1?(0xedb88320^(c>>>1)):(c>>>1);t[i]=c;}return t;})());for(let i=0;i<data.length;i++)c=t[(c^data[i])&0xff]^(c>>>8);return(c^0xffffffff)>>>0;}
-  function zipEntry(name,data){const nb=strToBytes(name),crc=crc32(data);return{local:new Uint8Array([0x50,0x4b,0x03,0x04,20,0,0,0,0,0,0,0,0,0,...u32(crc),...u32(data.length),...u32(data.length),...u16(nb.length),0,0,...nb,...data]),name:nb,crc,size:data.length};}
-  function buildZip(files){const entries=files.map(([n,s])=>zipEntry(n,strToBytes(s)));const parts=[];const offsets=[];let offset=0;entries.forEach(e=>{offsets.push(offset);parts.push(e.local);offset+=e.local.length;});const central=[];entries.forEach((e,i)=>{central.push(...[0x50,0x4b,0x01,0x02,20,0,20,0,0,0,0,0,0,0,0,0,...u32(e.crc),...u32(e.size),...u32(e.size),...u16(e.name.length),0,0,0,0,0,0,0,0,0,0,...u32(0),...u32(offsets[i]),...e.name]);});const cdSize=central.length;const eocd=[0x50,0x4b,0x05,0x06,0,0,0,0,...u16(entries.length),...u16(entries.length),...u32(cdSize),...u32(offset),0,0];const total=new Uint8Array(offset+cdSize+eocd.length);let pos=0;parts.forEach(p=>{total.set(p,pos);pos+=p.length;});total.set(new Uint8Array(central),pos);pos+=cdSize;total.set(new Uint8Array(eocd),pos);return total;}
+  const ws=XLSX.utils.aoa_to_sheet(wsData);
+  ws['!cols']=[{wch:13},{wch:54},{wch:10},{wch:16}];
+  ws['!merges']=[{s:{r:1,c:0},e:{r:wsData.length-1,c:0}}];
 
-  const zip=buildZip([['[Content_Types].xml',ct],['_rels/.rels',rootRels],['xl/workbook.xml',wbXml],['xl/_rels/workbook.xml.rels',wbRels],['xl/worksheets/sheet1.xml',sheetXml]]);
-  const blob=new Blob([zip],{type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='otchet-'+date+'.xlsx';document.body.appendChild(a);a.click();document.body.removeChild(a);setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  const wb=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb,ws,'Otchet');
+  XLSX.writeFile(wb,'otchet-'+date+'.xlsx');
 }
 
 function code128B(text){
@@ -346,13 +363,14 @@ function renderBrak(q){
 }
 
 function switchTab(tab){
-  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',(tab==='catalog'&&i===0)||(tab==='brak'&&i===1)||(tab==='report'&&i===2)));
-  document.getElementById('tab-catalog').style.display=tab==='catalog'?'':'none';
-  document.getElementById('tab-brak').style.display=tab==='brak'?'':'none';
-  document.getElementById('tab-report').style.display=tab==='report'?'':'none';
+  const tabs=['catalog','brak','report','users','comments'];
+  document.querySelectorAll('.tab').forEach((t,i)=>t.classList.toggle('active',tabs[i]===tab));
+  tabs.forEach(t=>document.getElementById('tab-'+t).style.display=t===tab?'':'none');
   document.getElementById('search').placeholder=tab==='catalog'?'УТ-код или название…':'Поиск…';
   if(tab==='brak')renderBrak('');
   if(tab==='report')initReport();
+  if(tab==='users')loadUsers();
+  if(tab==='comments')loadComments();
 }
 
 let query='',page=0,filtered=[];
@@ -381,6 +399,86 @@ document.getElementById('search').addEventListener('input',e=>{
     else{filtered=q?CATALOG.filter(i=>i.ut.toLowerCase().includes(q)||i.name.toLowerCase().includes(q)):[];render();}
   },150);
 });
+
+// ── USERS ─────────────────────────────────────────────
+async function loadUsers(){
+  const el=document.getElementById('users-list');
+  el.innerHTML='<div class="comments-loading">загрузка…</div>';
+  try{
+    const r=await fetch(SB_URL+'/auth/v1/admin/users',{
+      headers:{'apikey':SB_KEY,'Authorization':'Bearer '+currentUser.token}
+    });
+    const data=await r.json();
+    const users=data.users||[];
+    if(!users.length){el.innerHTML='<div class="comments-loading">Нет пользователей</div>';return;}
+    el.innerHTML=users.map(u=>{
+      const name=u.user_metadata?.full_name||u.email||'—';
+      const initial=name[0].toUpperCase();
+      const last=u.last_sign_in_at?new Date(u.last_sign_in_at).toLocaleDateString('ru'):'—';
+      return `<div class="user-card">
+        <div class="user-avatar">${initial}</div>
+        <div class="user-info">
+          <div class="user-name">${name}</div>
+          <div class="user-email">${u.email||''}</div>
+        </div>
+        <div class="user-date">вход: ${last}</div>
+      </div>`;
+    }).join('');
+  }catch(e){
+    // fallback: show from report table who column
+    const r=await fetch(API+'?select=user_name&order=updated_at.desc',{headers:authHeaders()});
+    const rows=await r.json();
+    const names=[...new Set(rows.map(r=>r.user_name).filter(Boolean))];
+    if(!names.length){el.innerHTML='<div class="comments-loading">Нет данных</div>';return;}
+    el.innerHTML=names.map(name=>`<div class="user-card">
+      <div class="user-avatar">${name[0].toUpperCase()}</div>
+      <div class="user-info"><div class="user-name">${name}</div></div>
+    </div>`).join('');
+  }
+}
+
+// ── COMMENTS ──────────────────────────────────────────
+const COMMENTS_API=SB_URL+'/rest/v1/comments';
+
+async function loadComments(){
+  const el=document.getElementById('comments-list');
+  el.innerHTML='<div class="comments-loading">загрузка…</div>';
+  try{
+    const r=await fetch(COMMENTS_API+'?order=created_at.desc&limit=50',{headers:authHeaders()});
+    const rows=await r.json();
+    if(!rows.length){el.innerHTML='<div class="comments-loading">Пока нет записей</div>';return;}
+    el.innerHTML=rows.map(c=>{
+      const dt=new Date(c.created_at);
+      const dateStr=dt.toLocaleDateString('ru')+' '+dt.toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit'});
+      return `<div class="comment-card">
+        <div class="comment-header">
+          <span class="comment-author">${c.user_name||'—'}</span>
+          <span class="comment-time">${dateStr}</span>
+        </div>
+        <div class="comment-text">${c.text.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+      </div>`;
+    }).join('');
+  }catch(e){el.innerHTML='<div class="comments-loading">Ошибка загрузки</div>';}
+}
+
+async function sendComment(){
+  const input=document.getElementById('comment-input');
+  const text=input.value.trim();
+  if(!text)return;
+  const btn=document.querySelector('.comment-send-btn');
+  btn.textContent='Отправка…';btn.disabled=true;
+  try{
+    await fetch(COMMENTS_API,{
+      method:'POST',
+      headers:{...authHeaders(),'Prefer':'return=minimal'},
+      body:JSON.stringify({user_id:currentUser.id,user_name:currentUser.name,text})
+    });
+    input.value='';
+    await loadComments();
+  }catch(e){alert('Ошибка отправки');}
+  btn.textContent='Отправить';btn.disabled=false;
+}
+
 render();
 </script>
 </body>
