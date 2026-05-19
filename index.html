@@ -215,7 +215,7 @@ if(saved){try{currentUser=JSON.parse(saved);showApp();}catch(e){}}
 });
 
 function authHeaders(){
-  return{'apikey':SB_KEY,'Authorization':'Bearer '+(currentUser?currentUser.token:SB_KEY),'Content-Type':'application/json','Prefer':'resolution=merge-duplicates'};
+  return{'apikey':SB_KEY,'Authorization':'Bearer '+(currentUser?currentUser.token:SB_KEY),'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'};
 }
 function todayStr(){return new Date().toISOString().slice(0,10);}
 
@@ -223,7 +223,7 @@ async function loadReport(date){
   const status=document.getElementById('report-status');
   status.textContent='загрузка…';status.className='report-status';
   try{
-    const r=await fetch(API+'?date=eq.'+date+'&order=task',{headers:authHeaders()});
+    const r=await fetch(API+'?date=eq.'+date+'&order=updated_at.desc',{headers:authHeaders()});
     const rows=await r.json();
     reportData={};
     rows.forEach(row=>{
@@ -265,7 +265,7 @@ async function changeQty(task,date,delta){
   clearTimeout(saveTimers[task]);
   saveTimers[task]=setTimeout(async()=>{
     try{
-      await fetch(API,{method:'POST',headers:authHeaders(),body:JSON.stringify([{date,task,qty:newQty,user_id:currentUser.id,user_name:currentUser.name}])});
+      await fetch(API+'?on_conflict=date,task',{method:'POST',headers:authHeaders(),body:JSON.stringify([{date,task,qty:newQty,user_id:currentUser.id,user_name:currentUser.name,updated_at:new Date().toISOString()}])});
       valEl.className='qty-val saved';
       document.getElementById('report-status').textContent='сохранено ✓';
       document.getElementById('report-status').className='report-status ok';
