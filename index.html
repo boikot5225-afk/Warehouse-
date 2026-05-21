@@ -401,7 +401,22 @@ function render(){
   if(!filtered.length){el.innerHTML='<div class="no-results">Ничего не найдено по «'+query+'»</div>';return;}
   const shown=filtered.slice(0,(page+1)*PAGE_SIZE);
   let h='<div class="cards">';
-  for(const item of shown){const img=item.img?`<img class="card-img" src="${item.img}" loading="lazy" onerror="this.style.display='none';this.nextSibling.style.display='flex'"><div class="card-no-img" style="display:none">📦</div>`:`<div class="card-no-img">📦</div>`;h+=`<div class="card">${img}<div class="card-body"><div class="card-ut">${hl(item.ut,query)}</div><div class="card-name">${hl(item.name,query)}</div></div></div>`;}
+  for(const item of shown){const img=item.img?`<img class="card-img" src="${item.img}" loading="lazy" onerror="this.style.display='none';this.nextSibling.style.display='flex'"><div class="card-no-img" style="display:none">📦</div>`:`<div class="card-no-img">📦</div>`;
+    const cid='c'+Math.random().toString(36).slice(2);
+    h+=`<div class="card" onclick="toggleCard(this,'${(item.barcode||'').replace(/'/g,'')}','${cid}')">
+      ${img}
+      <div class="card-body">
+        <div class="card-ut">${hl(item.ut,query)}</div>
+        <div class="card-name">${hl(item.name,query)}</div>
+        <div class="card-detail">
+          <div class="card-barcode-label">Штрихкод</div>
+          ${item.barcode
+            ?`<div class="card-barcode-num">${item.barcode}</div><canvas class="card-barcode-canvas" id="${cid}"></canvas>`
+            :`<div class="card-no-barcode">ШК не найден</div>`
+          }
+        </div>
+      </div>
+    </div>`;}
   h+='</div>';
   if(filtered.length>shown.length)h+='<button class="more-btn" onclick="loadMore()">Ещё '+(filtered.length-shown.length)+' записей</button>';
   el.innerHTML=h;
