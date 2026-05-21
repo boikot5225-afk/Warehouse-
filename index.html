@@ -89,6 +89,11 @@ main{padding:12px 16px;}
 .card-barcode-num{font-size:14px;color:var(--accent2);letter-spacing:0.1em;margin-bottom:10px;}
 .card-barcode-canvas{background:#fff;border-radius:8px;padding:8px;display:block;max-width:100%;}
 .card-no-barcode{font-size:12px;color:var(--muted);font-style:italic;}
+.barcode-input-wrap{display:flex;gap:8px;margin-top:8px;}
+.barcode-input{flex:1;background:#fff;border:2px solid #ccc;border-radius:8px;padding:8px 12px;font-family:'JetBrains Mono',monospace;font-size:16px;color:#111;outline:none;-webkit-appearance:none;}
+.barcode-input:focus{border-color:var(--accent);}
+.barcode-save-btn{background:var(--accent);border:none;border-radius:8px;padding:8px 14px;color:#fff;font-family:'JetBrains Mono',monospace;font-size:12px;cursor:pointer;white-space:nowrap;}
+
 
 .tab.users-tab.active{border-bottom-color:#a78bfa;color:#a78bfa;}
 .tab.comments-tab.active{border-bottom-color:#38bdf8;color:#38bdf8;}
@@ -384,14 +389,55 @@ function switchTab(tab){
 let query='',page=0,filtered=[];
 const PAGE_SIZE=50;
 function hl(text,q){if(!q)return text;const i=text.toLowerCase().indexOf(q.toLowerCase());if(i===-1)return text;return text.slice(0,i)+'<span class="highlight">'+text.slice(i,i+q.length)+'</span>'+text.slice(i+q.length);}
-function toggleCard(el, barcode, cid) {
+async function toggleCard(el, barcode, ut, cid) {
   el.classList.toggle('open');
-  if (el.classList.contains('open') && barcode) {
+  if (!el.classList.contains('open')) return;
+
+  // If no barcode in catalog, check Supabase
+  let bc = barcode;
+  if (!bc) {
+    try {
+      const r = await fetch(SB_URL+'/rest/v1/barcodes?ut_code=eq.'+encodeURIComponent(ut), {headers: authHeaders()});
+      const rows = await r.json();
+      if (rows.length && rows[0].barcode) bc = rows[0].barcode;
+    } catch(e) {}
+  }
+
+  const detail = el.querySelector('.card-detail');
+  if (bc) {
+    detail.innerHTML = `<div class="card-barcode-label">Штрихкод</div>
+      <div class="card-barcode-num">${bc}</div>
+      <canvas class="card-barcode-canvas" id="${cid}"></canvas>`;
     const canvas = document.getElementById(cid);
-    if (canvas && !canvas.dataset.drawn) {
-      drawBarcode(canvas, barcode);
-      canvas.dataset.drawn = '1';
-    }
+    if (canvas) drawBarcode(canvas, bc);
+  } else {
+    detail.innerHTML = `<div class="card-barcode-label">Штрихкод не найден</div>
+      <div class="barcode-input-wrap">
+        <input class="barcode-input" type="number" placeholder="Введите ШК" id="bi-${cid}" inputmode="numeric">
+        <button class="barcode-save-btn" onclick="saveBarcode('${ut}','bi-${cid}',this,'${cid}')">Сохранить</button>
+      </div>`;
+  }
+}
+
+async function saveBarcode(ut, inputId, btn, cid) {
+  const input = document.getElementById(inputId);
+  const bc = input.value.trim();
+  if (!bc) return;
+  btn.textContent = '…'; btn.disabled = true;
+  try {
+    await fetch(SB_URL+'/rest/v1/barcodes', {
+      method: 'POST',
+      headers: {...authHeaders(), 'Prefer': 'resolution=merge-duplicates'},
+      body: JSON.stringify([{ut_code: ut, barcode: bc, created_by: currentUser.name}])
+    });
+    const detail = btn.closest('.card-detail');
+    detail.innerHTML = `<div class="card-barcode-label">Штрихкод</div>
+      <div class="card-barcode-num">${bc}</div>
+      <canvas class="card-barcode-canvas" id="${cid}"></canvas>`;
+    const canvas = document.getElementById(cid);
+    if (canvas) drawBarcode(canvas, bc);
+  } catch(e) {
+    btn.textContent = 'Ошибка'; btn.disabled = false;
   }
 }
 
@@ -403,7 +449,7 @@ function render(){
   let h='<div class="cards">';
   for(const item of shown){const img=item.img?`<img class="card-img" src="${item.img}" loading="lazy" onerror="this.style.display='none';this.nextSibling.style.display='flex'"><div class="card-no-img" style="display:none">📦</div>`:`<div class="card-no-img">📦</div>`;
     const cid='c'+Math.random().toString(36).slice(2);
-    h+=`<div class="card" onclick="toggleCard(this,'${(item.barcode||'').replace(/'/g,'')}','${cid}')">
+    h+=`<div class="card" onclick="toggleCard(this,'${(item.barcode||'').replace(/'/g,'')}','${item.ut.replace(/'/g,'')}','${cid}')">
       ${img}
       <div class="card-body">
         <div class="card-ut">${hl(item.ut,query)}</div>
