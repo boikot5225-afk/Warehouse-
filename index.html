@@ -68,6 +68,55 @@ header{
 }
 .hbtn:active{background:var(--red);color:var(--paper);border-color:var(--red);}
 
+/* ── WMS QUICK ACCESS ── */
+.wms-home-btn{
+  color:var(--gold);
+  border-color:rgba(212,168,67,.35);
+}
+.wms-quick{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  margin:-2px 0 10px;
+  padding:5px;
+  background:linear-gradient(180deg, rgba(255,255,255,.035), rgba(0,0,0,.06));
+  border:1px solid rgba(212,168,67,.20);
+  border-radius:11px;
+  overflow-x:auto;
+  scrollbar-width:none;
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+}
+.wms-quick::-webkit-scrollbar{display:none;}
+.wms-qbtn{
+  min-height:31px;
+  flex:1 0 auto;
+  display:flex;align-items:center;justify-content:center;
+  background:rgba(255,255,255,.035);
+  border:1px solid rgba(255,255,255,.07);
+  border-radius:8px;
+  padding:7px 9px;
+  color:var(--muted);
+  font-family:'Oswald',sans-serif;
+  font-size:9.5px;font-weight:700;letter-spacing:.45px;
+  text-decoration:none;text-transform:uppercase;text-align:center;
+  line-height:1;
+  white-space:nowrap;
+}
+.wms-qbtn:active{background:var(--red);color:var(--paper);border-color:var(--red);transform:scale(.985);}
+.wms-qbtn.main{
+  flex:1.25 0 auto;
+  background:linear-gradient(180deg, rgba(212,168,67,.18), rgba(192,57,43,.10));
+  border-color:rgba(212,168,67,.32);
+  color:var(--gold);
+}
+@media(max-width:430px){
+  .wms-quick{gap:5px;margin-bottom:9px;padding:4px;}
+  .wms-qbtn{min-height:30px;padding:7px 8px;font-size:9px;letter-spacing:.35px;}
+}
+@media(max-width:360px){
+  .wms-qbtn{padding:7px 7px;font-size:8.5px;}
+}
+
 .search-row{position:relative;margin-bottom:10px;}
 .search-row svg{position:absolute;left:14px;top:50%;transform:translateY(-50%);opacity:0.5;pointer-events:none;color:var(--red);}
 #search{
@@ -300,9 +349,48 @@ main{overflow-x:hidden;}
 .cell-actions{display:grid;grid-template-columns:1fr 1fr;gap:7px;}
 .cell-action-btn{background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:9px 8px;color:var(--text);font-family:'Oswald',sans-serif;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;cursor:pointer;}
 .cell-action-btn.danger{color:var(--red-bright);}
+
+/* ── SMART PRODUCT SEARCH / ANDROID ── */
+.smart-search-box{position:relative;}
+.smart-search-box .calc-inp,.smart-search-box input{padding-right:46px;}
+.search-clear-btn{position:absolute;right:8px;top:50%;transform:translateY(-50%);width:32px;height:32px;border:1px solid var(--border);border-radius:9px;background:var(--surface2);color:var(--muted);font-family:'Oswald',sans-serif;font-size:16px;font-weight:800;line-height:1;display:flex;align-items:center;justify-content:center;cursor:pointer;z-index:3;}
+.catalog-search-tools,.smart-search-tools{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px;}
+.smart-chip{border:1px solid var(--border);background:var(--surface2);border-radius:9px;padding:8px 12px;color:var(--muted);font-family:'Oswald',sans-serif;font-size:11px;font-weight:800;letter-spacing:.7px;text-transform:uppercase;cursor:pointer;}
+.smart-chip.primary{border-color:var(--gold);color:var(--gold);background:var(--gold-dim);}
+.smart-section-title{padding:9px 12px 6px;font-family:'Oswald',sans-serif;font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--gold);background:rgba(0,0,0,.08);}
+.smart-result-row{display:flex;gap:10px;align-items:center;padding:12px;border-bottom:1px solid var(--border);cursor:pointer;min-height:62px;}
+.smart-result-row:active{background:var(--surface2);}
+.smart-thumb{width:46px;height:46px;flex:0 0 46px;border-radius:9px;background:var(--paper);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;overflow:hidden;font-size:22px;}
+.smart-thumb img{width:100%;height:100%;object-fit:cover;display:block;}
+.smart-result-main{flex:1;min-width:0;}
+.smart-result-ut{font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:800;color:var(--gold);margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.smart-result-name{font-size:13px;color:var(--text);line-height:1.25;}
+.smart-result-bc{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.smart-empty{padding:12px;color:var(--muted);font-size:12px;line-height:1.35;}
+@media(max-width:520px){.smart-result-row{padding:13px 12px;}.smart-result-name{font-size:14px;}.smart-chip{padding:9px 13px;}.search-clear-btn{width:36px;height:36px;}}
+
+
+/* simplified linked pallet calc */
+.calc-top-result{background:var(--paper);border:1px solid var(--line);border-radius:14px;padding:16px;margin:0 0 12px;text-align:center;box-shadow:0 2px 8px rgba(0,0,0,.15);}
+.calc-top-result .big{font-family:'Spectral',serif;font-weight:600;font-size:48px;line-height:1;color:var(--paper-ink);}
+.calc-top-result .sub{font-family:'JetBrains Mono',monospace;font-size:11px;color:#7b6448;margin-top:6px;line-height:1.35;}
+.main-calc-toggle{width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 12px;color:var(--gold);font-family:'Oswald',sans-serif;font-size:12px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;cursor:pointer;margin-bottom:10px;}
+#main-calc-fields.collapsed{display:none;}
+.pallet-mini-note{font-size:10px;color:var(--muted);line-height:1.35;margin-top:6px;}
+
+.app-error-banner{display:none;position:fixed;left:10px;right:10px;top:10px;z-index:99999;background:#2b0000;color:#fff;border:1px solid #ff6b6b;border-radius:10px;padding:10px 12px;font-family:Arial,sans-serif;font-size:12px;box-shadow:0 6px 20px rgba(0,0,0,.45);}
 </style>
 </head>
 <body>
+<div id="app-error-banner" class="app-error-banner"></div>
+
+<script>
+window.addEventListener('error', function(e){
+  var b=document.getElementById('app-error-banner');
+  if(b){b.style.display='block';b.textContent='Ошибка приложения: '+(e.message||'неизвестно')+(e.lineno?(' · строка '+e.lineno):'')+'. Открой последнюю стабильную версию или сделай бэкап перед обновлением.';}
+});
+</script>
+
 <header>
   <div class="header-top">
     <div class="brand">
@@ -311,16 +399,27 @@ main{overflow-x:hidden;}
     </div>
     <div class="header-btns">
       <button class="hbtn" onclick="toggleTheme()" id="theme-btn">☾</button>
-      <a href="https://wwh.samokat.ru/" target="_blank" class="hbtn">WMS</a>
+      <a href="https://wwh.samokat.ru/" target="_blank" rel="noopener noreferrer" class="hbtn wms-home-btn">WMS</a>
       <button onclick="location.reload()" class="hbtn">↻</button>
     </div>
   </div>
+  <div class="wms-quick" aria-label="Быстрый доступ WMS">
+    <a class="wms-qbtn main" href="https://wwh.samokat.ru/#/recounting-tasks?status=AWAITING_CONFIRMATION&amp;sortCompletedDate=DESC&amp;pageNumber=1" target="_blank" rel="noopener noreferrer" title="Подтвердить пересчёт">Пересчёт</a>
+    <a class="wms-qbtn" href="https://wwh.samokat.ru/#/stocks/details?pageNumber=1" target="_blank" rel="noopener noreferrer" title="Детализация остатков">Остатки</a>
+    <a class="wms-qbtn" href="https://wwh.samokat.ru/#/stocks/changes" target="_blank" rel="noopener noreferrer" title="Изменение остатка">Изменения</a>
+    <a class="wms-qbtn" href="https://wwh.samokat.ru/#/handing-units/print" target="_blank" rel="noopener noreferrer" title="Печать этикеток">Этикетки</a>
+  </div>
   <div id="catalog-search-area">
-    <div class="search-row">
+    <div class="search-row smart-search-box">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-      <input id="search" type="search" placeholder='Поиск товара…' autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false">
+      <input id="search" type="search" placeholder='УТ / ШК / название…' autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" onfocus="catalogFocusSearch()">
+      <button class="search-clear-btn" onclick="clearProductSearch('search','catalog')">×</button>
     </div>
-    <button id="exact-btn" onclick="toggleExact()">Точный поиск: ВЫКЛ</button>
+    <div class="catalog-search-tools">
+      <button class="smart-chip" onclick="prefixProductSearch('search','УТ-','catalog')">УТ-</button>
+      <button class="smart-chip" onclick="toggleNumericSearch('search', this)">123</button>
+      <button id="exact-btn" onclick="toggleExact()">Точный поиск: ВЫКЛ</button>
+    </div>
   </div>
 </header>
 
@@ -337,7 +436,7 @@ main{overflow-x:hidden;}
   <details class="backup-fold">
     <summary>💾 Бэкап всего приложения</summary>
     <div class="backup-body">
-      <div style="font-size:11px;color:var(--muted);line-height:1.4;margin-bottom:10px;">Сохраняет ВСЁ: товары, штрихкоды, упаковки, ячейки, заметки, доступы, ЕО, журнал, отчёт. Не только ячейки.</div>
+      <div style="font-size:11px;color:var(--muted);line-height:1.4;margin-bottom:10px;">Сохраняет ВСЁ: товары, штрихкоды, упаковки, ячейки, заметки, доступы, ЕО, журналы HH 1-1/РК, отчёт. Не только ячейки.</div>
       <div class="exi-bar" style="margin-bottom:0;">
         <button class="exi-btn" onclick="exportData()">⬇ Сохранить бэкап</button>
         <button class="exi-btn" onclick="importData()">⬆ Восстановить</button>
@@ -391,7 +490,12 @@ main{overflow-x:hidden;}
       <input id="eo-range-to" class="bc-input" type="text" inputmode="numeric" placeholder="до 012200533050" style="flex:1;min-width:0;">
     </div>
     <button onclick="genEORange()" class="add-btn" style="width:100%;margin-top:8px;">Создать диапазон</button>
-      <button onclick="clearEORange()" class="exi-btn" style="width:100%;margin-top:8px;">🗑 Очистить диапазон</button>
+    <button onclick="clearEORange()" class="exi-btn" style="width:100%;margin-top:8px;">🗑 Очистить диапазон</button>
+    <div class="cell-filter-bar" id="eo-filter-bar" style="margin-top:10px;">
+      <button class="cell-chip active" data-eofilter="all" onclick="setEOFilter('all')">Все</button>
+      <button class="cell-chip" data-eofilter="unused" onclick="setEOFilter('unused')">Неисп.</button>
+      <button class="cell-chip" data-eofilter="used" onclick="setEOFilter('used')">Исп.</button>
+    </div>
     <div id="eo-range-list" style="margin-top:14px;"></div>
   </div>
 
@@ -410,10 +514,15 @@ main{overflow-x:hidden;}
 <!-- CALC -->
 <div id="tab-calc" style="display:none">
   <div class="section-title" style="margin-bottom:14px;">Счётчик</div>
+  <div class="calc-top-result">
+    <div class="calc-result-lbl">Факт</div>
+    <div id="calc-result-top" class="big">0</div>
+    <div id="calc-formula-top" class="sub"></div>
+  </div>
   <div class="gen-box" id="calc-cell-box" style="margin-bottom:12px;border-left:3px solid var(--gold);overflow:visible;position:relative;z-index:45;">
-    <label class="modal-lbl">Ячейка (для инвентаризации)</label>
+    <label class="modal-lbl">Ячейка (необязательно)</label>
     <div style="position:relative;">
-      <input id="calc-cell" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="Поиск или ввод: НН-1-1-1" oninput="calcCellInput(this)" onfocus="calcCellSearch(this.value)" style="width:100%;background:var(--paper);border:2px solid var(--line);border-radius:10px;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:16px;color:var(--paper-ink);outline:none;-webkit-appearance:none;margin-bottom:8px;">
+      <input id="calc-cell" type="text" inputmode="text" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="Можно не вводить — запишется как: Ячейка" oninput="calcCellInput(this)" onfocus="calcCellSearch(this.value)" style="width:100%;background:var(--paper);border:2px solid var(--line);border-radius:10px;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:16px;color:var(--paper-ink);outline:none;-webkit-appearance:none;margin-bottom:8px;">
       <div id="calc-cell-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);z-index:200;background:var(--surface);border:2px solid var(--gold);border-radius:10px;max-height:260px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.5);"></div>
     </div>
     <div style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -430,14 +539,21 @@ main{overflow-x:hidden;}
 
   <div class="gen-box" id="calc-prod-box" style="margin-bottom:12px;overflow:visible;position:relative;z-index:40;">
     <label class="modal-lbl">Товар (необязательно)</label>
-    <div style="position:relative;">
-      <input id="calc-prod-search" class="calc-inp" type="text" placeholder="Поиск товара для подстановки…" autocomplete="off" oninput="calcProdSearch(this.value)" style="margin-bottom:0;">
+    <div class="smart-search-box">
+      <input id="calc-prod-search" class="calc-inp" type="text" placeholder="УТ / ШК / название…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="calcProdSearch(this.value)" onfocus="calcProdSearch(this.value)" style="margin-bottom:0;">
+      <button class="search-clear-btn" onclick="clearProductSearch('calc-prod-search','calc')">×</button>
       <div id="calc-prod-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:200;background:var(--surface);border:2px solid var(--red);border-radius:10px;max-height:340px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.5);"></div>
+    </div>
+    <div class="smart-search-tools">
+      <button class="smart-chip" onclick="prefixProductSearch('calc-prod-search','УТ-','calc')">УТ-</button>
+      <button class="smart-chip" onclick="toggleNumericSearch('calc-prod-search', this)">123</button>
     </div>
     <div id="calc-prod-chosen" style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg2);border-radius:8px;font-size:12px;color:var(--text);"></div>
   </div>
   <!-- СЧЁТЧИК -->
   <div class="gen-box" style="padding:14px;">
+    <button type="button" class="main-calc-toggle" onclick="toggleMainCalc()">▸ Ручной ввод</button>
+    <div id="main-calc-fields" class="collapsed">
     <!-- вложенность + система компактно -->
     <div style="display:flex;gap:8px;margin-bottom:14px;">
       <div style="flex:1;"><label class="modal-lbl">Шт/короб</label><input id="calc-per-box" class="calc-inp" type="number" inputmode="numeric" placeholder="0" style="margin-bottom:0;" oninput="doCalc();savePackFromCalc(this.value)"></div>
@@ -476,64 +592,130 @@ main{overflow-x:hidden;}
       <button onclick="stepField('calc-extra-pcs',10)" class="quick-btn">+10</button>
     </div>
 
+    </div>
     <!-- раскладка под кнопкой -->
-    <button onclick="toggleLayout()" id="layout-toggle" style="width:100%;margin-top:14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--muted);font-family:'Oswald',sans-serif;font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;cursor:pointer;">▦ Конструктор коробок</button>
+    <button onclick="toggleLayout()" id="layout-toggle" style="width:100%;margin-top:14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--muted);font-family:'Oswald',sans-serif;font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;cursor:pointer;">▦ Конструктор паллеты</button>
     <div id="layout-panel" style="display:none;margin-top:12px;">
-      <div style="font-size:11px;color:var(--muted);margin-bottom:10px;line-height:1.4;">Считай паллету кусками: блоки, составной слой 10+4+10 × повторы или быстрые +коробки.</div>
-      <div id="calc-blocks-rows"></div>
-      <button onclick="addBlockRow()" class="exi-btn" style="width:100%;">+ Блок (в ряду × рядов)</button>
+      <div style="font-family:'Oswald',sans-serif;font-size:10px;color:var(--muted);letter-spacing:0.7px;text-transform:uppercase;margin-bottom:6px;">Режим</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:8px;">
+        <button id="lm-block" onclick="chooseLayoutMode('block')" class="quick-btn">▦ 3D схема</button>
+        <button id="lm-layer" onclick="chooseLayoutMode('layer')" class="quick-btn">▤ Слой</button>
+      </div>
+      <details style="margin-bottom:10px;">
+        <summary style="font-family:'Oswald',sans-serif;font-size:11px;color:var(--gold);letter-spacing:0.7px;text-transform:uppercase;cursor:pointer;padding:8px 4px;">Дополнительно</summary>
+        <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:6px;">
+          <button id="lm-cut" onclick="chooseLayoutMode('cut')" class="quick-btn">− Убрать блок</button>
+          <button id="lm-tray" onclick="chooseLayoutMode('tray')" class="quick-btn">+ Лотки</button>
+          <button id="lm-openbox" onclick="chooseLayoutMode('openbox')" class="quick-btn">Открытая</button>
+          <button id="lm-bag" onclick="chooseLayoutMode('bag')" class="quick-btn">Ручной</button>
+          <button id="lm-ignore" onclick="chooseLayoutMode('ignore')" class="quick-btn">Не считать</button>
+        </div>
+      </details>
 
-      <div style="margin-top:14px;font-family:'Oswald',sans-serif;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">▤ Составной слой</div>
       <div style="background:var(--bg2);border-radius:8px;padding:10px;margin-bottom:10px;">
-        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 78px;gap:6px;align-items:center;">
-          <input id="layer-part-a" class="calc-inp" type="number" inputmode="numeric" placeholder="10" style="margin-bottom:0;text-align:center;" oninput="updateLayerPreview()">
-          <input id="layer-part-b" class="calc-inp" type="number" inputmode="numeric" placeholder="4" style="margin-bottom:0;text-align:center;" oninput="updateLayerPreview()">
-          <input id="layer-part-c" class="calc-inp" type="number" inputmode="numeric" placeholder="10" style="margin-bottom:0;text-align:center;" oninput="updateLayerPreview()">
-          <input id="layer-repeat" class="calc-inp" type="number" inputmode="numeric" value="1" placeholder="×" style="margin-bottom:0;text-align:center;" oninput="updateLayerPreview()">
+        <input id="piece-name" type="hidden" value="">
+        <div id="piece-fields-3d" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+          <div><label id="pa-lbl" class="modal-lbl" style="font-size:9px;">Ширина</label><input id="piece-a" class="calc-inp" type="number" inputmode="numeric" placeholder="0" style="margin-bottom:0;text-align:center;" oninput="updatePiecePreview()"></div>
+          <div><label id="pb-lbl" class="modal-lbl" style="font-size:9px;">Глубина</label><input id="piece-b" class="calc-inp" type="number" inputmode="numeric" placeholder="0" style="margin-bottom:0;text-align:center;" oninput="updatePiecePreview()"></div>
+          <div><label id="pc-lbl" class="modal-lbl" style="font-size:9px;">Высота</label><input id="piece-c" class="calc-inp" type="number" inputmode="numeric" placeholder="1" value="1" style="margin-bottom:0;text-align:center;" oninput="updatePiecePreview()"></div>
         </div>
-        <div id="layer-preview" style="margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--gold);text-align:center;">0 × 1 = 0</div>
-        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px;">
-          <button onclick="setLayerTemplate(10,4,10)" class="quick-btn">10+4+10</button>
-          <button onclick="setLayerTemplate(8,4,8)" class="quick-btn">8+4+8</button>
-          <button onclick="setLayerTemplate(6,3,6)" class="quick-btn">6+3+6</button>
-          <button onclick="setLayerTemplate(12,6,12)" class="quick-btn">12+6+12</button>
+        <div id="piece-fields-layer" style="display:none;">
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;align-items:center;">
+            <input id="layer-part-a" class="calc-inp" type="number" inputmode="numeric" placeholder="3" style="margin-bottom:0;text-align:center;" oninput="updatePiecePreview()">
+            <input id="layer-part-b" class="calc-inp" type="number" inputmode="numeric" placeholder="3" style="margin-bottom:0;text-align:center;" oninput="updatePiecePreview()">
+            <input id="layer-part-c" class="calc-inp" type="number" inputmode="numeric" placeholder="3" style="margin-bottom:0;text-align:center;" oninput="updatePiecePreview()">
+            <input id="layer-part-d" class="calc-inp" type="number" inputmode="numeric" placeholder="3" style="margin-bottom:0;text-align:center;" oninput="updatePiecePreview()">
+          </div>
+          <div style="margin-top:6px;">
+            <label class="modal-lbl" style="font-size:9px;">Рядов таких</label>
+            <input id="layer-repeat" class="calc-inp" type="number" inputmode="numeric" value="1" placeholder="1" style="margin-bottom:0;text-align:center;" oninput="updatePiecePreview()">
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px;">
+            <button onclick="setLayerTemplate(10,4,10,0)" class="quick-btn">10+4+10</button>
+            <button onclick="setLayerTemplate(8,4,8,0)" class="quick-btn">8+4+8</button>
+            <button onclick="setLayerTemplate(6,3,6,0)" class="quick-btn">6+3+6</button>
+            <button onclick="setLayerTemplate(3,3,3,3)" class="quick-btn">3+3+3+3</button>
+          </div>
         </div>
-        <div style="display:flex;gap:8px;margin-top:8px;">
-          <button onclick="addLayerPattern()" class="add-btn" style="flex:1;">+ Добавить слой</button>
-          <button onclick="repeatLastLayer()" class="exi-btn" style="flex:1;">Повторить слой</button>
+        <div id="piece-fields-loose" style="display:none;">
+          <label class="modal-lbl" style="font-size:9px;">Количество</label>
+          <input id="piece-loose" class="calc-inp" type="number" inputmode="numeric" placeholder="0" style="margin-bottom:8px;text-align:center;font-size:20px;" oninput="updatePiecePreview()">
+          <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:6px;">
+            <button onclick="addLoosePreset(1)" class="quick-btn">+1</button>
+            <button onclick="addLoosePreset(2)" class="quick-btn">+2</button>
+            <button onclick="addLoosePreset(3)" class="quick-btn">+3</button>
+            <button onclick="addLoosePreset(5)" class="quick-btn">+5</button>
+            <button onclick="addLoosePreset(10)" class="quick-btn">+10</button>
+          </div>
         </div>
-        <div id="layout-layer-list" style="margin-top:8px;"></div>
+        <div id="piece-fields-openbox" style="display:none;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+            <div><label class="modal-lbl" style="font-size:9px;">Мест / коробок</label><input id="openbox-boxes" class="calc-inp" type="number" inputmode="numeric" placeholder="1" style="margin-bottom:0;text-align:center;" oninput="updatePiecePreview()"></div>
+            <div><label class="modal-lbl" style="font-size:9px;">Штук внутри</label><input id="openbox-pieces" class="calc-inp" type="number" inputmode="numeric" placeholder="0" style="margin-bottom:0;text-align:center;" oninput="updatePiecePreview()"></div>
+          </div>
+        </div>
+        <div id="piece-fields-ignore" style="display:none;">
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:8px;align-items:center;">
+          <button onclick="clearPieceForm()" class="exi-btn" style="width:100%;">Сбросить</button>
+        </div>
+        <div id="piece-preview" style="margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--gold);text-align:center;">+ Блок: 0×0×1 = 0 мест</div>
+        <div id="piece-correction-wrap" style="margin-top:10px;background:rgba(0,0,0,0.14);border:1px dashed var(--border);border-radius:8px;padding:8px;">
+          <div style="font-family:'Oswald',sans-serif;font-size:10px;color:var(--gold);letter-spacing:0.7px;text-transform:uppercase;margin-bottom:6px;">Поправка</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
+            <div>
+              <label class="modal-lbl" style="font-size:9px;">+ Коробки / места</label>
+              <input id="corr-box-plus" class="calc-inp" type="number" inputmode="numeric" placeholder="0" style="margin-bottom:6px;text-align:center;" oninput="updatePiecePreview()">
+              <div style="display:flex;gap:6px;">
+                <input id="corr-box-plus-add" class="calc-inp" type="number" inputmode="numeric" placeholder="+" style="margin-bottom:0;text-align:center;padding:8px;font-size:14px;">
+                <button class="quick-btn" onclick="sumIntoField('corr-box-plus','corr-box-plus-add',updatePiecePreview)" style="width:46px;padding:8px 0;">+</button>
+              </div>
+            </div>
+            <div>
+              <label class="modal-lbl" style="font-size:9px;">− Коробки / места</label>
+              <input id="corr-box-minus" class="calc-inp" type="number" inputmode="numeric" placeholder="0" style="margin-bottom:6px;text-align:center;" oninput="updatePiecePreview()">
+              <div style="display:flex;gap:6px;">
+                <input id="corr-box-minus-add" class="calc-inp" type="number" inputmode="numeric" placeholder="+" style="margin-bottom:0;text-align:center;padding:8px;font-size:14px;">
+                <button class="quick-btn" onclick="sumIntoField('corr-box-minus','corr-box-minus-add',updatePiecePreview)" style="width:46px;padding:8px 0;">+</button>
+              </div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+            <div>
+              <label class="modal-lbl" style="font-size:9px;">+ Штуки</label>
+              <input id="corr-piece-plus" class="calc-inp" type="number" inputmode="numeric" placeholder="0" style="margin-bottom:6px;text-align:center;" oninput="updatePiecePreview()">
+              <div style="display:flex;gap:6px;">
+                <input id="corr-piece-plus-add" class="calc-inp" type="number" inputmode="numeric" placeholder="+" style="margin-bottom:0;text-align:center;padding:8px;font-size:14px;">
+                <button class="quick-btn" onclick="sumIntoField('corr-piece-plus','corr-piece-plus-add',updatePiecePreview)" style="width:46px;padding:8px 0;">+</button>
+              </div>
+            </div>
+            <div>
+              <label class="modal-lbl" style="font-size:9px;">− Штуки</label>
+              <input id="corr-piece-minus" class="calc-inp" type="number" inputmode="numeric" placeholder="0" style="margin-bottom:6px;text-align:center;" oninput="updatePiecePreview()">
+              <div style="display:flex;gap:6px;">
+                <input id="corr-piece-minus-add" class="calc-inp" type="number" inputmode="numeric" placeholder="+" style="margin-bottom:0;text-align:center;padding:8px;font-size:14px;">
+                <button class="quick-btn" onclick="sumIntoField('corr-piece-minus','corr-piece-minus-add',updatePiecePreview)" style="width:46px;padding:8px 0;">+</button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div style="margin-top:14px;font-family:'Oswald',sans-serif;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">➕ Просто добавить коробки</div>
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
-        <button onclick="addLayoutQuick(1)" class="quick-btn">+1</button>
-        <button onclick="addLayoutQuick(2)" class="quick-btn">+2</button>
-        <button onclick="addLayoutQuick(4)" class="quick-btn">+4</button>
-        <button onclick="addLayoutQuick(5)" class="quick-btn">+5</button>
-        <button onclick="addLayoutQuick(8)" class="quick-btn">+8</button>
-        <button onclick="addLayoutQuick(10)" class="quick-btn">+10</button>
-        <button onclick="addLayoutQuick(12)" class="quick-btn">+12</button>
-        <button onclick="addLayoutQuick(24)" class="quick-btn">+24</button>
-      </div>
-      <div id="layout-manual-wrap" style="display:none;margin-top:8px;font-size:12px;color:var(--text);"></div>
-      <button onclick="undoLayout()" class="quick-btn" style="width:100%;margin-top:8px;">↶ Отменить последнее действие</button>
-      <div id="layout-history-log" style="display:none;margin-top:8px;font-size:11px;color:var(--muted);line-height:1.45;"></div>
-
-      <div class="calc-mid" style="margin-top:12px;"><span class="calc-mid-lbl">Всего коробок в конструкторе</span><span id="calc-boxes-total" class="calc-mid-val">0</span></div>
-      <div style="display:flex;gap:8px;margin-top:8px;">
-        <button onclick="applyLayoutToBoxes()" class="add-btn" style="flex:1;">+ В коробки</button>
-        <button onclick="clearLayout()" class="exi-btn" style="flex:1;">Очистить</button>
-      </div>
+      <div id="pallet-piece-list" style="display:none;margin-top:8px;"></div>
+      <div class="calc-mid" style="margin-top:12px;"><span class="calc-mid-lbl">Коробки / места</span><span id="calc-boxes-total" class="calc-mid-val">0</span></div>
+      <div class="calc-mid" style="margin-top:6px;"><span class="calc-mid-lbl">Штуки</span><span id="calc-pieces-total" class="calc-mid-val">0</span></div>
+      <button onclick="clearLayout()" class="exi-btn" style="width:100%;margin-top:8px;">Очистить</button>
     </div>
   </div>
 
-  <!-- ИТОГ -->
+  <!-- ДЕЙСТВИЯ -->
   <div class="calc-result-box">
     <div style="display:flex;justify-content:space-around;align-items:center;">
-      <div>
-        <div class="calc-result-lbl">Факт</div>
-        <div id="calc-result" class="calc-result-num" style="font-size:40px;">0</div>
+      <div style="flex:1;">
+        <div class="calc-result-lbl">Действия</div>
+        <div id="calc-result" class="calc-result-num" style="display:none;">0</div>
+        <div id="calc-result-mini" style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#7b6448;margin-top:6px;line-height:1.35;"></div>
       </div>
       <div id="calc-diff-wrap" style="display:none;">
         <div class="calc-result-lbl">Расхожд.</div>
@@ -568,7 +750,6 @@ main{overflow-x:hidden;}
       <div class="section-title">Инвентаризация по ячейкам</div>
       <span id="inv-count" style="font-family:'Spectral',serif;font-weight:600;font-size:16px;color:var(--gold);">0 ячеек</span>
     </div>
-    <div style="font-size:11px;color:var(--muted);margin-bottom:12px;line-height:1.4;">Ячейки добавляются из калькулятора выше: впиши ячейку, посчитай товары и жми «+ в ячейку», потом «Записать ячейку».</div>
     <div id="inv-list"></div>
     <div id="inv-actions" style="display:none;gap:8px;margin-top:10px;">
       <button class="exi-btn" onclick="shareInv()">📤 Отправить</button>
@@ -600,15 +781,21 @@ main{overflow-x:hidden;}
     </div>
 
     <label class="modal-lbl" style="margin-top:12px;">Товар из каталога</label>
-    <div style="position:relative;">
-      <input id="hh11-search" class="calc-inp" type="text" placeholder="УТ, ШК или название…" autocomplete="off" oninput="hh11Search(this.value)" onfocus="hh11Search(this.value)" style="margin-bottom:0;">
+    <div class="smart-search-box">
+      <input id="hh11-search" class="calc-inp" type="text" placeholder="УТ / ШК / название…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="hh11Search(this.value)" onfocus="hh11Search(this.value)" style="margin-bottom:0;">
+      <button class="search-clear-btn" onclick="clearProductSearch('hh11-search','hh11')">×</button>
       <div id="hh11-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:260;background:var(--surface);border:2px solid var(--gold);border-radius:10px;max-height:340px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.5);"></div>
+    </div>
+    <div class="smart-search-tools">
+      <button class="smart-chip" onclick="prefixProductSearch('hh11-search','УТ-','hh11')">УТ-</button>
+      <button class="smart-chip" onclick="toggleNumericSearch('hh11-search', this)">123</button>
+      <button class="smart-chip primary" onclick="hh11ToggleNewItemForm()">+ Новый</button>
     </div>
     <div id="hh11-picked" style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg2);border-radius:8px;font-size:12px;color:var(--text);"></div>
 
     <button onclick="hh11ToggleNewItemForm()" class="exi-btn" style="width:100%;margin-top:10px;">+ Новый товар сразу в каталог</button>
     <div id="hh11-new-item-form" style="display:none;margin-top:10px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;">
-      <div style="font-family:'Oswald',sans-serif;font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Новая позиция без перехода во вкладку «Товары»</div>
+      <div style="font-family:'Oswald',sans-serif;font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;"></div>
       <label class="modal-lbl">УТ / артикул</label>
       <div style="display:flex;gap:6px;align-items:stretch;">
         <input id="hh11-new-ut" class="calc-inp" type="text" placeholder="например EO 01220051-4364" style="margin-bottom:0;flex:1;min-width:0;">
@@ -635,8 +822,7 @@ main{overflow-x:hidden;}
     <label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-family:'Oswald',sans-serif;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;">
       <input id="hh11-mismatch" type="checkbox" style="width:18px;height:18px;accent-color:#c0392b;"> Пометка: пересорт
     </label>
-    <label class="modal-lbl" style="margin-top:12px;">Комментарий</label>
-    <input id="hh11-comment" class="calc-inp" type="text" placeholder="необязательно" style="margin-bottom:0;">
+    <input id="hh11-comment" type="hidden" value="">
     <button onclick="hh11Add()" class="add-btn" style="width:100%;margin-top:12px;">+ Добавить в HH 1-1</button>
   </div>
 
@@ -649,6 +835,87 @@ main{overflow-x:hidden;}
   <div id="hh11-list" style="margin-top:14px;"></div>
 </div>
 
+
+<!-- RK CHECK JOURNAL -->
+<div id="tab-rk" style="display:none">
+  <div class="section-head">
+    <div class="section-title">Проверка РК</div>
+    <span id="rk-count" style="font-family:'Spectral',serif;font-weight:600;font-size:16px;color:var(--gold);">0</span>
+  </div>
+
+  <div class="gen-box" style="border-left:3px solid var(--red);overflow:visible;position:relative;z-index:44;">
+    <div style="font-family:'Oswald',sans-serif;font-size:11px;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Проверка РК</div>
+    <label class="modal-lbl">Дата</label>
+    <input id="rk-date" class="calc-inp" type="date" onchange="rkRefreshEOState()" style="margin-bottom:10px;">
+
+    <label class="modal-lbl">ЕО</label>
+    <div style="display:flex;gap:6px;align-items:stretch;">
+      <input id="rk-eo" class="calc-inp" type="text" inputmode="numeric" placeholder="ЕО / штрихкод" autocomplete="off" oninput="rkRefreshEOState()" style="margin-bottom:0;flex:1;min-width:0;">
+      <button onclick="pasteInto('rk-eo')" class="add-btn" style="flex-shrink:0;background:var(--surface2);color:var(--muted);border:1px solid var(--border);">📋</button>
+    </div>
+    <div id="rk-eo-state" style="display:none;margin-top:8px;font-size:11px;color:var(--muted);line-height:1.35;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;"></div>
+
+    <label class="modal-lbl" style="margin-top:12px;">Товар из каталога</label>
+    <div class="smart-search-box">
+      <input id="rk-search" class="calc-inp" type="text" placeholder="УТ / ШК / название…" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" oninput="rkSearch(this.value)" onfocus="rkSearch(this.value)" style="margin-bottom:0;">
+      <button class="search-clear-btn" onclick="clearProductSearch('rk-search','rk')">×</button>
+      <div id="rk-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:260;background:var(--surface);border:2px solid var(--red);border-radius:10px;max-height:340px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.5);"></div>
+    </div>
+    <div class="smart-search-tools">
+      <button class="smart-chip" onclick="prefixProductSearch('rk-search','УТ-','rk')">УТ-</button>
+      <button class="smart-chip" onclick="toggleNumericSearch('rk-search', this)">123</button>
+      <button class="smart-chip primary" onclick="rkToggleNewItemForm()">+ Новый</button>
+    </div>
+    <div id="rk-picked" style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg2);border-radius:8px;font-size:12px;color:var(--text);"></div>
+
+    <button onclick="rkToggleNewItemForm()" class="exi-btn" style="width:100%;margin-top:10px;">+ Новый товар сразу в каталог</button>
+    <div id="rk-new-item-form" style="display:none;margin-top:10px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;">
+      <div style="font-family:'Oswald',sans-serif;font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;"></div>
+      <label class="modal-lbl">УТ / артикул</label>
+      <div style="display:flex;gap:6px;align-items:stretch;">
+        <input id="rk-new-ut" class="calc-inp" type="text" placeholder="например УТ-00000000" style="margin-bottom:0;flex:1;min-width:0;">
+        <button onclick="pasteInto('rk-new-ut')" class="exi-btn" style="flex-shrink:0;">📋</button>
+      </div>
+      <label class="modal-lbl" style="margin-top:8px;">Наименование</label>
+      <div style="display:flex;gap:6px;align-items:stretch;">
+        <input id="rk-new-name" class="calc-inp" type="text" placeholder="название товара" style="margin-bottom:0;flex:1;min-width:0;">
+        <button onclick="pasteInto('rk-new-name')" class="exi-btn" style="flex-shrink:0;">📋</button>
+      </div>
+      <label class="modal-lbl" style="margin-top:8px;">ШК, если есть</label>
+      <input id="rk-new-bc" class="calc-inp" type="text" inputmode="numeric" placeholder="необязательно" style="margin-bottom:0;">
+      <button onclick="rkSaveNewItem()" class="add-btn" style="width:100%;margin-top:10px;">Сохранить в каталог и выбрать</button>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:12px;">
+      <div><label class="modal-lbl">Излишек</label><input id="rk-surplus" class="calc-inp" type="number" inputmode="numeric" placeholder="0" oninput="rkOnIssueChange()" style="margin-bottom:0;text-align:center;"></div>
+      <div><label class="modal-lbl">Недостача</label><input id="rk-shortage" class="calc-inp" type="number" inputmode="numeric" placeholder="0" oninput="rkOnIssueChange()" style="margin-bottom:0;text-align:center;"></div>
+      <div><label class="modal-lbl">Брак</label><input id="rk-defect" class="calc-inp" type="number" inputmode="numeric" placeholder="0" oninput="rkOnIssueChange()" style="margin-bottom:0;text-align:center;"></div>
+    </div>
+
+    <label class="modal-lbl" style="margin-top:12px;">Итог *</label>
+    <select id="rk-status" class="calc-inp" onchange="rkValidateIssue(false)" style="margin-bottom:8px;">
+      <option value="">Выбери итог</option>
+      <option>Исправлено</option>
+      <option>Без расхождений</option>
+      <option>Недостача</option>
+      <option>Изъяли</option>
+    </select>
+    <input id="rk-comment" type="hidden" value="">
+    <div style="display:flex;gap:8px;margin-top:12px;">
+      <button onclick="rkAdd()" class="add-btn" style="flex:1;">+ Добавить товар/ошибку</button>
+      <button onclick="rkAddNoDiff()" class="exi-btn" style="flex:1;">✓ ЕО без расхождений</button>
+    </div>
+  </div>
+
+  <div id="rk-summary" class="gen-box" style="margin-top:12px;"></div>
+  <div style="display:flex;gap:8px;margin-top:6px;">
+    <button class="exi-btn" onclick="rkShare()">📤 Экспорт</button>
+    <button class="exi-btn" onclick="rkCopyTSV()">📋 TSV</button>
+    <button class="exi-btn" onclick="rkClear()">🗑 Очистить</button>
+  </div>
+  <div id="rk-list" style="margin-top:14px;"></div>
+</div>
+
 <!-- REPORT -->
 <div id="tab-report" style="display:none">
   <div class="section-head">
@@ -658,6 +925,7 @@ main{overflow-x:hidden;}
   <div id="report-list"></div>
   <div id="report-actions" style="display:none;gap:8px;margin-top:12px;">
     <button class="exi-btn" onclick="shareReport()">📤 Отправить</button>
+    <button class="exi-btn" onclick="copyReportTSV()">📋 TSV</button>
     <button class="exi-btn" onclick="resetReportToday()">↺ Сбросить день</button>
   </div>
   <div style="margin-top:22px;">
@@ -685,6 +953,7 @@ main{overflow-x:hidden;}
   <button class="navbtn" data-tab="cells" onclick="switchTab('cells')"><span class="ico">📍</span><span class="lbl">Ячейки</span></button>
   <button class="navbtn" data-tab="calc" onclick="switchTab('calc')"><span class="ico">🧮</span><span class="lbl">Счёт</span></button>
   <button class="navbtn" data-tab="hh11" onclick="switchTab('hh11')"><span class="ico">🧾</span><span class="lbl">HH 1-1</span></button>
+  <button class="navbtn" data-tab="rk" onclick="switchTab('rk')"><span class="ico">🔎</span><span class="lbl">РК</span></button>
   <button class="navbtn" data-tab="eo" onclick="switchTab('eo')"><span class="ico">🏷️</span><span class="lbl">ЕО</span></button>
   <button class="navbtn" data-tab="notes" onclick="switchTab('notes')"><span class="ico">📝</span><span class="lbl">Заметки</span></button>
   <button class="navbtn" data-tab="creds" onclick="switchTab('creds')"><span class="ico">🔑</span><span class="lbl">Доступы</span></button>
@@ -817,7 +1086,16 @@ function toggleTheme() {
 // ── STORAGE ──
 const get = key => { try { return JSON.parse(localStorage.getItem(key)||'[]'); } catch(e) { return []; } };
 const getObj = key => { try { return JSON.parse(localStorage.getItem(key)||'{}'); } catch(e) { return {}; } };
-const set = (key, val) => localStorage.setItem(key, JSON.stringify(val));
+const set = (key, val) => {
+  try { localStorage.setItem(key, JSON.stringify(val)); }
+  catch(e) {
+    console.error('localStorage set failed:', key, e);
+    try {
+      const b=document.getElementById('app-error-banner');
+      if(b){b.style.display='block';b.textContent='Не удалось сохранить данные в браузере. Сделай бэкап и очисти лишнее.';}
+    } catch(_){}
+  }
+};
 const getCustomItems = () => get('custom_items');
 const getCustomBarcodes = () => getObj('custom_barcodes');
 const getCells = () => get('cells');
@@ -836,6 +1114,85 @@ const getPackSizes = () => getObj('pack_sizes');
 function savePackSize(ut,n){const o=getPackSizes();if(n)o[ut]=n;else delete o[ut];set('pack_sizes',o);}
 function deleteCustomBarcode(ut){const o=getCustomBarcodes();delete o[ut];set('custom_barcodes',o);}
 function escHtml(s){return String(s??'').replace(/[&<>"']/g,function(m){return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[m]||m;});}
+
+// ── SMART PRODUCT SEARCH HELPERS ──
+function productAllItems(){return [...getCustomItems(),...CATALOG];}
+function productBarcode(i){const cb=getCustomBarcodes();return String((i&&i.barcode)||cb[(i&&i.ut)||'']||'');}
+function normSearchText(v){return String(v||'').toLowerCase().replace(/[ё]/g,'е').replace(/[\s\-–—_.,;:()\[\]{}]+/g,' ').trim();}
+function digitsOnly(v){return String(v||'').replace(/\D/g,'');}
+function smartProductScore(i,q){
+  const raw=String(q||'').trim();
+  const qn=normSearchText(raw);
+  const qd=digitsOnly(raw);
+  if(!qn&&!qd)return -1;
+  const ut=String(i.ut||''), name=String(i.name||''), bc=productBarcode(i);
+  const un=normSearchText(ut), nn=normSearchText(name), bn=normSearchText(bc);
+  const ud=digitsOnly(ut), bd=digitsOnly(bc);
+  let score=-1;
+  if(qd){
+    if(ud===qd)score=Math.max(score,120);
+    else if(bd===qd)score=Math.max(score,115);
+    else if(ud.startsWith(qd))score=Math.max(score,105);
+    else if(bd.startsWith(qd))score=Math.max(score,100);
+    else if(ud.includes(qd))score=Math.max(score,90);
+    else if(bd.includes(qd))score=Math.max(score,85);
+  }
+  if(qn){
+    if(un===qn)score=Math.max(score,118);
+    else if(un.startsWith(qn))score=Math.max(score,104);
+    else if(un.includes(qn))score=Math.max(score,92);
+    if(nn.startsWith(qn))score=Math.max(score,88);
+    else if(nn.includes(qn))score=Math.max(score,78);
+    const words=qn.split(/\s+/).filter(Boolean);
+    if(words.length&&words.every(w=>(nn+' '+un+' '+bn).includes(w)))score=Math.max(score,70+Math.min(words.length,5));
+  }
+  return score;
+}
+function smartProductSearch(q,limit,items){
+  const arr=(items||productAllItems()).map((i,idx)=>({i,idx,score:smartProductScore(i,q)})).filter(x=>x.score>=0);
+  arr.sort((a,b)=>b.score-a.score||a.idx-b.idx);
+  return arr.slice(0,limit||30).map(x=>x.i);
+}
+function getRecentProducts(){return get('recent_products');}
+function pushRecentProduct(ut){if(!ut)return;let arr=getRecentProducts().filter(x=>x!==ut);arr.unshift(ut);arr=arr.slice(0,12);set('recent_products',arr);}
+function productByUt(ut){return productAllItems().find(i=>i.ut===ut);}
+function productResultRow(i,pickFn){
+  const bc=productBarcode(i);
+  const img=i.img?'<img src="'+escHtml(i.img)+'" loading="lazy" onerror="this.parentNode.innerHTML=\'📦\'">':'📦';
+  return '<div class="smart-result-row" onclick="'+pickFn+'(\''+jsStr(i.ut)+'\',\''+jsStr(i.name)+'\')">'+
+    '<div class="smart-thumb">'+img+'</div><div class="smart-result-main">'+
+    '<div class="smart-result-ut">'+escHtml(i.ut)+'</div><div class="smart-result-name">'+escHtml(i.name)+'</div>'+
+    (bc?'<div class="smart-result-bc">ШК: '+escHtml(bc)+'</div>':'')+'</div></div>';
+}
+function productSuggestionHtml(pickFn, emptyText){
+  const favs=getFavs().map(productByUt).filter(Boolean).slice(0,5);
+  const rec=getRecentProducts().map(productByUt).filter(Boolean).filter(i=>!favs.some(f=>f.ut===i.ut)).slice(0,6);
+  let h='';
+  if(favs.length)h+='<div class="smart-section-title">★ Избранные</div>'+favs.map(i=>productResultRow(i,pickFn)).join('');
+  if(rec.length)h+='<div class="smart-section-title">🕘 Недавние</div>'+rec.map(i=>productResultRow(i,pickFn)).join('');
+  if(!h)h='<div class="smart-empty">'+(emptyText||'Начни вводить УТ, ШК или название. Можно вводить цифры без префикса.')+'</div>';
+  return h;
+}
+function showProductResults(boxId,q,pickFn,notFoundHtml,limit){
+  const box=document.getElementById(boxId); if(!box)return;
+  q=(q||'').trim();
+  if(!q){box.innerHTML=productSuggestionHtml(pickFn);box.style.display='block';return;}
+  const res=smartProductSearch(q,limit||30);
+  if(!res.length){box.innerHTML=notFoundHtml||'<div class="smart-empty">Не найдено. Можно добавить новый товар.</div>';box.style.display='block';return;}
+  box.innerHTML=res.map(i=>productResultRow(i,pickFn)).join('');
+  box.style.display='block';
+}
+function runSearchByContext(ctx){
+  if(ctx==='catalog'){const el=document.getElementById('search');query=(el.value||'').trim();if(query)doSearch(query);else{filtered=[];render();}}
+  else if(ctx==='calc'){const el=document.getElementById('calc-prod-search');calcProdSearch(el?el.value:'');}
+  else if(ctx==='hh11'){const el=document.getElementById('hh11-search');hh11Search(el?el.value:'');}
+  else if(ctx==='rk'){const el=document.getElementById('rk-search');rkSearch(el?el.value:'');}
+}
+function clearProductSearch(id,ctx){const el=document.getElementById(id);if(!el)return;el.value='';el.focus();runSearchByContext(ctx);}
+function prefixProductSearch(id,prefix,ctx){const el=document.getElementById(id);if(!el)return;el.value=prefix;el.focus();try{el.setSelectionRange(el.value.length,el.value.length);}catch(e){}runSearchByContext(ctx);}
+function toggleNumericSearch(id,btn){const el=document.getElementById(id);if(!el)return;const on=el.getAttribute('inputmode')==='numeric';if(on){el.setAttribute('inputmode','text');if(btn)btn.classList.remove('primary');}else{el.setAttribute('inputmode','numeric');if(btn)btn.classList.add('primary');}el.focus();}
+function scanProductSearch(id,ctx){startScan(id,function(text){const el=document.getElementById(id);if(el){el.value=text;el.focus();}runSearchByContext(ctx);});}
+function catalogFocusSearch(){const el=document.getElementById('search');if(!el.value.trim()){query='';filtered=[];render();}}
 
 // ── MODAL ──
 function openModal(id){document.getElementById(id).style.display='flex';const f=document.querySelector('#'+id+' input, #'+id+' textarea');if(f)setTimeout(()=>f.focus(),100);}
@@ -878,7 +1235,7 @@ function drawBarcode(canvas,text){
 }
 
 // ── TABS ──
-const TABS=['catalog','cells','notes','eo','creds','calc','hh11','report'];
+const TABS=['catalog','cells','notes','eo','creds','calc','hh11','rk','report'];
 function switchTab(tab){
   document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   TABS.forEach(t=>{const el=document.getElementById('tab-'+t);if(el)el.style.display=t===tab?'':'none';});
@@ -889,9 +1246,11 @@ function switchTab(tab){
   if(tab==='creds')renderCreds();
   if(tab==='eo'){renderEO();renderEORange();}
   if(tab==='hh11')renderHH11();
+  if(tab==='rk')renderRK();
   if(tab==='report')renderReport();
   window.scrollTo(0,0);
 }
+window.switchTab = switchTab;
 
 // ── SEARCH ──
 let query='',page=0,filtered=[],exactMode=false;
@@ -921,24 +1280,12 @@ function hl(text,q){
   return result;
 }
 function doSearch(q){
-  const ql=q.toLowerCase(),qn=ql.replace(/-/g,' ');
-  const customBc=getCustomBarcodes();
   const allItems=[...getCustomItems(),...CATALOG];
+  const ql=String(q||'').trim().toLowerCase();
   if(exactMode){
-    filtered=allItems.filter(i=>i.name.trim().split(/\s+/)[0].toLowerCase()===ql);
+    filtered=allItems.filter(i=>String(i.name||'').trim().split(/\s+/)[0].toLowerCase()===ql || String(i.ut||'').toLowerCase()===ql || productBarcode(i).toLowerCase()===ql);
   }else{
-    // несколько ключевых слов: находим товар где встречаются ВСЕ слова (в любом порядке)
-    const words=qn.split(/\s+/).filter(Boolean);
-    filtered=allItems.filter(i=>{
-      const name=i.name.toLowerCase().replace(/-/g,' ');
-      const ut=i.ut.toLowerCase();
-      const bc=(i.barcode||'')+' '+(customBc[i.ut]||'');
-      // совпадение по ШК или УТ целиком
-      if(ut.includes(ql)||bc.includes(ql))return true;
-      // все слова должны встречаться в названии (или УТ)
-      const hay=name+' '+ut;
-      return words.length>0 && words.every(w=>hay.includes(w));
-    });
+    filtered=smartProductSearch(q,9999,allItems);
   }
   page=0;render();
 }
@@ -1310,14 +1657,23 @@ function genEORange(){
   set('eo_range_saved', codes);  // сохраняем диапазон
   renderEORange();
 }
+let eoRangeFilter='all';
+function setEOFilter(filter){
+  eoRangeFilter=filter||'all';
+  document.querySelectorAll('#eo-filter-bar .cell-chip').forEach(b=>b.classList.toggle('active', b.dataset.eofilter===eoRangeFilter));
+  renderEORange();
+}
 function renderEORange(){
   const codes=get('eo_range_saved');
   const box=document.getElementById('eo-range-list');
   if(!box)return;
   if(!codes.length){box.innerHTML='';return;}
   const used=getObj('eo_range_used');
+  const filter=eoRangeFilter||'all';
+  const shown=codes.filter(code=>filter==='all' || (filter==='used'?!!used[code]:!used[code]));
+  if(!shown.length){box.innerHTML='<div class="no-results" style="padding:18px;">Пусто</div>';return;}
   let h='';
-  codes.forEach((code,idx)=>{
+  shown.forEach((code,idx)=>{
     const isUsed=used[code]?' eo-used':'';
     h+='<div class="paper-card eor-card'+isUsed+'" id="eorc-'+idx+'">'+
       '<div class="pc-title" style="font-size:17px;">'+code+'</div>'+
@@ -1329,7 +1685,7 @@ function renderEORange(){
     '</div>';
   });
   box.innerHTML=h;
-  codes.forEach((code,idx)=>{const cv=document.getElementById('eor-'+idx);if(cv)drawBarcode(cv,code);});
+  shown.forEach((code,idx)=>{const cv=document.getElementById('eor-'+idx);if(cv)drawBarcode(cv,code);});
 }
 function toggleEOUsed(code, cardId){
   const used=getObj('eo_range_used');
@@ -1431,28 +1787,7 @@ function toggleCredBC(id){
 // ── CALC ──
 let calcProdUt='';
 function calcProdSearch(q){
-  q=q.trim().toLowerCase();
-  const box=document.getElementById('calc-prod-results');
-  if(!q){box.style.display='none';return;}
-  const qn=q.replace(/-/g,' ');
-  const words=qn.split(/\s+/).filter(Boolean);
-  const all=[...getCustomItems(),...CATALOG];
-  const res=all.filter(i=>{
-    const n=i.name.toLowerCase().replace(/-/g,' ');
-    const ut=i.ut.toLowerCase();
-    if(ut.includes(q))return true;
-    const hay=n+' '+ut;
-    return words.length>0 && words.every(w=>hay.includes(w));
-  }).slice(0,20);
-  if(!res.length){box.style.display='none';return;}
-  const ps=getPackSizes();
-  box.innerHTML=res.map(i=>{
-    const utp=i.ut.replace(/'/g,"\\'");
-    const nmp=i.name.replace(/'/g,"\\'");
-    const pk=ps[i.ut]?(' · '+ps[i.ut]+' шт/уп'):'';
-    return '<div onclick="pickCalcProd(\''+utp+'\',\''+nmp+'\')" style="padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;"><div style="font-size:11px;font-weight:700;color:var(--gold);">'+i.ut+pk+'</div><div style="font-size:12px;color:var(--text);">'+i.name+'</div></div>';
-  }).join('');
-  box.style.display='block';
+  showProductResults('calc-prod-results',q,'pickCalcProd','<div class="smart-empty">Не найдено в каталоге. Добавь товар во вкладке «Товары» или через HH/RK.</div>',25);
 }
 function savePackFromCalc(val){
   if(!calcProdUt){return;}
@@ -1468,6 +1803,7 @@ function flashPackSaved(){
   clearTimeout(window._packT);window._packT=setTimeout(()=>{if(tag)tag.textContent='';},1500);
 }
 function pickCalcProd(ut,name){
+  pushRecentProduct(ut);
   calcProdUt=ut;
   document.getElementById('calc-prod-results').style.display='none';
   document.getElementById('calc-prod-search').value='';
@@ -1499,10 +1835,23 @@ function doCalc(){
   const perBox=calcNum('calc-per-box', true);
   const boxes=calcNum('calc-boxes-main', true);
   const loose=calcNum('calc-extra-pcs', true);
-  // итог: коробки × вложенность + россыпь
-  let total=boxes*(perBox||1)+loose;
+  const layoutBoxes = (typeof getLayoutBoxesTotal === 'function') ? getLayoutBoxesTotal() : 0;
+  const layoutLoose = (typeof getLayoutPiecesTotal === 'function') ? getLayoutPiecesTotal() : 0;
+  // Связанный итог: обычные коробки + конструктор, обычная россыпь + конструктор.
+  // Конструктор больше не надо переносить отдельной кнопкой: он сразу входит в факт.
+  let total=(boxes+layoutBoxes)*(perBox||1)+(loose+layoutLoose);
   if(total<0)total=0;
-  document.getElementById('calc-result').textContent=total;
+  const mainRes=document.getElementById('calc-result');
+  if(mainRes)mainRes.textContent=total;
+  const topRes=document.getElementById('calc-result-top');
+  if(topRes)topRes.textContent=total;
+  const formula='Коробки '+boxes+' + схема '+layoutBoxes+' → '+(boxes+layoutBoxes)+'; штуки '+loose+' + схема '+layoutLoose+' → '+(loose+layoutLoose)+'; шт/короб '+(perBox||1);
+  const hint=document.getElementById('calc-linked-formula');
+  if(hint)hint.textContent='Формула: ('+boxes+' + '+layoutBoxes+') × '+(perBox||1)+' + ('+loose+' + '+layoutLoose+') = '+total;
+  const topFormula=document.getElementById('calc-formula-top');
+  if(topFormula)topFormula.textContent=formula;
+  const mini=document.getElementById('calc-result-mini');
+  if(mini)mini.textContent='К записи: '+total;
   // расхождение с системой
   const sysEl=document.getElementById('calc-sys');
   const wrap=document.getElementById('calc-diff-wrap');
@@ -1520,154 +1869,274 @@ function doCalc(){
   // обновить раскладку (служебно)
   updateLayoutTotal();
 }
-let layoutManual=0; // сумма ручных добавлений коробок
-let layoutLayers=[]; // составные слои: [{id, parts:[10,4,10], repeat:3}]
-let layoutHistory=[]; // стек отмены: ручные добавления и слои
-let layoutLayerId=1;
-function updateLayoutTotal(){
-  let boxes=0;
-  document.querySelectorAll('#calc-blocks-rows .blk-row').forEach(row=>{
-    const a=row.querySelector('.blk-inrow');
-    const b=row.querySelector('.blk-rows');
-    let inRow=parseInt(a&&a.value);
-    let rws=parseInt(b&&b.value);
-    if(!Number.isFinite(inRow))inRow=0;
-    if(!Number.isFinite(rws))rws=0;
-    if(inRow<0){inRow=0;if(a)a.value='';}
-    if(rws<0){rws=0;if(b)b.value='';}
-    const sub=inRow*(rws||1);
-    const st=row.querySelector('.blk-sub');
-    if(st)st.textContent='= '+sub;
-    boxes+=sub;
+let layoutManual=0; // оставлено для совместимости старых быстрых добавлений
+let palletPieces=[]; // {id, mode, name, qty, unit, sign, formula}
+let layoutHistory=[];
+let palletPieceId=1;
+let layoutMode='block';
+function togglePalletHelp(){
+  const h=document.getElementById('pallet-help');
+  if(h)h.style.display=h.style.display==='none'?'block':'none';
+}
+function sumIntoField(targetId, addId, cb){
+  const target=document.getElementById(targetId);
+  const add=document.getElementById(addId);
+  if(!target||!add)return;
+  const cur=parseInt(target.value)||0;
+  const inc=parseInt(add.value)||0;
+  if(!inc)return;
+  target.value=cur+inc;
+  add.value='';
+  if(typeof cb==='function')cb();
+}
+function reportAddFromInput(idx){
+  const add=document.getElementById('report-add-'+idx);
+  if(!add)return;
+  const val=parseInt(add.value)||0;
+  if(!val)return;
+  reportAddQty(idx,val);
+}
+function layoutNum(id, def=0){
+  const el=document.getElementById(id);
+  if(!el)return def;
+  let v=parseInt(el.value);
+  if(!Number.isFinite(v))v=def;
+  if(v<0){v=0;el.value='';}
+  return v;
+}
+function signedLayoutNum(id){
+  const el=document.getElementById(id);
+  if(!el)return 0;
+  let v=parseInt(el.value);
+  return Number.isFinite(v)?v:0;
+}
+function toggleMainCalc(){
+  const body=document.getElementById('main-calc-fields');
+  const btn=document.querySelector('.main-calc-toggle');
+  if(!body)return;
+  const collapsed=body.classList.toggle('collapsed');
+  if(btn)btn.textContent=(collapsed?'▸':'▾')+' Ручной ввод';
+}
+function modeTitle(mode){
+  return ({block:'3D схема', cut:'Убрать блок', tray:'Лотки', loose:'Отдельно', openbox:'Открытая', bag:'Ручной', layer:'Слой', ignore:'Не считать', adjust:'Поправка'}[mode]||'3D схема');
+}
+function chooseLayoutMode(mode){
+  layoutMode=mode;
+  ['block','cut','tray','loose','openbox','bag','layer','ignore'].forEach(m=>{
+    const b=document.getElementById('lm-'+m);
+    if(b){b.style.background=m===mode?'var(--gold-dim)':'';b.style.color=m===mode?'#fff':'';}
   });
-  boxes+=layoutManual;
-  boxes+=layoutLayers.reduce((sum,l)=>sum+(l.parts.reduce((a,b)=>a+b,0)*l.repeat),0);
-  const el=document.getElementById('calc-boxes-total');
-  if(el)el.textContent=boxes;
-  renderLayoutLayers();
-  renderLayoutHistory();
-  updateLayerPreview(false);
+  const f3=document.getElementById('piece-fields-3d');
+  const fl=document.getElementById('piece-fields-layer');
+  const fo=document.getElementById('piece-fields-loose');
+  const ob=document.getElementById('piece-fields-openbox');
+  const ig=document.getElementById('piece-fields-ignore');
+  if(f3)f3.style.display=(mode==='loose'||mode==='layer'||mode==='openbox'||mode==='ignore')?'none':'grid';
+  if(fl)fl.style.display=mode==='layer'?'block':'none';
+  if(fo)fo.style.display=(mode==='loose'||mode==='bag')?'block':'none';
+  if(ob)ob.style.display=mode==='openbox'?'block':'none';
+  if(ig)ig.style.display=mode==='ignore'?'block':'none';
+  const a=document.getElementById('pa-lbl'),b=document.getElementById('pb-lbl'),c=document.getElementById('pc-lbl');
+  if(a&&b&&c){
+    if(mode==='grid'){a.textContent='Ширина';b.textContent='Глубина';c.textContent='Высота';}
+    else if(mode==='tray'){a.textContent='Ширина';b.textContent='Глубина';c.textContent='Высота';}
+    else if(mode==='bag'){a.textContent='Ширина';b.textContent='Глубина';c.textContent='Высота';}
+    else {a.textContent='Ширина';b.textContent='Глубина';c.textContent='Высота';}
+  }
+  const name=document.getElementById('piece-name');
+  if(name&&!name.value){
+    name.placeholder=mode==='cut'?'выемка / пустой угол':mode==='tray'?'лотки / основа':mode==='openbox'?'открытая коробка / неполный короб':mode==='bag'?'мешки / сетки / картошка':mode==='ignore'?'чужой товар / не считать':'основа / верх / хвост';
+  }
+  updatePiecePreview(false);
+}
+function pieceCalc(){
+  let qty=0, unit='box', sign=1, formula='', name=(document.getElementById('piece-name')?.value||'').trim();
+  if(layoutMode==='loose'){
+    qty=layoutNum('piece-loose',0); formula='+'+qty; unit='box'; sign=1; if(!name)name='доброс';
+  }else if(layoutMode==='bag'){
+    qty=layoutNum('piece-loose',0); formula='ручной +'+qty; unit='piece'; sign=1; if(!name)name='мешки/сетки';
+  }else if(layoutMode==='openbox'){
+    const boxes=layoutNum('openbox-boxes',0);
+    const pcs=layoutNum('openbox-pieces',0);
+    if(pcs>0){qty=pcs; unit='piece'; formula=pcs+' шт. внутри';}
+    else {qty=boxes||1; unit='box'; formula=(boxes||1)+' место';}
+    sign=1; if(!name)name='открытая коробка';
+  }else if(layoutMode==='ignore'){
+    qty=0; unit='box'; sign=1; formula='не входит в итог'; if(!name)name='чужой товар';
+  }else if(layoutMode==='layer'){
+    const parts=[];
+    ['layer-part-a','layer-part-b','layer-part-c','layer-part-d'].forEach(id=>{const v=layoutNum(id,0);if(v>0)parts.push(v);});
+    const rep=Math.max(1,layoutNum('layer-repeat',1));
+    const one=parts.reduce((a,b)=>a+b,0);
+    qty=one*rep; formula=(parts.length?parts.join('+'):'0')+' × '+rep; unit='box'; sign=1; if(!name)name='слой';
+  }else{
+    const a=layoutNum('piece-a',0), b=layoutNum('piece-b',0), c=Math.max(1,layoutNum('piece-c',1));
+    qty=a*b*c; formula=a+'×'+b+'×'+c;
+    unit=(layoutMode==='grid')?'piece':'box';
+    sign=(layoutMode==='cut')?-1:1;
+    if(!name)name=layoutMode==='cut'?'выемка':layoutMode==='tray'?'лотки':layoutMode==='grid'?'сетка штук':'основа';
+  }
+  const corrBox=(layoutMode==='ignore')?0:(layoutNum('corr-box-plus',0)-layoutNum('corr-box-minus',0));
+  const corrPiece=(layoutMode==='ignore')?0:(layoutNum('corr-piece-plus',0)-layoutNum('corr-piece-minus',0));
+  const baseBoxes=(unit==='box'&&layoutMode!=='ignore')?sign*qty:0;
+  const basePieces=(unit==='piece'&&layoutMode!=='ignore')?sign*qty:0;
+  const boxesDelta=baseBoxes+corrBox;
+  const piecesDelta=basePieces+corrPiece;
+  let corrTxt=[];
+  if(corrBox>0)corrTxt.push('мест +'+corrBox);
+  if(corrBox<0)corrTxt.push('мест '+corrBox);
+  if(corrPiece>0)corrTxt.push('шт +'+corrPiece);
+  if(corrPiece<0)corrTxt.push('шт '+corrPiece);
+  if(corrTxt.length)formula+='; '+corrTxt.join(', ');
+  return {mode:layoutMode,name,qty,unit,sign,formula, corrBox, corrPiece, boxesDelta, piecesDelta};
+}
+function hasPieceDraft(){
+  const val=id=>(document.getElementById(id)?.value||'').trim();
+  if(val('corr-box-plus')||val('corr-box-minus')||val('corr-piece-plus')||val('corr-piece-minus'))return true;
+  if(layoutMode==='layer')return !!(val('layer-part-a')||val('layer-part-b')||val('layer-part-c'));
+  if(layoutMode==='loose'||layoutMode==='bag')return !!val('piece-loose');
+  if(layoutMode==='openbox')return !!(val('openbox-boxes')||val('openbox-pieces'));
+  if(layoutMode==='ignore')return !!val('piece-name');
+  return !!(val('piece-a')||val('piece-b'));
+}
+function updatePiecePreview(validate=true){
+  const el=document.getElementById('piece-preview');
+  if(!el)return;
+  const p=pieceCalc();
+  const parts=[];
+  if(p.boxesDelta)parts.push(p.boxesDelta+' мест');
+  if(p.piecesDelta)parts.push(p.piecesDelta+' шт.');
+  const out=parts.length?parts.join(' + '):'0';
+  el.textContent=(p.mode==='ignore'?'○ ':(p.sign<0?'− ':'+ '))+modeTitle(p.mode)+': '+p.formula+(p.mode==='ignore'?'':' = '+out);
+  if(validate)updateLayoutTotal();
+}
+function addLoosePreset(n){
+  const el=document.getElementById('piece-loose');
+  if(!el)return;
+  el.value=(layoutNum('piece-loose',0)+n);
+  updatePiecePreview();
+}
+function setLayerTemplate(a,b,c,d){
+  const vals=[a,b,c,d];
+  ['layer-part-a','layer-part-b','layer-part-c','layer-part-d'].forEach((id,i)=>{const el=document.getElementById(id);if(el)el.value=vals[i]||'';});
+  const r=document.getElementById('layer-repeat');if(r&&!r.value)r.value='1';
+  chooseLayoutMode('layer');
+  updatePiecePreview();
+}
+function addPalletPiece(){
+  const p=pieceCalc();
+  if(!p.boxesDelta && !p.piecesDelta && p.mode!=='ignore'){alert('В куске получилось 0');return;}
+  const ids=[];
+  function pushPiece(obj){ obj.id=palletPieceId++; palletPieces.push(obj); ids.push(obj.id); }
+  if(p.mode==='ignore'){
+    pushPiece({...p, qty:0, unit:'box', sign:1});
+  }else{
+    if(p.qty){ pushPiece({...p, corrBox:0, corrPiece:0}); }
+    if(p.corrBox){ pushPiece({mode:'adjust', name:'поправка к '+p.name, qty:Math.abs(p.corrBox), unit:'box', sign:p.corrBox>0?1:-1, formula:(p.corrBox>0?'+':'')+p.corrBox+' мест'}); }
+    if(p.corrPiece){ pushPiece({mode:'adjust', name:'поправка к '+p.name, qty:Math.abs(p.corrPiece), unit:'piece', sign:p.corrPiece>0?1:-1, formula:(p.corrPiece>0?'+':'')+p.corrPiece+' шт.'}); }
+  }
+  layoutHistory.push({type:'piece', ids});
+  clearPieceForm();
+  renderPalletPieces();
+  updateLayoutTotal();
+}
+function clearPieceForm(){
+  ['piece-name','piece-a','piece-b','piece-c','piece-loose','openbox-boxes','openbox-pieces','layer-part-a','layer-part-b','layer-part-c','layer-part-d','corr-box-plus','corr-box-minus','corr-piece-plus','corr-piece-minus','corr-box-plus-add','corr-box-minus-add','corr-piece-plus-add','corr-piece-minus-add'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const c=document.getElementById('piece-c');if(c)c.value='1';
+  const r=document.getElementById('layer-repeat');if(r)r.value='1';
+  updatePiecePreview();
+}
+function removePalletPiece(id){
+  palletPieces=palletPieces.filter(p=>p.id!==id);
+  layoutHistory=layoutHistory.filter(h=>!(h&&h.type==='piece'&&h.id===id));
+  renderPalletPieces();
+  updateLayoutTotal();
+}
+function renderPalletPieces(){
+  const box=document.getElementById('pallet-piece-list');
+  if(!box)return;
+  if(!palletPieces.length){box.innerHTML='';box.style.display='none';return;}
+  box.style.display='block';
+  box.innerHTML='<div style="font-family:Oswald,sans-serif;font-size:10px;color:var(--muted);letter-spacing:0.8px;text-transform:uppercase;margin-bottom:6px;">Как посчитано</div>'+palletPieces.map(p=>{
+    const val=p.sign*p.qty;
+    const unit=p.unit==='piece'?'шт.':'мест';
+    const color=p.sign<0?'var(--red-bright)':(p.mode==='ignore'?'var(--muted)':'var(--gold)');
+    return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;margin-bottom:6px;display:flex;gap:8px;align-items:center;">'+
+      '<div style="flex:1;min-width:0;">'+
+        '<div style="font-family:\'Oswald\',sans-serif;font-size:10px;color:var(--muted);letter-spacing:0.8px;text-transform:uppercase;">'+(p.mode==='ignore'?'○ ':(p.sign<0?'− ':'+ '))+modeTitle(p.mode)+'</div>'+ 
+        '<div style="font-family:\'JetBrains Mono\',monospace;font-size:12px;color:var(--text);">'+escHtml(p.formula)+(p.mode==='ignore'?'':' = <b style="color:'+color+';">'+val+'</b> '+unit)+'</div>'+ 
+      '</div>'+ 
+      '<button onclick="removePalletPiece('+p.id+')" style="background:none;border:1px solid var(--red);border-radius:6px;padding:4px 9px;color:var(--red-bright);font-size:13px;cursor:pointer;">✕</button>'+ 
+    '</div>';
+  }).join('');
+}
+function updateLayoutTotal(){
+  let boxes=palletPieces.filter(p=>p.unit==='box').reduce((sum,p)=>sum+p.sign*p.qty,0);
+  let pieces=palletPieces.filter(p=>p.unit==='piece').reduce((sum,p)=>sum+p.sign*p.qty,0);
+  // Черновик тоже считается сразу, чтобы цифры менялись прямо при вводе.
+  if(hasPieceDraft()){
+    const d=pieceCalc();
+    if(d.mode!=='ignore'){
+      boxes+=d.boxesDelta||0;
+      pieces+=d.piecesDelta||0;
+    }
+  }
+  if(boxes<0)boxes=0;
+  if(pieces<0)pieces=0;
+  const el=document.getElementById('calc-boxes-total'); if(el)el.textContent=boxes;
+  const ep=document.getElementById('calc-pieces-total'); if(ep)ep.textContent=pieces;
+  renderPalletPieces();
+  if(!window.__layoutUpdatingFact){
+    window.__layoutUpdatingFact=true;
+    try{doCalc();}finally{window.__layoutUpdatingFact=false;}
+  }
   return boxes;
 }
-function addLayoutQuick(n){
-  layoutManual+=n;
-  layoutHistory.push({type:'manual', value:n, label:'+'+n+' коробок'});
-  renderLayoutManual();
+function getLayoutBoxesTotal(){
+  let boxes=palletPieces.filter(p=>p.unit==='box').reduce((sum,p)=>sum+p.sign*p.qty,0);
+  if(hasPieceDraft()){
+    const d=pieceCalc();
+    if(d.mode!=='ignore')boxes+=d.boxesDelta||0;
+  }
+  return boxes<0?0:boxes;
+}
+function getLayoutPiecesTotal(){
+  let pieces=palletPieces.filter(p=>p.unit==='piece').reduce((sum,p)=>sum+p.sign*p.qty,0);
+  if(hasPieceDraft()){
+    const d=pieceCalc();
+    if(d.mode!=='ignore')pieces+=d.piecesDelta||0;
+  }
+  return pieces<0?0:pieces;
+}
+function addLayoutQuick(n,label){
+  const p={id:palletPieceId++, mode:'loose', name:label||'доброс', qty:n, unit:'box', sign:1, formula:'+'+n};
+  palletPieces.push(p);
+  layoutHistory.push({type:'piece', id:p.id});
+  renderPalletPieces();
   updateLayoutTotal();
 }
 function undoLayout(){
   const last=layoutHistory.pop();
   if(!last)return;
-  if(typeof last==='number'){
-    layoutManual-=last;
-  }else if(last.type==='manual'){
-    layoutManual-=last.value;
-  }else if(last.type==='layer'){
-    layoutLayers=layoutLayers.filter(l=>l.id!==last.id);
-  }
-  if(layoutManual<0)layoutManual=0;
-  renderLayoutManual();
+  if(last.type==='piece'){const ids=last.ids||[last.id];palletPieces=palletPieces.filter(p=>!ids.includes(p.id));}
+  renderPalletPieces();
   updateLayoutTotal();
 }
 function clearLayoutManual(){
-  layoutManual=0;
-  layoutHistory=layoutHistory.filter(h=>!(h&&h.type==='manual'));
-  renderLayoutManual();
+  palletPieces=palletPieces.filter(p=>p.mode!=='loose');
+  layoutHistory=layoutHistory.filter(h=>!palletPieces.find(p=>p.id===h.id&&p.mode==='loose'));
   updateLayoutTotal();
 }
-function renderLayoutManual(){
-  const w=document.getElementById('layout-manual-wrap');
-  if(!w)return;
-  if(layoutManual>0){
-    w.style.display='block';
-    w.innerHTML='Добавлено вручную: <b style="color:var(--gold);">'+layoutManual+'</b> <button onclick="clearLayoutManual()" style="background:none;border:none;color:var(--red-bright);cursor:pointer;font-size:13px;">✕</button>';
-  }else{w.style.display='none';w.innerHTML='';}
-}
-function layerPartsFromInputs(){
-  const ids=['layer-part-a','layer-part-b','layer-part-c'];
-  const parts=[];
-  ids.forEach(id=>{
-    const el=document.getElementById(id);
-    if(!el)return;
-    let v=parseInt(el.value);
-    if(!Number.isFinite(v))v=0;
-    if(v<0){v=0;el.value='';}
-    if(v>0)parts.push(v);
-  });
-  let repeat=calcNum('layer-repeat', true)||1;
-  if(repeat<1)repeat=1;
-  const repEl=document.getElementById('layer-repeat');
-  if(repEl&&(!repEl.value||parseInt(repEl.value)<1))repEl.value=repeat;
-  return {parts, repeat};
-}
-function updateLayerPreview(validate=true){
-  const el=document.getElementById('layer-preview');
-  if(!el)return;
-  const data=layerPartsFromInputs();
-  const one=data.parts.reduce((a,b)=>a+b,0);
-  el.textContent=(data.parts.length?data.parts.join(' + '):'0')+' × '+data.repeat+' = '+(one*data.repeat);
-  if(validate)updateLayoutTotal();
-}
-function setLayerTemplate(a,b,c){
-  const vals=[a,b,c];
-  ['layer-part-a','layer-part-b','layer-part-c'].forEach((id,i)=>{const el=document.getElementById(id);if(el)el.value=vals[i]||'';});
-  const r=document.getElementById('layer-repeat');if(r&&!r.value)r.value='1';
-  updateLayerPreview();
-}
-function addLayerPattern(){
-  const data=layerPartsFromInputs();
-  if(!data.parts.length){alert('Введи хотя бы одну часть слоя');return;}
-  const layer={id:layoutLayerId++, parts:data.parts, repeat:data.repeat};
-  layoutLayers.push(layer);
-  layoutHistory.push({type:'layer', id:layer.id, label:'слой '+layer.parts.join('+')+' × '+layer.repeat});
-  renderLayoutLayers();
-  updateLayoutTotal();
-}
-function repeatLastLayer(){
-  const last=layoutLayers[layoutLayers.length-1];
-  if(!last){addLayerPattern();return;}
-  const layer={id:layoutLayerId++, parts:last.parts.slice(), repeat:last.repeat};
-  layoutLayers.push(layer);
-  layoutHistory.push({type:'layer', id:layer.id, label:'повтор слоя '+layer.parts.join('+')+' × '+layer.repeat});
-  renderLayoutLayers();
-  updateLayoutTotal();
-}
-function removeLayer(id){
-  layoutLayers=layoutLayers.filter(l=>l.id!==id);
-  layoutHistory=layoutHistory.filter(h=>!(h&&h.type==='layer'&&h.id===id));
-  renderLayoutLayers();
-  updateLayoutTotal();
-}
-function renderLayoutLayers(){
-  const box=document.getElementById('layout-layer-list');
-  if(!box)return;
-  if(!layoutLayers.length){box.innerHTML='';return;}
-  box.innerHTML=layoutLayers.map(l=>{
-    const one=l.parts.reduce((a,b)=>a+b,0);
-    return '<div style="display:flex;align-items:center;gap:8px;background:var(--surface);border-radius:6px;padding:7px 9px;margin-bottom:5px;">'+
-      '<div style="flex:1;font-family:\'JetBrains Mono\',monospace;font-size:12px;color:var(--text);">'+l.parts.join(' + ')+' × '+l.repeat+' = <b style="color:var(--gold);">'+(one*l.repeat)+'</b></div>'+ 
-      '<button onclick="removeLayer('+l.id+')" style="background:none;border:1px solid var(--red);border-radius:6px;padding:3px 8px;color:var(--red-bright);font-size:12px;cursor:pointer;">✕</button>'+ 
-    '</div>';
-  }).join('');
-}
-function renderLayoutHistory(){
-  const box=document.getElementById('layout-history-log');
-  if(!box)return;
-  const last=layoutHistory.slice(-4).reverse();
-  if(!last.length){box.style.display='none';box.innerHTML='';return;}
-  box.style.display='block';
-  box.innerHTML='<b style="color:var(--muted);">Последние:</b> '+last.map(h=>h.label||('+'+h)).join(' · ');
-}
+function renderLayoutManual(){}
 function clearLayout(){
   const rows=document.getElementById('calc-blocks-rows');
   if(rows)rows.innerHTML='';
   layoutManual=0;
-  layoutLayers=[];
+  palletPieces=[];
   layoutHistory=[];
-  renderLayoutManual();
-  renderLayoutLayers();
-  renderLayoutHistory();
+  renderPalletPieces();
   updateLayoutTotal();
+  doCalc();
 }
 function stepField(id,delta){
   const el=document.getElementById(id);
@@ -1681,33 +2150,25 @@ function addRowToBoxes(){
   if(!rs){alert('Укажи размер ряда (коробок)');return;}
   stepField('calc-boxes-main', rs);
 }
-function applyLayoutToBoxes(){
-  const boxes=updateLayoutTotal();
-  if(!boxes){alert('В конструкторе пока 0 коробок');return;}
-  const el=document.getElementById('calc-boxes-main');
-  const current=calcNum('calc-boxes-main', true);
-  el.value=current+boxes;
-  clearLayout();
-  doCalc();
+function showLayoutLinkedNotice(){
+  alert('Схема уже входит в факт.');
 }
+function applyLayoutToBoxes(){ showLayoutLinkedNotice(); }
+function applyLayoutToPieces(){ showLayoutLinkedNotice(); }
 function toggleLayout(){
   const p=document.getElementById('layout-panel');
   p.style.display = p.style.display==='none'?'block':'none';
+  if(p.style.display==='block')chooseLayoutMode(layoutMode||'block');
 }
 let blkCounter=0;
 function addBlockRow(){
-  blkCounter++;
-  const wrap=document.getElementById('calc-blocks-rows');
-  const div=document.createElement('div');
-  div.className='blk-row';
-  div.style.cssText='background:var(--bg2);border-radius:8px;padding:10px;margin-bottom:8px;display:flex;align-items:center;gap:8px;';
-  div.innerHTML=
-    '<input class="blk-inrow calc-inp" type="number" inputmode="numeric" placeholder="в ряду" style="margin-bottom:0;flex:1;min-width:0;" oninput="doCalc()">'+
-    '<span style="color:var(--muted);font-size:15px;">×</span>'+
-    '<input class="blk-rows calc-inp" type="number" inputmode="numeric" placeholder="рядов" style="margin-bottom:0;flex:1;min-width:0;" oninput="doCalc()">'+
-    '<span class="blk-sub" style="font-family:\'JetBrains Mono\',monospace;font-size:13px;font-weight:700;color:var(--gold);min-width:44px;text-align:right;">= 0</span>'+
-    '<button onclick="this.closest(\'.blk-row\').remove();doCalc();" style="background:none;border:1px solid var(--red);border-radius:6px;padding:4px 9px;color:var(--red-bright);font-size:13px;cursor:pointer;">✕</button>';
-  wrap.appendChild(div);
+  chooseLayoutMode('block');
+  const a=document.getElementById('piece-a');
+  const b=document.getElementById('piece-b');
+  const c=document.getElementById('piece-c');
+  if(a&&!a.value)a.focus();
+  if(c&&!c.value)c.value='1';
+  updatePiecePreview();
 }
 function addToField(fieldId, addId){
   const f=document.getElementById(fieldId);
@@ -1865,8 +2326,8 @@ function renderCellItems(){
   box.innerHTML=h;
 }
 function commitCell(ev){
-  const cell=document.getElementById('calc-cell').value.trim().toUpperCase();
-  if(!cell){alert('Введите ячейку');return;}
+  const rawCell=document.getElementById('calc-cell').value.trim().toUpperCase();
+  const cell=rawCell || 'Ячейка';
   if(!cellBuffer.length){alert('Нет товаров в ячейке');return;}
   const list=getInv();
   list.unshift({
@@ -1988,30 +2449,10 @@ function hh11SaveNewItem(){
   if(query)doSearch(query);
 }
 function hh11Search(q){
-  const box=document.getElementById('hh11-results');
-  if(!box)return;
-  q=(q||'').trim().toLowerCase();
-  if(!q){box.style.display='none';return;}
-  const words=q.replace(/-/g,' ').split(/\s+/).filter(Boolean);
-  const customBc=getCustomBarcodes();
-  let res=hh11AllItems().filter(i=>{
-    const ut=(i.ut||'').toLowerCase();
-    const name=(i.name||'').toLowerCase().replace(/-/g,' ');
-    const bc=((i.barcode||'')+' '+(customBc[i.ut]||'')).toLowerCase();
-    if(ut.includes(q)||bc.includes(q))return true;
-    const hay=name+' '+ut;
-    return words.length && words.every(w=>hay.includes(w));
-  }).slice(0,30);
-  if(!res.length){box.innerHTML='<div class="no-results" style="padding:12px;">Не найдено в каталоге. Нажми «+ Новый товар сразу в каталог».</div>';box.style.display='block';return;}
-  box.innerHTML=res.map(i=>{
-    const ut=jsStr(i.ut);
-    const nm=jsStr(i.name);
-    return '<div onclick="hh11Pick(\''+ut+'\',\''+nm+'\')" style="padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;">'+
-      '<div style="font-size:11px;font-weight:700;color:var(--gold);">'+escHtml(i.ut)+'</div><div style="font-size:12px;color:var(--text);line-height:1.25;">'+escHtml(i.name)+'</div></div>';
-  }).join('');
-  box.style.display='block';
+  showProductResults('hh11-results',q,'hh11Pick','<div class="smart-empty">Не найдено в каталоге. Нажми «+ Новый» и сохрани позицию сразу сюда.</div>',30);
 }
 function hh11Pick(ut,name){
+  pushRecentProduct(ut);
   hh11Picked={ut,name};
   const r=document.getElementById('hh11-results');if(r)r.style.display='none';
   const s=document.getElementById('hh11-search');if(s)s.value='';
@@ -2156,7 +2597,6 @@ function hh11RenderGroup(title,items,kind){
       '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'+
       (kind==='listed'?'<button onclick="hh11TogglePlaced('+it.id+')" class="exi-btn" style="flex:1;min-width:120px;border-color:'+(placed?'#5a8a4a':'var(--border)')+';color:'+(placed?'#5a8a4a':'var(--muted)')+';">'+(placed?'↩ Вернуть':'✓ Размещено')+'</button>':'')+
       '<button onclick="hh11ToggleMismatch('+it.id+')" class="exi-btn" style="flex:1;min-width:110px;border-color:'+(mismatch?'#c0392b':'var(--border)')+';color:'+(mismatch?'#c0392b':'var(--muted)')+';">Пересорт</button></div>'+ 
-      (it.comment?'<div style="font-size:11px;color:var(--muted);margin-top:7px;">'+escHtml(it.comment)+'</div>':'')+
       (placed&&it.placedTs?'<div style="font-size:10px;color:#5a8a4a;margin-top:5px;">Размещено: '+escHtml(it.placedTs)+'</div>':'')+
       '</div>';
   });
@@ -2183,7 +2623,7 @@ function hh11ExportText(){
   const arr=getHH11();
   const d=new Date().toLocaleDateString('ru-RU');
   const flags=x=>(x.placed?' — РАЗМЕЩЕНО':'')+(x.mismatch?' — ПЕРЕСОРТ':'');
-  const fmt=x=>(x.eo?'ЕО '+x.eo+' — ':'')+x.ut+' — '+x.name+' — '+(x.mode==='listed'?'система: '+(x.sys||0)+' — ':'')+'факт: '+(x.fact||0)+flags(x)+(x.comment?' — '+x.comment:'');
+  const fmt=x=>(x.eo?'ЕО '+x.eo+' — ':'')+x.ut+' — '+x.name+' — '+(x.mode==='listed'?'система: '+(x.sys||0)+' — ':'')+'факт: '+(x.fact||0)+flags(x);
   let out='HH 1-1 / '+d+'\n\nЧИСЛЯТСЯ В СИСТЕМЕ:\n';
   const listed=arr.filter(x=>x.mode==='listed');
   out+=listed.length?listed.map(fmt).join('\n'):'—';
@@ -2193,28 +2633,279 @@ function hh11ExportText(){
   return out;
 }
 function hh11ExportTSV(){
-  const rows=[['Группа','ЕО','УТ','Наименование','Количество система','Количество факт','Размещено','Пересорт','Комментарий','Время','Время размещения']];
-  getHH11().slice().reverse().forEach(x=>rows.push([x.mode==='listed'?'Числится':'Не числится',x.eo||'',x.ut,x.name,x.mode==='listed'?(x.sys||0):'',x.fact||0,x.placed?'да':'',x.mismatch?'да':'',x.comment||'',x.ts||'',x.placedTs||'']));
+  // Формат под Excel: Дата | ЕО | Наименование | УТ | Количество
+  // Количество берём по факту, чтобы вставка сразу ложилась в рабочую таблицу без лишних служебных колонок.
+  const dateOnly=x=>String((x&&x.ts)||new Date().toLocaleDateString('ru-RU')).split(',')[0].trim();
+  const rows=[['Дата','ЕО','Наименование','УТ','Количество']];
+  getHH11().slice().reverse().forEach(x=>rows.push([dateOnly(x),x.eo||'',x.name||'',x.ut||'',x.fact||0]));
   return rows.map(r=>r.map(v=>String(v??'').replace(/\t/g,' ').replace(/\n/g,' ')).join('\t')).join('\n');
 }
 function hh11CopyTSV(){const text=hh11ExportTSV();navigator.clipboard.writeText(text).then(()=>alert('TSV скопирован. Можно вставлять в Excel.')).catch(()=>{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);alert('TSV скопирован. Можно вставлять в Excel.');});}
 function hh11Share(){shareText(hh11ExportText());}
 function hh11Clear(){if(confirm('Очистить HH 1-1 за смену?')){set('hh11_log',[]);renderHH11();}}
 
+
+// ── RK CHECK JOURNAL ──
+const getRK = () => get('rk_log');
+let rkPicked=null;
+function rkAllItems(){return [...getCustomItems(),...CATALOG];}
+function rkTodayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+function rkDateRu(iso){if(!iso)return new Date().toLocaleDateString('ru-RU');const p=String(iso).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:iso;}
+function rkEnsureDate(){const el=document.getElementById('rk-date');if(el&&!el.value)el.value=rkTodayISO();}
+function rkKey(date,eo){return (date||'')+'||'+String(eo||'').trim();}
+function rkExistingGroup(date,eo){const key=rkKey(date,eo);return getRK().find(x=>rkKey(x.date,x.eo)===key);}
+function rkRefreshEOState(){
+  rkEnsureDate();
+  const eo=(document.getElementById('rk-eo').value||'').trim();
+  const date=document.getElementById('rk-date').value||rkTodayISO();
+  const box=document.getElementById('rk-eo-state'); if(!box)return;
+  if(!eo){box.style.display='none';box.innerHTML='';return;}
+  const ex=rkExistingGroup(date,eo);
+  if(ex){
+    box.style.display='block';
+    box.innerHTML='Эта ЕО уже есть в журнале. Новые SKU добавятся к этой же ЕО. В TSV дата и ЕО не будут повторяться. Каждая SKU-строка с товаром считается одной ошибкой.';
+  }else{
+    box.style.display='block';
+    box.innerHTML='ЕО ещё нет в журнале. Каждая добавленная SKU-строка будет считаться одной ошибкой. Если вся ЕО без расхождений — жми «✓ ЕО без расхождений» без выбора товара.';
+  }
+}
+function rkNewEO(){
+  ['rk-eo','rk-surplus','rk-shortage','rk-defect','rk-comment'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  rkClearPicked();rkRefreshEOState();
+  const eo=document.getElementById('rk-eo');if(eo)eo.focus();
+}
+function rkToggleNewItemForm(){const f=document.getElementById('rk-new-item-form');if(f)f.style.display=f.style.display==='none'?'block':'none';}
+function rkResetStatus(){
+  const st=document.getElementById('rk-status');
+  if(st) st.value='';
+}
+function rkPick(ut,name){
+  rkPicked={ut:ut,name:name};
+  rkResetStatus();
+  pushRecentProduct(ut);
+  const res=document.getElementById('rk-results');if(res)res.style.display='none';
+  const s=document.getElementById('rk-search');if(s)s.value='';
+  const p=document.getElementById('rk-picked');if(p){p.style.display='block';p.innerHTML='<b style="color:var(--gold);">'+escHtml(ut)+'</b><br>'+escHtml(name)+'<button onclick="rkClearPicked()" style="float:right;background:none;border:none;color:var(--red-bright);font-size:14px;cursor:pointer;">✕</button>';}
+}
+function rkClearPicked(){rkPicked=null;rkResetStatus();const p=document.getElementById('rk-picked');if(p){p.style.display='none';p.innerHTML='';}}
+function rkSaveNewItem(){
+  const ut=(document.getElementById('rk-new-ut').value||'').trim();
+  const name=(document.getElementById('rk-new-name').value||'').trim();
+  const bc=(document.getElementById('rk-new-bc').value||'').trim();
+  if(!ut||!name){alert('Укажи УТ и наименование');return;}
+  const items=getCustomItems();
+  const exists=rkAllItems().some(i=>String(i.ut).toLowerCase()===ut.toLowerCase());
+  if(!exists){items.unshift({ut:ut,name:name,barcode:bc,img:'',custom:true});set('custom_items',items);}else if(bc){saveCustomBarcode(ut,bc);}
+  document.getElementById('rk-new-ut').value='';document.getElementById('rk-new-name').value='';document.getElementById('rk-new-bc').value='';
+  const f=document.getElementById('rk-new-item-form');if(f)f.style.display='none';
+  rkPick(ut,name);
+  if(typeof doSearch==='function')doSearch('');
+}
+function rkSearch(q){
+  showProductResults('rk-results',q,'rkPick','<div class="smart-empty">Не найдено. Нажми «+ Новый» и сохрани позицию сразу в каталог.</div>',30);
+}
+function rkNum(id){const el=document.getElementById(id);return Math.max(0,parseInt(el&&el.value)||0);}
+function rkIssueSnapshot(){
+  const surplus=rkNum('rk-surplus');
+  const shortage=rkNum('rk-shortage');
+  const defect=rkNum('rk-defect');
+  const types=[];
+  if(surplus>0)types.push('surplus');
+  if(shortage>0)types.push('shortage');
+  if(defect>0)types.push('defect');
+  return {surplus,shortage,defect,types};
+}
+function rkExpectedStatusByIssue(type){
+  if(type==='surplus')return 'Изъяли';
+  if(type==='defect')return 'Изъяли';
+  if(type==='shortage')return 'Недостача';
+  return '';
+}
+function rkOnIssueChange(){
+  const snap=rkIssueSnapshot();
+  const st=document.getElementById('rk-status');
+  if(!st)return;
+  if(snap.types.length===1){
+    const need=rkExpectedStatusByIssue(snap.types[0]);
+    if(need)st.value=need;
+  }else if(snap.types.length===0){
+    if(st.value==='Недостача'||st.value==='Изъяли')st.value='';
+  }
+}
+function rkValidateIssue(show){
+  const snap=rkIssueSnapshot();
+  const st=(document.getElementById('rk-status')&&document.getElementById('rk-status').value||'').trim();
+  const fail=(msg)=>{if(show)alert(msg);return false;};
+  if(snap.types.length===0){
+    return fail('Укажи один тип расхождения: излишек, недостача или брак. Если ЕО без расхождений — используй кнопку «ЕО без расхождений».');
+  }
+  if(snap.types.length>1){
+    return fail('Для одной SKU можно указать только один тип: излишек, недостача или брак. Разные расхождения добавляй отдельными строками.');
+  }
+  const type=snap.types[0];
+  const need=rkExpectedStatusByIssue(type);
+  if(need && st!==need){
+    if(show){
+      if(type==='surplus')alert('Излишек не может быть недостачей или браком. Итог: «Изъяли».');
+      else if(type==='defect')alert('Брак не может быть излишком или недостачей. Итог: «Изъяли».');
+      else if(type==='shortage')alert('Недостача не может быть излишком или браком. Итог: «Недостача».');
+    }
+    const sel=document.getElementById('rk-status');
+    if(sel)sel.value=need;
+    return false;
+  }
+  if(type==='surplus' && (snap.shortage>0||snap.defect>0))return fail('Излишек вводится отдельно от недостачи и брака.');
+  if(type==='shortage' && (snap.surplus>0||snap.defect>0))return fail('Недостача вводится отдельно от излишка и брака.');
+  if(type==='defect' && (snap.surplus>0||snap.shortage>0))return fail('Брак вводится отдельно от излишка и недостачи.');
+  return true;
+}
+function rkBaseRow(noDiff){
+  rkEnsureDate();
+  const date=document.getElementById('rk-date').value||rkTodayISO();
+  const eo=(document.getElementById('rk-eo').value||'').trim();
+  if(!eo){alert('Укажи ЕО');return null;}
+  return {date,eo};
+}
+function rkAdd(){
+  const base=rkBaseRow(false); if(!base)return;
+  if(!rkPicked){alert('Выбери товар из каталога или добавь новый. Если ЕО без расхождений — жми отдельную кнопку «✓ ЕО без расхождений».');return;}
+  const status=(document.getElementById('rk-status')&&document.getElementById('rk-status').value||'').trim();
+  if(!status){alert('Выбери итог для этой SKU. При выборе новой SKU поле сбрасывается специально, чтобы не записать старый итог.');return;}
+  if(!rkValidateIssue(true))return;
+  const row={
+    id:Date.now()+Math.floor(Math.random()*1000),
+    date:base.date,
+    eo:base.eo,
+    errors:1,
+    ut:rkPicked.ut,
+    name:rkPicked.name,
+    surplus:rkNum('rk-surplus'),
+    shortage:rkNum('rk-shortage'),
+    defect:rkNum('rk-defect'),
+    status:status,
+    comment:'',
+    ts:Date.now()
+  };
+  const arr=getRK();arr.unshift(row);set('rk_log',arr);
+  ['rk-surplus','rk-shortage','rk-defect','rk-comment'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  rkClearPicked();rkResetStatus();rkRefreshEOState();renderRK();
+}
+function rkAddNoDiff(){
+  const base=rkBaseRow(true); if(!base)return;
+  const row={
+    id:Date.now()+Math.floor(Math.random()*1000),
+    date:base.date,
+    eo:base.eo,
+    errors:0,
+    ut:'',name:'',surplus:0,shortage:0,defect:0,
+    status:'Без расхождений',
+    comment:'',
+    ts:Date.now()
+  };
+  const arr=getRK();arr.unshift(row);set('rk_log',arr);
+  ['rk-surplus','rk-shortage','rk-defect','rk-comment'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  rkClearPicked();rkResetStatus();rkRefreshEOState();renderRK();
+}
+function rkDel(id){set('rk_log',getRK().filter(x=>x.id!==id));renderRK();rkRefreshEOState();}
+function rkGroups(arr){
+  const ordered=(arr||getRK()).slice().reverse();
+  const map=new Map(), groups=[];
+  ordered.forEach(x=>{
+    const key=rkKey(x.date,x.eo);
+    let g=map.get(key);
+    if(!g){g={date:x.date,eo:x.eo,errors:0,rows:[]};map.set(key,g);groups.push(g);} 
+    // Ошибка = одна SKU-строка с товаром. ЕО без расхождений даёт 0.
+    g.errors += x.ut ? 1 : 0;
+    g.rows.push(x);
+  });
+  return groups;
+}
+function rkStats(arr){
+  const groups=rkGroups(arr||getRK());
+  const flat=groups.flatMap(g=>g.rows);
+  return {eo:groups.length, rows:flat.length, errors:groups.reduce((s,g)=>s+(parseInt(g.errors)||0),0), surplus:flat.reduce((s,x)=>s+(parseInt(x.surplus)||0),0), shortage:flat.reduce((s,x)=>s+(parseInt(x.shortage)||0),0), defect:flat.reduce((s,x)=>s+(parseInt(x.defect)||0),0)};
+}
+function renderRK(){
+  rkEnsureDate();rkRefreshEOState();
+  const arr=getRK();
+  const st=rkStats(arr);
+  const cnt=document.getElementById('rk-count');if(cnt)cnt.textContent=st.eo+' ЕО / '+st.rows+' строк';
+  const sum=document.getElementById('rk-summary');
+  if(sum)sum.innerHTML='<div style="font-family:\'Oswald\',sans-serif;font-size:11px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">Итог проверки</div>'+ 
+    '<div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px;">'+
+    '<div class="calc-mid" style="margin:0;"><span class="calc-mid-lbl">Проверено ЕО</span><span class="calc-mid-val">'+st.eo+'</span></div>'+ 
+    '<div class="calc-mid" style="margin:0;"><span class="calc-mid-lbl">Строк</span><span class="calc-mid-val">'+st.rows+'</span></div>'+ 
+    '<div class="calc-mid" style="margin:0;"><span class="calc-mid-lbl">Ошибок</span><span class="calc-mid-val">'+st.errors+'</span></div>'+ 
+    '<div class="calc-mid" style="margin:0;"><span class="calc-mid-lbl">Излишек</span><span class="calc-mid-val">'+st.surplus+'</span></div>'+ 
+    '<div class="calc-mid" style="margin:0;"><span class="calc-mid-lbl">Недостача</span><span class="calc-mid-val">'+st.shortage+'</span></div>'+ 
+    '<div class="calc-mid" style="margin:0;"><span class="calc-mid-lbl">Брак</span><span class="calc-mid-val">'+st.defect+'</span></div></div>';
+  const box=document.getElementById('rk-list');if(!box)return;
+  const groups=rkGroups(arr).reverse(); // newest EO group first on screen
+  if(!groups.length){box.innerHTML='<div class="no-results">Журнал РК пуст</div>';return;}
+  box.innerHTML=groups.map(g=>{
+    const rows=g.rows.slice().reverse(); // newest row in group first
+    let rowsHtml=rows.map(x=>{
+      const comm=(x.status||'');
+      const title=x.ut?('<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:var(--gold);">'+escHtml(x.ut)+'</div><div style="font-size:12px;color:var(--text);line-height:1.25;">'+escHtml(x.name)+'</div>'):'<div style="font-size:12px;color:var(--text);font-weight:700;">ЕО без расхождений</div>';
+      return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:9px 10px;margin-top:7px;">'+
+        '<div style="display:flex;justify-content:space-between;gap:8px;"><div style="flex:1;min-width:0;">'+title+'</div><button onclick="rkDel('+x.id+')" style="background:none;border:none;color:var(--red-bright);font-size:14px;cursor:pointer;">✕</button></div>'+ 
+        '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:7px;font-size:11px;text-align:center;color:var(--muted);"><div>Изл.<br><b style="color:var(--text);">'+(parseInt(x.surplus)||0)+'</b></div><div>Нед.<br><b style="color:var(--text);">'+(parseInt(x.shortage)||0)+'</b></div><div>Брак<br><b style="color:var(--text);">'+(parseInt(x.defect)||0)+'</b></div></div>'+ 
+        '<div style="font-size:11px;color:var(--muted);margin-top:7px;">'+escHtml(comm)+'</div></div>';
+    }).join('');
+    return '<div class="gen-box" style="border-left:3px solid var(--red);padding:11px;margin-bottom:10px;">'+
+      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">'+
+      '<div style="flex:1;min-width:0;"><div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin-bottom:5px;"><span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:var(--text);background:rgba(0,0,0,0.16);border:1px solid var(--border);border-radius:6px;padding:3px 6px;">ЕО '+escHtml(g.eo)+'</span><button onclick="zoomBarcode(\''+jsStr(g.eo)+'\')" style="background:none;border:1px solid var(--border);border-radius:6px;padding:3px 7px;color:var(--muted);font-family:\'Oswald\',sans-serif;font-size:10px;cursor:pointer;">ШК</button><span style="font-size:10px;color:var(--muted);">'+rkDateRu(g.date)+'</span></div>'+ 
+      '<div style="font-size:11px;color:var(--muted);">Ошибок по SKU: <b style="color:var(--gold);">'+(g.errors||0)+'</b> · строк: '+g.rows.length+'</div></div></div>'+rowsHtml+'</div>';
+  }).join('');
+}
+function rkCommentForTSV(x){return (x.status||'');}
+function rkExportTSV(){
+  const rows=[['Дата','ЕО','Ошибки','Наименование','УТ','Излишек','Недостача','Брак','Итог']];
+  rkGroups(getRK()).forEach(g=>{
+    g.rows.forEach((x,idx)=>rows.push([idx===0?rkDateRu(g.date):'',idx===0?(g.eo||''):'',x.ut?1:0,x.name||'',x.ut||'',parseInt(x.surplus)||0,parseInt(x.shortage)||0,parseInt(x.defect)||0,rkCommentForTSV(x)]));
+  });
+  return rows.map(r=>r.map(v=>String(v??'').replace(/\t/g,' ').replace(/\n/g,' ')).join('\t')).join('\n');
+}
+function rkExportText(){
+  const st=rkStats(getRK());
+  return 'Проверка РК\nПроверено ЕО: '+st.eo+'\nСтрок: '+st.rows+'\nОшибок: '+st.errors+'\nИзлишек: '+st.surplus+'\nНедостача: '+st.shortage+'\nБрак: '+st.defect+'\n\n'+rkExportTSV();
+}
+function rkCopyTSV(){const text=rkExportTSV();navigator.clipboard.writeText(text).then(()=>alert('TSV РК скопирован. Можно вставлять в Excel.')).catch(()=>{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);alert('TSV РК скопирован. Можно вставлять в Excel.');});}
+function rkShare(){shareText(rkExportText());}
+function rkClear(){if(confirm('Очистить журнал проверки РК?')){set('rk_log',[]);renderRK();rkRefreshEOState();}}
+
 // ── REPORT ──
-const REPORT_DEFAULT_TASKS = ["Приёмка", "Размещение", "Пополнение", "Отбор", "Пересчёт", "Брак", "Возвраты"];
+const REPORT_DEFAULT_TASKS = ["Заведение излишков (Сухой)", "Заведение излишков (Холод)", "Пересчет мест хранения по заданиям на пересчет (Сухой)", "Пересчет мест хранения по заданиям на пересчет (Холод)", "Плановый пересчет хранения (Сухой)", "Плановый пересчет хранения (Холод)", "Подсчёт ТОПов (Сухой)", "Подсчёт ТОПов (Холод)", "Проверка зоны хранения и выборочный пересчет мест с ревизором УР", "Проверка и обработка брака", "Проверка и обработка буферных зон", "Проверка пустых мест хранения (Сухой)", "Проверка пустых мест хранения (Холод)"];
 function todayKey(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
 function getReportAll(){try{return JSON.parse(localStorage.getItem('report')||'{}');}catch(e){return {};}}
 function getReportDay(key){const all=getReportAll();return all[key]||null;}
+function normalizeReportDay(day){
+  day = day || {tasks:[]};
+  const old = Array.isArray(day.tasks) ? day.tasks : [];
+  const byName = {};
+  old.forEach(t=>{ if(t && t.name && byName[t.name]===undefined) byName[t.name]=parseInt(t.qty)||0; });
+  const tasks = REPORT_DEFAULT_TASKS.map(n=>({name:n, qty:byName[n]||0}));
+  old.forEach(t=>{
+    if(t && t.name && !REPORT_DEFAULT_TASKS.includes(t.name)) tasks.push({name:t.name, qty:parseInt(t.qty)||0});
+  });
+  day.tasks = tasks;
+  return day;
+}
 function ensureReportToday(){
   const all=getReportAll();const k=todayKey();
   if(!all[k]){
-    // carry over custom task names from most recent day, values reset to 0
-    let names=[...REPORT_DEFAULT_TASKS];
+    let extra=[];
     const keys=Object.keys(all).sort();
-    if(keys.length){const last=all[keys[keys.length-1]];if(last&&last.tasks){names=last.tasks.map(t=>t.name);}}
-    all[k]={tasks:names.map(n=>({name:n,qty:0}))};
+    if(keys.length){
+      const last=all[keys[keys.length-1]];
+      if(last&&last.tasks){extra=last.tasks.filter(t=>t && t.name && !REPORT_DEFAULT_TASKS.includes(t.name)).map(t=>({name:t.name, qty:0}));}
+    }
+    all[k]=normalizeReportDay({tasks:[...REPORT_DEFAULT_TASKS.map(n=>({name:n,qty:0})), ...extra]});
     localStorage.setItem('report',JSON.stringify(all));
+  }else{
+    const before=JSON.stringify(all[k].tasks||[]);
+    all[k]=normalizeReportDay(all[k]);
+    if(JSON.stringify(all[k].tasks||[])!==before) localStorage.setItem('report',JSON.stringify(all));
   }
   return all[k];
 }
@@ -2235,6 +2926,15 @@ function reportSetQty(idx,val){
   day.tasks[idx].qty=parseInt(val)||0;
   saveReportDay(day);
   renderReportTotal();
+}
+function reportAddQty(idx,val){
+  const add=parseInt(val)||0;
+  if(!add)return;
+  const day=ensureReportToday();
+  if(!day.tasks[idx])return;
+  day.tasks[idx].qty=(parseInt(day.tasks[idx].qty)||0)+add;
+  saveReportDay(day);
+  renderReport();
 }
 function reportDelTask(idx){
   if(!confirm('Удалить задачу?'))return;
@@ -2259,10 +2959,14 @@ function renderReport(){
   acts.style.display='flex';
   let h='';
   day.tasks.forEach((t,idx)=>{
-    h+='<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:8px;padding:11px 13px;margin-bottom:8px;display:flex;align-items:center;gap:10px;">'+
-      '<div style="flex:1;min-width:0;font-size:13px;color:var(--text);">'+t.name+'</div>'+
-      '<input type="number" inputmode="numeric" value="'+(t.qty||0)+'" onchange="reportSetQty('+idx+',this.value)" onfocus="this.select()" style="width:80px;background:var(--paper);border:2px solid var(--line);border-radius:8px;padding:8px;font-family:\'JetBrains Mono\',monospace;font-size:16px;color:var(--paper-ink);text-align:center;outline:none;-webkit-appearance:none;">'+
+    h+='<div style="background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:8px;padding:11px 13px;margin-bottom:8px;display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;">'+
+      '<div style="min-width:0;font-size:13px;color:var(--text);">'+t.name+'</div>'+
       '<button onclick="reportDelTask('+idx+')" style="background:none;border:none;color:var(--red-bright);font-size:14px;cursor:pointer;">✕</button>'+
+      '<input type="number" inputmode="numeric" value="'+(t.qty||0)+'" onchange="reportSetQty('+idx+',this.value)" onfocus="this.select()" style="width:100%;background:var(--paper);border:2px solid var(--line);border-radius:8px;padding:9px;font-family:\'JetBrains Mono\',monospace;font-size:16px;color:var(--paper-ink);text-align:center;outline:none;-webkit-appearance:none;">'+
+      '<div style="display:flex;gap:6px;">'+
+        '<input id="report-add-'+idx+'" type="number" inputmode="numeric" placeholder="+" onfocus="this.select()" style="width:74px;background:var(--paper);border:2px solid var(--line);border-radius:8px;padding:9px;font-family:\'JetBrains Mono\',monospace;font-size:15px;color:var(--paper-ink);text-align:center;outline:none;-webkit-appearance:none;">'+
+        '<button onclick="reportAddFromInput('+idx+')" class="quick-btn" style="width:44px;padding:8px 0;">+</button>'+
+      '</div>'+
     '</div>';
   });
   h+='<div style="background:var(--bg2);border-radius:8px;padding:12px 13px;margin-top:4px;display:flex;justify-content:space-between;align-items:center;"><span style="font-family:\'Oswald\',sans-serif;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">Всего за день</span><span id="report-total-val" style="font-family:\'Spectral\',serif;font-weight:600;font-size:22px;color:var(--gold);">0</span></div>';
@@ -2324,6 +3028,20 @@ function shareReport(){
   shareText(txt);
 }
 
+function reportExportTSV(){
+  const day=ensureReportToday();
+  const date=new Date().toLocaleDateString('ru');
+  const rows=[['Дата','Задача','Кол-во']];
+  day.tasks.forEach((t,idx)=>rows.push([idx===0?date:'',t.name||'',parseInt(t.qty)||0]));
+  return rows.map(r=>r.map(v=>String(v ?? '').replace(/\t/g,' ').replace(/\r?\n/g,' ')).join('\t')).join('\n');
+}
+function copyReportTSV(){
+  const text=reportExportTSV();
+  navigator.clipboard.writeText(text).then(()=>alert('TSV отчёта скопирован. Можно вставлять в Excel.')).catch(()=>{
+    const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);alert('TSV отчёта скопирован. Можно вставлять в Excel.');
+  });
+}
+
 // ── FULL BACKUP ──
 function exportData(){
   const data={
@@ -2343,6 +3061,7 @@ function exportData(){
     eo_range_saved:get('eo_range_saved'),
     eo_range_used:getObj('eo_range_used'),
     hh11_log:getHH11(),
+    rk_log:getRK(),
     exported_at:new Date().toISOString()
   };
   const a=document.createElement('a');
@@ -2375,6 +3094,7 @@ function importData(){
         if(data.eo_range_saved){set('eo_range_saved',data.eo_range_saved);}
         if(data.eo_range_used){const ex=getObj('eo_range_used');set('eo_range_used',{...data.eo_range_used,...ex});}
         if(data.hh11_log){const ex=getHH11();const exI=new Set(ex.map(r=>r.id));set('hh11_log',[...data.hh11_log.filter(r=>!exI.has(r.id)),...ex]);}
+        if(data.rk_log){const ex=getRK();const exI=new Set(ex.map(r=>r.id));set('rk_log',[...data.rk_log.filter(r=>!exI.has(r.id)),...ex]);}
         alert('Бэкап восстановлен!');
         renderCells('');
       }catch(err){alert('Ошибка чтения файла');}
@@ -2719,10 +3439,32 @@ document.addEventListener('click',function(e){
   }
 });
 
-render();
-renderJournal();
-renderInv();
-renderHH11();
+function showBootError(part, err){
+  console.error('Ошибка запуска блока:', part, err);
+  try {
+    const b=document.getElementById('app-error-banner');
+    if(b){
+      b.style.display='block';
+      b.textContent='Ошибка блока '+part+': '+(err && err.message ? err.message : err);
+    }
+  } catch(_){}
+}
+function safeStartPart(part, fn){
+  try { if(typeof fn==='function') fn(); }
+  catch(e){ showBootError(part, e); }
+}
+function startAppStable(){
+  safeStartPart('товары', typeof render==='function' ? render : null);
+  safeStartPart('журнал пересчёта', typeof renderJournal==='function' ? renderJournal : null);
+  safeStartPart('инвентаризация', typeof renderInv==='function' ? renderInv : null);
+  safeStartPart('HH 1-1', typeof renderHH11==='function' ? renderHH11 : null);
+  safeStartPart('ячейки', typeof renderCells==='function' ? renderCells : null);
+  safeStartPart('ЕО', typeof renderEO==='function' ? renderEO : null);
+  safeStartPart('РК', typeof renderRK==='function' ? renderRK : null);
+  safeStartPart('отчёт', typeof renderReport==='function' ? renderReport : null);
+}
+startAppStable();
+window.__APP_STABLE_BUILD__='2026-06-07-stabilized';
 </script>
 <div id="bc-zoom" onclick="if(event.target===this)closeZoom()">
   <button id="bc-zoom-close" onclick="closeZoom()">Закрыть</button>
