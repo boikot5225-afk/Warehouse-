@@ -1,4 +1,4 @@
-const CACHE_NAME = 'lenfer-pwa-2026-06-10-v1';
+const CACHE_NAME = 'lenfer-pwa-2026-06-10-v4-creds-fullscreen';
 const APP_SHELL = [
   './',
   './index.html',
@@ -34,7 +34,7 @@ self.addEventListener('fetch', event => {
     event.respondWith(
       fetch(req).then(res => {
         const copy = res.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put('./index.html', copy));
+        caches.open(CACHE_NAME).then(cache => cache.put('./index.html', copy)).catch(() => {});
         return res;
       }).catch(() => caches.match('./index.html'))
     );
