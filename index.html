@@ -559,6 +559,7 @@ window.installPWA = async function(){
       <div style="font-size:11px;color:var(--muted);line-height:1.4;margin-bottom:10px;">Один нормальный JSON без зоопарка: товары, ШК, упаковки, ячейки, заметки, доступы, ЕО, журналы HH 1-1/РК, отчёт.</div>
       <div class="exi-bar" style="margin-bottom:0;">
         <button class="exi-btn" onclick="downloadBackupBlob()">⬇ Скачать JSON</button>
+        <button class="exi-btn" onclick="importDataMerge()">⬆ Добавить из JSON</button>
         <button class="exi-btn" onclick="importData()">⬆ Полностью восстановить JSON</button>
         <button class="exi-btn" onclick="openBackupPaste()">⬆ Вставить JSON</button>
       </div>
@@ -653,7 +654,6 @@ window.installPWA = async function(){
       <button class="pc-btn" onclick="cellPrefix('HH-')" style="border-color:var(--border);color:var(--muted);">HH-</button>
       <button class="pc-btn" onclick="cellPrefix('SH-')" style="border-color:var(--border);color:var(--muted);">SH-</button>
       <button class="pc-btn" onclick="cellPrefix('BRH-')" style="border-color:var(--border);color:var(--muted);">BRH-</button>
-      <button class="pc-btn" onclick="createCalcCellFromCurrent()" style="border-color:var(--gold);color:var(--gold);">+ создать ячейку</button>
     </div>
     <div id="calc-cell-bc" style="margin-top:10px;display:none;text-align:center;background:#fff;border-radius:8px;padding:8px;">
       <canvas id="calc-cell-bc-canvas" style="max-width:100%;"></canvas>
@@ -1183,7 +1183,7 @@ window.installPWA = async function(){
 <div class="overlay" id="backup-modal" style="display:none" onclick="if(event.target===this)closeModal('backup-modal')">
   <div class="modal">
     <div class="modal-title">Бэкап / восстановление</div>
-    <div class="backup-hint">Рабочий формат — только <b>JSON</b>. Восстановление теперь делает <b>полную замену локальных данных</b>: данные телефона не перебивают данные из файла.</div>
+    <div class="backup-hint">Рабочий формат — только <b>JSON</b>. Есть два режима: <b>Добавить</b> — не трогает локальное и докидывает отсутствующее; <b>Полностью восстановить</b> — заменяет локальные данные файлом.</div>
     <label class="modal-lbl">JSON-бэкап / вставка для восстановления</label>
     <textarea class="modal-inp" id="backup-text" rows="10" spellcheck="false" style="resize:vertical;font-size:12px;line-height:1.35;white-space:pre;font-family:'JetBrains Mono',monospace;"></textarea>
     <div id="backup-part-info" class="backup-part-info"></div>
@@ -1197,9 +1197,11 @@ window.installPWA = async function(){
     </div>
     <div class="modal-btns">
       <button class="modal-save" onclick="downloadBackupBlob()">⬇ Скачать JSON</button>
+      <button class="modal-save" onclick="importDataMerge()">⬆ Добавить из JSON-файла</button>
       <button class="modal-cancel" onclick="importData()">⬆ Из JSON-файла полностью</button>
     </div>
     <div class="modal-btns">
+      <button class="modal-save" onclick="restoreBackupMergeFromText()">⬆ Добавить из вставленного JSON</button>
       <button class="modal-save" onclick="restoreBackupFromText()">⬆ Полностью восстановить из JSON</button>
       <button class="modal-cancel" onclick="closeModal('backup-modal')">Закрыть</button>
     </div>
@@ -2676,61 +2678,6 @@ function pickCalcCell(addr, code){
     wrap.style.display='none';
   }
 }
-function calcCellNorm(v){
-  return String(v||'').trim().toUpperCase();
-}
-function calcFindCell(value){
-  const v=calcCellNorm(value);
-  if(!v)return null;
-  return getCells().find(c=>calcCellNorm(c.addr)===v || calcCellNorm(c.code)===v) || null;
-}
-function makeCalcCellRecord(value, interactive){
-  const raw=calcCellNorm(value);
-  if(!raw)return null;
-  let addr=raw;
-  let code='';
-  if(/^\d{4,}$/.test(raw)){
-    code=raw;
-    if(interactive){
-      const typed=prompt('Скан похож на код ячейки. Введи название ячейки, например HH-1-1-1. Если оставить пустым — код станет названием.', '');
-      addr=calcCellNorm(typed)||raw;
-    }
-  }
-  return {id:Date.now()+Math.floor(Math.random()*1000), addr, name:'Создано из пересчёта', code, from:'calc'};
-}
-function ensureCalcCellExists(value, interactive){
-  const raw=calcCellNorm(value);
-  if(!raw)return {ok:false,created:false,reason:'empty'};
-  const existing=calcFindCell(raw);
-  if(existing)return {ok:true,created:false,cell:existing,reason:'exists'};
-  const rec=makeCalcCellRecord(raw, !!interactive);
-  if(!rec)return {ok:false,created:false,reason:'bad'};
-  const cells=getCells();
-  cells.unshift(rec);
-  set('cells', cells);
-  try{repairCellsStorage();}catch(e){}
-  try{renderCells();}catch(e){}
-  return {ok:true,created:true,cell:rec};
-}
-function createCalcCellFromCurrent(){
-  const el=document.getElementById('calc-cell');
-  const value=el?el.value:'';
-  const res=ensureCalcCellExists(value, true);
-  if(!res.ok){alert('Сначала введи или отсканируй ячейку.');return;}
-  if(!res.created){alert('Такая ячейка уже есть в справочнике.');return;}
-  if(el)el.value=res.cell.addr;
-  const wrap=document.getElementById('calc-cell-bc');
-  if(res.cell.code){
-    const cv=document.getElementById('calc-cell-bc-canvas');
-    drawBarcode(cv,res.cell.code);
-    document.getElementById('calc-cell-bc-code').textContent='код: '+res.cell.code;
-    wrap.style.display='block';
-  }else if(wrap){
-    wrap.style.display='none';
-  }
-  try{calcCellSearch(res.cell.addr);}catch(e){}
-  alert('Ячейка создана и добавлена во вкладку «Ячейки».');
-}
 function addToCell(ev){
   const total=parseInt(document.getElementById('calc-result').textContent)||0;
   if(!total){alert('Сначала посчитайте количество');return;}
@@ -2823,7 +2770,6 @@ function commitCell(ev){
   const rawCell=document.getElementById('calc-cell').value.trim().toUpperCase();
   const cell=rawCell || 'Ячейка';
   if(!cellBuffer.length){alert('Нет товаров в ячейке');return;}
-  if(rawCell)ensureCalcCellExists(rawCell, false);
   const list=getInv();
   list.unshift({
     id:Date.now(),
@@ -3610,52 +3556,15 @@ function copyReportTSV(){
 }
 
 // ── FULL BACKUP ──
-function getLocalStorageSnapshot(){
-  const out={};
+function makeBackupData(){
+  const localSnapshot={};
   try{
     for(let i=0;i<localStorage.length;i++){
       const k=localStorage.key(i);
-      if(k)out[k]=localStorage.getItem(k);
+      localSnapshot[k]=localStorage.getItem(k);
     }
-  }catch(e){console.warn('localStorage snapshot failed',e);}
-  return out;
-}
-function restoreLocalStorageSnapshot(snapshot){
-  if(!snapshot || typeof snapshot!=='object' || Array.isArray(snapshot))return;
-  Object.keys(snapshot).forEach(k=>{
-    try{
-      const v=snapshot[k];
-      localStorage.setItem(k, typeof v==='string'?v:JSON.stringify(v));
-    }catch(e){console.warn('restore localStorage key failed',k,e);}
-  });
-}
-function catalogSnapshotExtras(snapshot, customItems){
-  if(!Array.isArray(snapshot))return [];
-  const builtin=new Set(CATALOG.map(i=>String(i.ut||'')));
-  const custom=new Set(backupArr(customItems).map(i=>String(i.ut||'')));
-  const seen=new Set();
-  const out=[];
-  snapshot.forEach(i=>{
-    if(!i || typeof i!=='object')return;
-    const ut=String(i.ut||'').trim();
-    if(!ut || builtin.has(ut) || custom.has(ut) || seen.has(ut))return;
-    seen.add(ut);
-    out.push({ut, name:String(i.name||''), img:String(i.img||''), barcode:String(i.barcode||'')});
-  });
-  return out;
-}
-function backupRestoreKey(data,key,normalizer){
-  if(backupOwn(data,key))set(key, normalizer(data[key]));
-  else if(!data.local_storage_snapshot)set(key, normalizer(undefined));
-}
-function makeBackupData(){
+  }catch(e){}
   return {
-    backup_version:9,
-    app:'Warehouse21 / L’Enfer',
-    backup_kind:'full-local-state-and-catalog',
-    local_storage_snapshot:getLocalStorageSnapshot(),
-    catalog_snapshot:CATALOG,
-    catalog_count:CATALOG.length,
     custom_items:getCustomItems(),
     custom_barcodes:getCustomBarcodes(),
     product_edits:getProductEdits(),
@@ -3674,6 +3583,9 @@ function makeBackupData(){
     eo_range_used:getObj('eo_range_used'),
     hh11_log:getHH11(),
     rk_log:getRK(),
+    localStorage_snapshot:localSnapshot,
+    catalog_snapshot:CATALOG,
+    backup_version:10,
     exported_at:new Date().toISOString()
   };
 }
@@ -3899,11 +3811,8 @@ function backupArr(v){return Array.isArray(v)?v:[];}
 function backupObj(v){return (v && typeof v==='object' && !Array.isArray(v))?v:{};}
 function clearBackupLocalState(){
   try{
-    localStorage.clear();
-  }catch(e){
-    try{BACKUP_STATE_KEYS.concat(BACKUP_MIRROR_KEYS).forEach(k=>localStorage.removeItem(k));}catch(_){}
-    console.warn('clear backup state failed',e);
-  }
+    BACKUP_STATE_KEYS.concat(BACKUP_MIRROR_KEYS).forEach(k=>localStorage.removeItem(k));
+  }catch(e){console.warn('clear backup state failed',e);}
 }
 function normalizeBackupData(data){
   if(data && data.state && typeof data.state==='object')data=data.state;
@@ -3916,60 +3825,155 @@ function applyBackupData(data,opts){
   const mode=opts.mode||'replace';
 
   if(mode==='merge'){
-    // Старый мягкий режим оставлен как запасной, но обычный импорт его больше не использует.
-    if(data.custom_items){const ex=getCustomItems();const exU=new Set(ex.map(i=>i.ut));set('custom_items',[...ex,...data.custom_items.filter(i=>!exU.has(i.ut))]);}
-    if(data.custom_barcodes){const ex=getCustomBarcodes();set('custom_barcodes',{...ex,...data.custom_barcodes});}
-    if(data.product_edits){const ex=getProductEdits();set('product_edits',{...ex,...data.product_edits});}
-    if(data.cells){const ex=getCells();const exA=new Set(ex.map(c=>c.addr));set('cells',[...ex,...data.cells.filter(c=>!exA.has(c.addr))]);}
-    if(data.cell_favorites){set('cell_favorites',Array.from(new Set([...getCellFavs(),...data.cell_favorites])));}
-    if(data.pack_sizes){const ex=getPackSizes();set('pack_sizes',{...ex,...data.pack_sizes});}
-    if(data.notes){const ex=getNotes();const exI=new Set(ex.map(n=>n.id));set('notes',[...data.notes.filter(n=>!exI.has(n.id)),...ex]);}
-    if(data.credentials){const ex=getCreds();const exI=new Set(ex.map(c=>c.id));set('credentials',[...data.credentials.filter(c=>!exI.has(c.id)),...ex]);}
-    if(data.eo_codes){const ex=getEOCodes();const exI=new Set(ex.map(c=>c.id));set('eo_codes',[...data.eo_codes.filter(c=>!exI.has(c.id)),...ex]);}
-    if(data.journal){const ex=getJournal();const exI=new Set(ex.map(r=>r.id));set('journal',[...data.journal.filter(r=>!exI.has(r.id)),...ex]);}
-    if(data.report){const ex=getReportAll();set('report',{...ex,...data.report});}
-    if(data.search_history){set('search_history',data.search_history);}
-    if(data.inventory){const ex=getInv();const exI=new Set(ex.map(r=>r.id));set('inventory',[...data.inventory.filter(r=>!exI.has(r.id)),...ex]);}
-    if(data.favorites){const ex=getFavs();const merged=[...new Set([...ex,...data.favorites])];set('favorites',merged);}
-    if(data.eo_range_saved){set('eo_range_saved',data.eo_range_saved);}
-    if(data.eo_range_used){const ex=getObj('eo_range_used');set('eo_range_used',{...ex,...data.eo_range_used});}
-    if(data.hh11_log){const ex=getHH11();const exI=new Set(ex.map(r=>r.id));set('hh11_log',[...data.hh11_log.filter(r=>!exI.has(r.id)),...ex]);}
-    if(data.rk_log){const ex=getRK();const exI=new Set(ex.map(r=>r.id));set('rk_log',[...data.rk_log.filter(r=>!exI.has(r.id)),...ex]);}
-    return {mode:'merge'};
+    const stats={mode:'merge',added:{custom_items:0,custom_barcodes:0,product_edits:0,cells:0,cell_favorites:0,pack_sizes:0,notes:0,credentials:0,eo_codes:0,journal:0,report:0,search_history:0,inventory:0,favorites:0,eo_range_saved:0,eo_range_used:0,hh11_log:0,rk_log:0,unknown_keys:0},conflicts:[]};
+    const stamp=Date.now().toString(36);
+    const same=(a,b)=>{try{return JSON.stringify(a)===JSON.stringify(b);}catch(e){return false;}};
+    const uniqId=()=>Date.now()+Math.floor(Math.random()*1000000);
+    const mark=(obj,reason)=>({...obj,_imported:true,_importedAt:new Date().toISOString(),_importReason:reason});
+    const conflictCustomItem=(ut,name,barcode,reason)=>{
+      const custom=getCustomItems();
+      const originalUt=String(ut||'').trim()||('JSON-'+uniqId());
+      const dupUt=originalUt+' ·ДУБЛЬ·'+stamp+'-'+(stats.conflicts.length+1);
+      custom.unshift(mark({ut:dupUt,originalUt:originalUt,name:'[ДУБЛЬ JSON: '+originalUt+'] '+String(name||'Без названия'),barcode:String(barcode||''),img:'',custom:true,conflict:true},reason));
+      set('custom_items',custom);
+      stats.added.custom_items++;
+      stats.conflicts.push(reason+' / '+originalUt);
+    };
+    const addArrayById=(key,getter,setter,idFn)=>{
+      const incoming=backupArr(data[key]);
+      if(!incoming.length)return;
+      const ex=getter();
+      const idx=new Map(ex.map(x=>[String(idFn(x)),x]));
+      incoming.forEach(x=>{
+        const id=String(idFn(x));
+        if(!id || id==='undefined' || id==='null'){
+          ex.unshift(mark({...x,id:uniqId()},key+': нет id'));
+          stats.added[key]++;return;
+        }
+        if(!idx.has(id)){ex.unshift(x);idx.set(id,x);stats.added[key]++;return;}
+        if(!same(idx.get(id),x)){
+          const copy=mark({...x,id:uniqId()},key+': конфликт id '+id+', создан дубль');
+          ex.unshift(copy);stats.added[key]++;stats.conflicts.push(key+' id '+id);
+        }
+      });
+      setter(ex);
+    };
+    const mergePlainObjectMissing=(key,getter,setter)=>{
+      const incoming=backupObj(data[key]);
+      const ex=getter();
+      Object.keys(incoming).forEach(k=>{
+        if(!backupOwn(ex,k)){ex[k]=incoming[k];stats.added[key]++;}
+        else if(!same(ex[k],incoming[k])){stats.conflicts.push(key+' '+k);}
+      });
+      setter(ex);
+    };
+
+    // Товары: ничего существующее не перетираем. Конфликтные артикулы уводим в отдельный дубль.
+    if(data.custom_items){
+      const ex=getCustomItems();
+      const byUt=new Map(ex.map(x=>[String(x.ut||''),x]));
+      backupArr(data.custom_items).forEach(item=>{
+        const ut=String(item&&item.ut||'').trim();
+        if(!ut)return;
+        if(!byUt.has(ut)){ex.unshift(item);byUt.set(ut,item);stats.added.custom_items++;}
+        else if(!same(byUt.get(ut),item)){
+          const dup={...item,ut:ut+' ·ДУБЛЬ·'+stamp+'-'+(stats.conflicts.length+1),originalUt:ut,name:'[ДУБЛЬ JSON: '+ut+'] '+String(item.name||'Без названия'),custom:true,conflict:true,_imported:true,_importedAt:new Date().toISOString()};
+          ex.unshift(dup);stats.added.custom_items++;stats.conflicts.push('custom_items '+ut);
+        }
+      });
+      set('custom_items',ex);
+    }
+    if(data.product_edits){
+      const ex=getProductEdits();
+      const incoming=backupObj(data.product_edits);
+      Object.keys(incoming).forEach(k=>{
+        const v=incoming[k];
+        if(!backupOwn(ex,k)){ex[k]=v;stats.added.product_edits++;}
+        else if(!same(ex[k],v)){conflictCustomItem(v.ut||k,v.name||('Правка '+k),v.barcode||'', 'product_edits конфликт '+k);}
+      });
+      set('product_edits',ex);
+    }
+    if(data.custom_barcodes){
+      const ex=getCustomBarcodes();
+      const incoming=backupObj(data.custom_barcodes);
+      Object.keys(incoming).forEach(k=>{
+        if(!backupOwn(ex,k)){ex[k]=incoming[k];stats.added.custom_barcodes++;}
+        else if(String(ex[k]||'')!==String(incoming[k]||'')){conflictCustomItem(k,'ШК из JSON для '+k,incoming[k], 'custom_barcodes конфликт '+k);}
+      });
+      set('custom_barcodes',ex);
+    }
+
+    // Ячейки: если адрес свободен — добавляем. Если адрес занят, но данные другие — создаём дубль с новым адресом.
+    if(data.cells){
+      const ex=getCells();
+      const byAddr=new Map(ex.map(c=>[String(c.addr||'').toUpperCase(),c]));
+      backupArr(data.cells).forEach(c=>{
+        const addr=String(c&&c.addr||c&&c.cell||c&&c.address||'').trim();
+        if(!addr)return;
+        const key=addr.toUpperCase();
+        const norm=normalizeCellItem(c)||c;
+        if(!byAddr.has(key)){ex.unshift(norm);byAddr.set(key,norm);stats.added.cells++;}
+        else if(!same(byAddr.get(key),norm)){
+          const dup=normalizeCellItem({...norm,addr:addr+' ·ДУБЛЬ·'+stamp+'-'+(stats.conflicts.length+1),name:'[ДУБЛЬ JSON: '+addr+'] '+String(norm.name||''),id:uniqId(),conflict:true})||norm;
+          ex.unshift(dup);stats.added.cells++;stats.conflicts.push('cells '+addr);
+        }
+      });
+      set('cells',ex);
+    }
+
+    if(data.cell_favorites){const ex=getCellFavs();const merged=Array.from(new Set([...ex,...backupArr(data.cell_favorites)]));stats.added.cell_favorites=Math.max(0,merged.length-ex.length);set('cell_favorites',merged);}
+    mergePlainObjectMissing('pack_sizes',getPackSizes,(v)=>set('pack_sizes',v));
+    mergePlainObjectMissing('report',getReportAll,(v)=>set('report',v));
+    mergePlainObjectMissing('eo_range_used',()=>getObj('eo_range_used'),(v)=>set('eo_range_used',v));
+    addArrayById('notes',getNotes,(v)=>set('notes',v),x=>x.id);
+    addArrayById('credentials',getCreds,(v)=>set('credentials',v),x=>x.id);
+    addArrayById('eo_codes',getEOCodes,(v)=>set('eo_codes',v),x=>x.id||x.code);
+    addArrayById('journal',getJournal,(v)=>set('journal',v),x=>x.id);
+    addArrayById('inventory',getInv,(v)=>set('inventory',v),x=>x.id);
+    addArrayById('hh11_log',getHH11,(v)=>set('hh11_log',v),x=>x.id);
+    addArrayById('rk_log',getRK,(v)=>set('rk_log',v),x=>x.id);
+    if(data.search_history){const ex=get('search_history');const merged=Array.from(new Set([...backupArr(data.search_history),...ex]));stats.added.search_history=Math.max(0,merged.length-ex.length);set('search_history',merged);}
+    if(data.favorites){const ex=getFavs();const merged=Array.from(new Set([...ex,...backupArr(data.favorites)]));stats.added.favorites=Math.max(0,merged.length-ex.length);set('favorites',merged);}
+    if(data.eo_range_saved){const cur=get('eo_range_saved');if(!cur.length){set('eo_range_saved',backupArr(data.eo_range_saved));stats.added.eo_range_saved=backupArr(data.eo_range_saved).length;}else if(!same(cur,data.eo_range_saved)){stats.conflicts.push('eo_range_saved оставлен локальный, входящий не перетёрт');}}
+
+    // Неизвестные будущие ключи из полного снимка localStorage: добавляем только если локально такого ключа нет.
+    if(data.localStorage_snapshot && typeof data.localStorage_snapshot==='object'){
+      Object.keys(data.localStorage_snapshot).forEach(k=>{
+        try{if(localStorage.getItem(k)===null){localStorage.setItem(k,data.localStorage_snapshot[k]);stats.added.unknown_keys++;}}catch(e){}
+      });
+    }
+    try{repairCredentialsStorage();repairCellsStorage();}catch(e){}
+    try{localStorage.setItem('last_merge_stats',JSON.stringify(stats));}catch(e){}
+    return stats;
   }
 
-  // Основной режим: полная замена локального состояния данными из JSON.
-  // v9: бэкап теперь несёт полный снимок localStorage + снимок справочника УТ.
-  // Поэтому восстанавливаются не только известные ключи, но и будущие/служебные ключи приложения.
+  // Новый основной режим: полная замена локального состояния данными из JSON.
+  // Так телефон больше не держит старые product_edits/custom_barcodes поверх файла с ПК.
   clearBackupLocalState();
-  if(data.local_storage_snapshot)restoreLocalStorageSnapshot(data.local_storage_snapshot);
-
-  const customBase=backupOwn(data,'custom_items')?backupArr(data.custom_items):getCustomItems();
-  const catalogExtras=catalogSnapshotExtras(data.catalog_snapshot, customBase);
-  if(backupOwn(data,'custom_items') || data.catalog_snapshot || !data.local_storage_snapshot){
-    set('custom_items', customBase.concat(catalogExtras));
+  if(data.localStorage_snapshot && typeof data.localStorage_snapshot==='object'){
+    try{Object.keys(data.localStorage_snapshot).forEach(k=>localStorage.setItem(k,data.localStorage_snapshot[k]));}catch(e){}
   }
-
-  backupRestoreKey(data,'custom_barcodes',backupObj);
-  backupRestoreKey(data,'product_edits',backupObj);
-  backupRestoreKey(data,'cells',backupArr);
-  backupRestoreKey(data,'cell_favorites',backupArr);
-  backupRestoreKey(data,'pack_sizes',backupObj);
-  backupRestoreKey(data,'notes',backupArr);
-  backupRestoreKey(data,'credentials',backupArr);
-  backupRestoreKey(data,'eo_codes',backupArr);
-  backupRestoreKey(data,'journal',backupArr);
-  backupRestoreKey(data,'report',backupObj);
-  backupRestoreKey(data,'search_history',backupArr);
-  backupRestoreKey(data,'inventory',backupArr);
-  backupRestoreKey(data,'favorites',backupArr);
-  backupRestoreKey(data,'eo_range_saved',backupArr);
-  backupRestoreKey(data,'eo_range_used',backupObj);
-  backupRestoreKey(data,'hh11_log',backupArr);
-  backupRestoreKey(data,'rk_log',backupArr);
+  set('custom_items', backupArr(data.custom_items));
+  set('custom_barcodes', backupObj(data.custom_barcodes));
+  set('product_edits', backupObj(data.product_edits));
+  set('cells', backupArr(data.cells));
+  set('cell_favorites', backupArr(data.cell_favorites));
+  set('pack_sizes', backupObj(data.pack_sizes));
+  set('notes', backupArr(data.notes));
+  set('credentials', backupArr(data.credentials));
+  set('eo_codes', backupArr(data.eo_codes));
+  set('journal', backupArr(data.journal));
+  set('report', backupObj(data.report));
+  set('search_history', backupArr(data.search_history));
+  set('inventory', backupArr(data.inventory));
+  set('favorites', backupArr(data.favorites));
+  set('eo_range_saved', backupArr(data.eo_range_saved));
+  set('eo_range_used', backupObj(data.eo_range_used));
+  set('hh11_log', backupArr(data.hh11_log));
+  set('rk_log', backupArr(data.rk_log));
 
   try{repairCredentialsStorage();repairCellsStorage();}catch(e){}
-  return {mode:'replace', catalogExtras:catalogExtras.length, restoredLocalStorage:!!data.local_storage_snapshot};
+  return {mode:'replace'};
 }
 function afterFullRestore(){
   try{repairCredentialsStorage();repairCellsStorage();}catch(e){}
@@ -3984,6 +3988,39 @@ function restoreBackupFromText(){
     closeModal('backup-modal');
     afterFullRestore();
   }catch(e){alert('Не удалось прочитать JSON. Проверь, что вставлен весь бэкап целиком.');}
+}
+function summarizeMergeStats(stats){
+  const a=(stats&&stats.added)||{};
+  const total=Object.values(a).reduce((s,n)=>s+(Number(n)||0),0);
+  const conflicts=(stats&&stats.conflicts&&stats.conflicts.length)||0;
+  return 'Добавление завершено. Новых записей: '+total+'. Конфликтов-дублей/неперетёртых полей: '+conflicts+'. Сейчас приложение перезагрузится.';
+}
+function restoreBackupMergeFromText(){
+  const raw=normalizeBackupRaw((document.getElementById('backup-text')?.value||'').trim());
+  if(!raw){alert('Вставь JSON-бэкап.');return;}
+  try{
+    const stats=applyBackupData(JSON.parse(raw),{mode:'merge'});
+    alert(summarizeMergeStats(stats));
+    closeModal('backup-modal');
+    afterFullRestore();
+  }catch(e){console.error(e);alert('Не удалось прочитать JSON. Проверь, что вставлен весь бэкап целиком.');}
+}
+function importDataMerge(){
+  const input=document.createElement('input');
+  input.type='file';input.accept='.json,application/json,text/plain';
+  input.onchange=e=>{
+    const file=e.target.files[0];if(!file)return;
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      try{
+        const stats=applyBackupData(JSON.parse(normalizeBackupRaw(ev.target.result)),{mode:'merge'});
+        alert(summarizeMergeStats(stats));
+        afterFullRestore();
+      }catch(err){console.error(err);alert('Ошибка чтения файла');}
+    };
+    reader.readAsText(file);
+  };
+  document.body.appendChild(input);input.click();document.body.removeChild(input);
 }
 function importData(){
   const input=document.createElement('input');
