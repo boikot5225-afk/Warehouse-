@@ -653,6 +653,7 @@ window.installPWA = async function(){
       <button class="pc-btn" onclick="cellPrefix('HH-')" style="border-color:var(--border);color:var(--muted);">HH-</button>
       <button class="pc-btn" onclick="cellPrefix('SH-')" style="border-color:var(--border);color:var(--muted);">SH-</button>
       <button class="pc-btn" onclick="cellPrefix('BRH-')" style="border-color:var(--border);color:var(--muted);">BRH-</button>
+      <button class="pc-btn" onclick="createCalcCellFromCurrent()" style="border-color:var(--gold);color:var(--gold);">+ создать ячейку</button>
     </div>
     <div id="calc-cell-bc" style="margin-top:10px;display:none;text-align:center;background:#fff;border-radius:8px;padding:8px;">
       <canvas id="calc-cell-bc-canvas" style="max-width:100%;"></canvas>
@@ -2675,6 +2676,61 @@ function pickCalcCell(addr, code){
     wrap.style.display='none';
   }
 }
+function calcCellNorm(v){
+  return String(v||'').trim().toUpperCase();
+}
+function calcFindCell(value){
+  const v=calcCellNorm(value);
+  if(!v)return null;
+  return getCells().find(c=>calcCellNorm(c.addr)===v || calcCellNorm(c.code)===v) || null;
+}
+function makeCalcCellRecord(value, interactive){
+  const raw=calcCellNorm(value);
+  if(!raw)return null;
+  let addr=raw;
+  let code='';
+  if(/^\d{4,}$/.test(raw)){
+    code=raw;
+    if(interactive){
+      const typed=prompt('Скан похож на код ячейки. Введи название ячейки, например HH-1-1-1. Если оставить пустым — код станет названием.', '');
+      addr=calcCellNorm(typed)||raw;
+    }
+  }
+  return {id:Date.now()+Math.floor(Math.random()*1000), addr, name:'Создано из пересчёта', code, from:'calc'};
+}
+function ensureCalcCellExists(value, interactive){
+  const raw=calcCellNorm(value);
+  if(!raw)return {ok:false,created:false,reason:'empty'};
+  const existing=calcFindCell(raw);
+  if(existing)return {ok:true,created:false,cell:existing,reason:'exists'};
+  const rec=makeCalcCellRecord(raw, !!interactive);
+  if(!rec)return {ok:false,created:false,reason:'bad'};
+  const cells=getCells();
+  cells.unshift(rec);
+  set('cells', cells);
+  try{repairCellsStorage();}catch(e){}
+  try{renderCells();}catch(e){}
+  return {ok:true,created:true,cell:rec};
+}
+function createCalcCellFromCurrent(){
+  const el=document.getElementById('calc-cell');
+  const value=el?el.value:'';
+  const res=ensureCalcCellExists(value, true);
+  if(!res.ok){alert('Сначала введи или отсканируй ячейку.');return;}
+  if(!res.created){alert('Такая ячейка уже есть в справочнике.');return;}
+  if(el)el.value=res.cell.addr;
+  const wrap=document.getElementById('calc-cell-bc');
+  if(res.cell.code){
+    const cv=document.getElementById('calc-cell-bc-canvas');
+    drawBarcode(cv,res.cell.code);
+    document.getElementById('calc-cell-bc-code').textContent='код: '+res.cell.code;
+    wrap.style.display='block';
+  }else if(wrap){
+    wrap.style.display='none';
+  }
+  try{calcCellSearch(res.cell.addr);}catch(e){}
+  alert('Ячейка создана и добавлена во вкладку «Ячейки».');
+}
 function addToCell(ev){
   const total=parseInt(document.getElementById('calc-result').textContent)||0;
   if(!total){alert('Сначала посчитайте количество');return;}
@@ -2767,6 +2823,7 @@ function commitCell(ev){
   const rawCell=document.getElementById('calc-cell').value.trim().toUpperCase();
   const cell=rawCell || 'Ячейка';
   if(!cellBuffer.length){alert('Нет товаров в ячейке');return;}
+  if(rawCell)ensureCalcCellExists(rawCell, false);
   const list=getInv();
   list.unshift({
     id:Date.now(),
@@ -3553,8 +3610,52 @@ function copyReportTSV(){
 }
 
 // ── FULL BACKUP ──
+function getLocalStorageSnapshot(){
+  const out={};
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      if(k)out[k]=localStorage.getItem(k);
+    }
+  }catch(e){console.warn('localStorage snapshot failed',e);}
+  return out;
+}
+function restoreLocalStorageSnapshot(snapshot){
+  if(!snapshot || typeof snapshot!=='object' || Array.isArray(snapshot))return;
+  Object.keys(snapshot).forEach(k=>{
+    try{
+      const v=snapshot[k];
+      localStorage.setItem(k, typeof v==='string'?v:JSON.stringify(v));
+    }catch(e){console.warn('restore localStorage key failed',k,e);}
+  });
+}
+function catalogSnapshotExtras(snapshot, customItems){
+  if(!Array.isArray(snapshot))return [];
+  const builtin=new Set(CATALOG.map(i=>String(i.ut||'')));
+  const custom=new Set(backupArr(customItems).map(i=>String(i.ut||'')));
+  const seen=new Set();
+  const out=[];
+  snapshot.forEach(i=>{
+    if(!i || typeof i!=='object')return;
+    const ut=String(i.ut||'').trim();
+    if(!ut || builtin.has(ut) || custom.has(ut) || seen.has(ut))return;
+    seen.add(ut);
+    out.push({ut, name:String(i.name||''), img:String(i.img||''), barcode:String(i.barcode||'')});
+  });
+  return out;
+}
+function backupRestoreKey(data,key,normalizer){
+  if(backupOwn(data,key))set(key, normalizer(data[key]));
+  else if(!data.local_storage_snapshot)set(key, normalizer(undefined));
+}
 function makeBackupData(){
   return {
+    backup_version:9,
+    app:'Warehouse21 / L’Enfer',
+    backup_kind:'full-local-state-and-catalog',
+    local_storage_snapshot:getLocalStorageSnapshot(),
+    catalog_snapshot:CATALOG,
+    catalog_count:CATALOG.length,
     custom_items:getCustomItems(),
     custom_barcodes:getCustomBarcodes(),
     product_edits:getProductEdits(),
@@ -3798,8 +3899,11 @@ function backupArr(v){return Array.isArray(v)?v:[];}
 function backupObj(v){return (v && typeof v==='object' && !Array.isArray(v))?v:{};}
 function clearBackupLocalState(){
   try{
-    BACKUP_STATE_KEYS.concat(BACKUP_MIRROR_KEYS).forEach(k=>localStorage.removeItem(k));
-  }catch(e){console.warn('clear backup state failed',e);}
+    localStorage.clear();
+  }catch(e){
+    try{BACKUP_STATE_KEYS.concat(BACKUP_MIRROR_KEYS).forEach(k=>localStorage.removeItem(k));}catch(_){}
+    console.warn('clear backup state failed',e);
+  }
 }
 function normalizeBackupData(data){
   if(data && data.state && typeof data.state==='object')data=data.state;
@@ -3834,30 +3938,38 @@ function applyBackupData(data,opts){
     return {mode:'merge'};
   }
 
-  // Новый основной режим: полная замена локального состояния данными из JSON.
-  // Так телефон больше не держит старые product_edits/custom_barcodes поверх файла с ПК.
+  // Основной режим: полная замена локального состояния данными из JSON.
+  // v9: бэкап теперь несёт полный снимок localStorage + снимок справочника УТ.
+  // Поэтому восстанавливаются не только известные ключи, но и будущие/служебные ключи приложения.
   clearBackupLocalState();
-  set('custom_items', backupArr(data.custom_items));
-  set('custom_barcodes', backupObj(data.custom_barcodes));
-  set('product_edits', backupObj(data.product_edits));
-  set('cells', backupArr(data.cells));
-  set('cell_favorites', backupArr(data.cell_favorites));
-  set('pack_sizes', backupObj(data.pack_sizes));
-  set('notes', backupArr(data.notes));
-  set('credentials', backupArr(data.credentials));
-  set('eo_codes', backupArr(data.eo_codes));
-  set('journal', backupArr(data.journal));
-  set('report', backupObj(data.report));
-  set('search_history', backupArr(data.search_history));
-  set('inventory', backupArr(data.inventory));
-  set('favorites', backupArr(data.favorites));
-  set('eo_range_saved', backupArr(data.eo_range_saved));
-  set('eo_range_used', backupObj(data.eo_range_used));
-  set('hh11_log', backupArr(data.hh11_log));
-  set('rk_log', backupArr(data.rk_log));
+  if(data.local_storage_snapshot)restoreLocalStorageSnapshot(data.local_storage_snapshot);
+
+  const customBase=backupOwn(data,'custom_items')?backupArr(data.custom_items):getCustomItems();
+  const catalogExtras=catalogSnapshotExtras(data.catalog_snapshot, customBase);
+  if(backupOwn(data,'custom_items') || data.catalog_snapshot || !data.local_storage_snapshot){
+    set('custom_items', customBase.concat(catalogExtras));
+  }
+
+  backupRestoreKey(data,'custom_barcodes',backupObj);
+  backupRestoreKey(data,'product_edits',backupObj);
+  backupRestoreKey(data,'cells',backupArr);
+  backupRestoreKey(data,'cell_favorites',backupArr);
+  backupRestoreKey(data,'pack_sizes',backupObj);
+  backupRestoreKey(data,'notes',backupArr);
+  backupRestoreKey(data,'credentials',backupArr);
+  backupRestoreKey(data,'eo_codes',backupArr);
+  backupRestoreKey(data,'journal',backupArr);
+  backupRestoreKey(data,'report',backupObj);
+  backupRestoreKey(data,'search_history',backupArr);
+  backupRestoreKey(data,'inventory',backupArr);
+  backupRestoreKey(data,'favorites',backupArr);
+  backupRestoreKey(data,'eo_range_saved',backupArr);
+  backupRestoreKey(data,'eo_range_used',backupObj);
+  backupRestoreKey(data,'hh11_log',backupArr);
+  backupRestoreKey(data,'rk_log',backupArr);
 
   try{repairCredentialsStorage();repairCellsStorage();}catch(e){}
-  return {mode:'replace'};
+  return {mode:'replace', catalogExtras:catalogExtras.length, restoredLocalStorage:!!data.local_storage_snapshot};
 }
 function afterFullRestore(){
   try{repairCredentialsStorage();repairCellsStorage();}catch(e){}
