@@ -654,6 +654,7 @@ window.installPWA = async function(){
       <button class="pc-btn" onclick="cellPrefix('HH-')" style="border-color:var(--border);color:var(--muted);">HH-</button>
       <button class="pc-btn" onclick="cellPrefix('SH-')" style="border-color:var(--border);color:var(--muted);">SH-</button>
       <button class="pc-btn" onclick="cellPrefix('BRH-')" style="border-color:var(--border);color:var(--muted);">BRH-</button>
+      <button class="pc-btn" onclick="createCalcCellFromInput(event)" style="border-color:var(--gold);color:var(--gold);">+ создать ячейку</button>
     </div>
     <div id="calc-cell-bc" style="margin-top:10px;display:none;text-align:center;background:#fff;border-radius:8px;padding:8px;">
       <canvas id="calc-cell-bc-canvas" style="max-width:100%;"></canvas>
@@ -2481,11 +2482,17 @@ function addPalletPiece(){
   renderPalletPieces();
   updateLayoutTotal();
 }
-function clearPieceForm(){
+function clearPieceForm(options){
+  options = options || {};
   ['piece-name','piece-a','piece-b','piece-c','piece-loose','openbox-boxes','openbox-pieces','layer-part-a','layer-part-b','layer-part-c','layer-part-d','corr-box-plus','corr-box-minus','corr-piece-plus','corr-piece-minus','corr-box-plus-add','corr-box-minus-add','corr-piece-plus-add','corr-piece-minus-add'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const c=document.getElementById('piece-c');if(c)c.value='1';
   const r=document.getElementById('layer-repeat');if(r)r.value='1';
-  updatePiecePreview();
+  if(options.silent){
+    const el=document.getElementById('piece-preview');
+    if(el)el.textContent='+ '+modeTitle(layoutMode||'block')+': 0 = 0';
+  }else{
+    updatePiecePreview();
+  }
 }
 function removePalletPiece(id){
   palletPieces=palletPieces.filter(p=>p.id!==id);
@@ -2569,12 +2576,16 @@ function clearLayoutManual(){
   updateLayoutTotal();
 }
 function renderLayoutManual(){}
-function clearLayout(){
+function clearLayout(options){
+  options = options || {};
   const rows=document.getElementById('calc-blocks-rows');
   if(rows)rows.innerHTML='';
   layoutManual=0;
   palletPieces=[];
   layoutHistory=[];
+  if(options.clearDraft !== false){
+    clearPieceForm({silent:true});
+  }
   renderPalletPieces();
   updateLayoutTotal();
   doCalc();
@@ -2654,13 +2665,13 @@ function calcCellSearch(q){
   if(!box)return;
   q=(q||'').trim().toUpperCase();
   const all=allCellsList();
-  let res = q ? all.filter(c=>c.addr.toUpperCase().includes(q)||(c.name||'').toUpperCase().includes(q)) : all;
+  let res = q ? all.filter(c=>c.addr.toUpperCase().includes(q)||(c.name||'').toUpperCase().includes(q)||String(c.code||'').toUpperCase().includes(q)) : all;
   res=res.slice(0,30);
   if(!res.length){box.style.display='none';return;}
   box.innerHTML=res.map(c=>{
     const a=c.addr.replace(/'/g,"\\'");
     const code=(c.code||'').replace(/'/g,"\\'");
-    return '<div onclick="pickCalcCell(\''+a+'\',\''+code+'\')" style="padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;"><div style="font-family:\'JetBrains Mono\',monospace;font-size:13px;font-weight:700;color:var(--gold);">'+c.addr+'</div>'+(c.name?'<div style="font-size:11px;color:var(--muted);">'+c.name+'</div>':'')+'</div>';
+    return '<div onclick="pickCalcCell(\''+a+'\',\''+code+'\')" style="padding:10px 12px;border-bottom:1px solid var(--border);cursor:pointer;"><div style="font-family:\'JetBrains Mono\',monospace;font-size:13px;font-weight:700;color:var(--gold);">'+c.addr+'</div>'+(c.name?'<div style="font-size:11px;color:var(--muted);">'+c.name+'</div>':'')+(c.code?'<div style="font-family:\'JetBrains Mono\',monospace;font-size:10px;color:var(--muted);margin-top:2px;">код: '+c.code+'</div>':'')+'</div>';
   }).join('');
   box.style.display='block';
 }
@@ -2677,6 +2688,58 @@ function pickCalcCell(addr, code){
   }else{
     wrap.style.display='none';
   }
+}
+function normCellKey(v){return String(v||'').trim().toUpperCase();}
+function findCellByAddrOrCode(value){
+  const q=normCellKey(value);
+  if(!q)return null;
+  return allCellsList().find(c=>normCellKey(c.addr)===q || normCellKey(c.code)===q) || null;
+}
+function createCellRecordFromCalc(addr,name,code){
+  const rec={addr:normCellKey(addr),name:String(name||'').trim(),code:String(code||'').trim(),id:Date.now()+Math.floor(Math.random()*1000)};
+  const cells=getCells();
+  cells.unshift(rec);
+  set('cells',normalizeCellsArray(cells));
+  repairCellsStorage();
+  try{renderCells();}catch(e){}
+  try{calcCellSearch(document.getElementById('calc-cell').value);}catch(e){}
+  return rec;
+}
+function ensureCalcCellExists(raw, opts){
+  opts=opts||{};
+  raw=normCellKey(raw);
+  if(!raw){if(!opts.silent)alert('Введите или отсканируйте ячейку');return null;}
+  const existing=findCellByAddrOrCode(raw);
+  if(existing){
+    if(!opts.silent){pickCalcCell(existing.addr,existing.code||'');alert('Ячейка уже есть в справочнике');}
+    return existing;
+  }
+  let addr='', code='', name='';
+  if(/^\d{4,}$/.test(raw)){
+    code=raw;
+    if(opts.silent){addr=raw;name='Создано из счёта';}
+    else{
+      addr=prompt('Название ячейки для этого кода/ШК:', '') || '';
+      if(!addr)return null;
+      name=prompt('Описание ячейки (можно пусто):', 'Создано из счёта') || 'Создано из счёта';
+    }
+  }else{
+    addr=raw;
+    if(opts.silent){code=raw;name='Создано из счёта';}
+    else{
+      code=prompt('Код/ШК ячейки. Можно оставить пустым — тогда кодом будет название ячейки:', '') || raw;
+      name=prompt('Описание ячейки (можно пусто):', 'Создано из счёта') || 'Создано из счёта';
+    }
+  }
+  const rec=createCellRecordFromCalc(addr,name,code);
+  pickCalcCell(rec.addr,rec.code||'');
+  if(!opts.silent)alert('Ячейка создана и добавлена во вкладку «Ячейки»');
+  return rec;
+}
+function createCalcCellFromInput(ev){
+  if(ev)ev.preventDefault();
+  const el=document.getElementById('calc-cell');
+  ensureCalcCellExists(el?el.value:'',{silent:false});
 }
 function addToCell(ev){
   const total=parseInt(document.getElementById('calc-result').textContent)||0;
@@ -2770,6 +2833,7 @@ function commitCell(ev){
   const rawCell=document.getElementById('calc-cell').value.trim().toUpperCase();
   const cell=rawCell || 'Ячейка';
   if(!cellBuffer.length){alert('Нет товаров в ячейке');return;}
+  if(rawCell && rawCell!=='ЯЧЕЙКА')ensureCalcCellExists(rawCell,{silent:true});
   const list=getInv();
   list.unshift({
     id:Date.now(),
