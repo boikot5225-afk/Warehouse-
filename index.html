@@ -226,7 +226,7 @@ main{padding:14px 16px;max-width:680px;margin:0 auto;}
 
 .cell-search-wrap{position:relative;margin-bottom:13px;}
 .cell-search-wrap svg{position:absolute;left:13px;top:50%;transform:translateY(-50%);opacity:0.5;pointer-events:none;color:var(--red);}
-.cell-search{width:100%;background:var(--paper);border:2px solid var(--line);border-radius:10px;padding:11px 14px 11px 38px;font-family:'JetBrains Mono',monospace;font-size:15px;color:var(--paper-ink);outline:none;-webkit-appearance:none;}
+.cell-search{width:100%;background:var(--paper);border:2px solid var(--line);border-radius:10px;padding:11px 48px 11px 38px;font-family:'JetBrains Mono',monospace;font-size:15px;color:var(--paper-ink);outline:none;-webkit-appearance:none;}
 .cell-search:focus{border-color:var(--red);}
 .exi-bar{display:flex;gap:8px;margin-bottom:14px;}
 .exi-btn{flex:1;padding:11px;border-radius:8px;font-family:'Oswald',sans-serif;font-size:11px;font-weight:600;letter-spacing:0.8px;cursor:pointer;border:1px solid var(--border);background:var(--surface);color:var(--text);text-transform:uppercase;}
@@ -559,15 +559,16 @@ window.installPWA = async function(){
       <div style="font-size:11px;color:var(--muted);line-height:1.4;margin-bottom:10px;">Один нормальный JSON без зоопарка: товары, ШК, упаковки, ячейки, заметки, доступы, ЕО, журналы HH 1-1/РК, отчёт.</div>
       <div class="exi-bar" style="margin-bottom:0;">
         <button class="exi-btn" onclick="downloadBackupBlob()">⬇ Скачать JSON</button>
-        <button class="exi-btn" onclick="importData()">⬆ Восстановить JSON</button>
+        <button class="exi-btn" onclick="importData()">⬆ Полностью восстановить JSON</button>
         <button class="exi-btn" onclick="openBackupPaste()">⬆ Вставить JSON</button>
       </div>
     </div>
   </details>
   <div class="cells-tools">
-    <div class="cell-search-wrap">
+    <div class="cell-search-wrap smart-search-box">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
       <input id="cell-search" class="cell-search" type="search" placeholder="Поиск: HH, BRH, брак, буфер, код…" oninput="renderCells(this.value)">
+      <button class="search-clear-btn" onclick="clearProductSearch('cell-search','cells')" title="Очистить поиск">×</button>
     </div>
     <div class="cell-filter-bar" id="cell-filter-bar">
       <button class="cell-chip active" data-filter="all" onclick="setCellFilter('all')">Все</button>
@@ -1181,7 +1182,7 @@ window.installPWA = async function(){
 <div class="overlay" id="backup-modal" style="display:none" onclick="if(event.target===this)closeModal('backup-modal')">
   <div class="modal">
     <div class="modal-title">Бэкап / восстановление</div>
-    <div class="backup-hint">Рабочий формат — только <b>JSON</b>. PDF/TXT/части убраны, чтобы не плодить фантомные бэкапы.</div>
+    <div class="backup-hint">Рабочий формат — только <b>JSON</b>. Восстановление теперь делает <b>полную замену локальных данных</b>: данные телефона не перебивают данные из файла.</div>
     <label class="modal-lbl">JSON-бэкап / вставка для восстановления</label>
     <textarea class="modal-inp" id="backup-text" rows="10" spellcheck="false" style="resize:vertical;font-size:12px;line-height:1.35;white-space:pre;font-family:'JetBrains Mono',monospace;"></textarea>
     <div id="backup-part-info" class="backup-part-info"></div>
@@ -1195,10 +1196,10 @@ window.installPWA = async function(){
     </div>
     <div class="modal-btns">
       <button class="modal-save" onclick="downloadBackupBlob()">⬇ Скачать JSON</button>
-      <button class="modal-cancel" onclick="importData()">⬆ Из JSON-файла</button>
+      <button class="modal-cancel" onclick="importData()">⬆ Из JSON-файла полностью</button>
     </div>
     <div class="modal-btns">
-      <button class="modal-save" onclick="restoreBackupFromText()">⬆ Восстановить из JSON</button>
+      <button class="modal-save" onclick="restoreBackupFromText()">⬆ Полностью восстановить из JSON</button>
       <button class="modal-cancel" onclick="closeModal('backup-modal')">Закрыть</button>
     </div>
   </div>
@@ -1475,11 +1476,12 @@ function showProductResults(boxId,q,pickFn,notFoundHtml,limit){
 }
 function runSearchByContext(ctx){
   if(ctx==='catalog'){const el=document.getElementById('search');query=(el.value||'').trim();if(query)doSearch(query);else{filtered=[];render();}}
+  else if(ctx==='cells'){const el=document.getElementById('cell-search');renderCells(el?el.value:'');}
   else if(ctx==='calc'){const el=document.getElementById('calc-prod-search');calcProdSearch(el?el.value:'');}
   else if(ctx==='hh11'){const el=document.getElementById('hh11-search');hh11Search(el?el.value:'');}
   else if(ctx==='rk'){const el=document.getElementById('rk-search');rkSearch(el?el.value:'');}
 }
-function clearProductSearch(id,ctx){const el=document.getElementById(id);if(!el)return;el.value='';el.focus();runSearchByContext(ctx);}
+function clearProductSearch(id,ctx){const el=document.getElementById(id);if(!el)return;el.value='';try{el.dispatchEvent(new Event('input',{bubbles:true}));}catch(e){} el.focus();runSearchByContext(ctx);}
 function prefixProductSearch(id,prefix,ctx){const el=document.getElementById(id);if(!el)return;el.value=prefix;el.focus();try{el.setSelectionRange(el.value.length,el.value.length);}catch(e){}runSearchByContext(ctx);}
 function toggleNumericSearch(id,btn){const el=document.getElementById(id);if(!el)return;const on=el.getAttribute('inputmode')==='numeric';if(on){el.setAttribute('inputmode','text');if(btn)btn.classList.remove('primary');}else{el.setAttribute('inputmode','numeric');if(btn)btn.classList.add('primary');}el.focus();}
 function scanProductSearch(id,ctx){startScan(id,function(text){const el=document.getElementById(id);if(el){el.value=text;el.focus();}runSearchByContext(ctx);});}
@@ -2135,7 +2137,20 @@ function closeZoom(){
 }
 function clearEORange(){
   if(!confirm('Очистить сохранённый диапазон?'))return;
+  try{
+    localStorage.removeItem('eo_range_saved');
+    localStorage.removeItem('eo_range_used');
+  }catch(e){}
   set('eo_range_saved',[]);
+  set('eo_range_used',{});
+  eoRangeFilter='all';
+  document.querySelectorAll('#eo-filter-bar .cell-chip').forEach(b=>b.classList.toggle('active', b.dataset.eofilter==='all'));
+  const from=document.getElementById('eo-range-from');
+  const to=document.getElementById('eo-range-to');
+  if(from)from.value='';
+  if(to)to.value='';
+  const box=document.getElementById('eo-range-list');
+  if(box)box.innerHTML='';
   renderEORange();
 }
 function renderEO(){
@@ -3774,34 +3789,88 @@ function openBackupPaste(){
   openModal('backup-modal');
   setTimeout(()=>document.getElementById('backup-text')?.focus(),100);
 }
-function applyBackupData(data){
-  if(data.custom_items){const ex=getCustomItems();const exU=new Set(ex.map(i=>i.ut));set('custom_items',[...ex,...data.custom_items.filter(i=>!exU.has(i.ut))]);}
-  if(data.custom_barcodes){const ex=getCustomBarcodes();set('custom_barcodes',{...data.custom_barcodes,...ex});}
-  if(data.product_edits){const ex=getProductEdits();set('product_edits',{...data.product_edits,...ex});}
-  if(data.cells){const ex=getCells();const exA=new Set(ex.map(c=>c.addr));set('cells',[...ex,...data.cells.filter(c=>!exA.has(c.addr))]);}
-  if(data.cell_favorites){set('cell_favorites',Array.from(new Set([...getCellFavs(),...data.cell_favorites])));}
-  if(data.pack_sizes){const ex=getPackSizes();set('pack_sizes',{...data.pack_sizes,...ex});}
-  if(data.notes){const ex=getNotes();const exI=new Set(ex.map(n=>n.id));set('notes',[...data.notes.filter(n=>!exI.has(n.id)),...ex]);}
-  if(data.credentials){const ex=getCreds();const exI=new Set(ex.map(c=>c.id));set('credentials',[...data.credentials.filter(c=>!exI.has(c.id)),...ex]);}
-  if(data.eo_codes){const ex=getEOCodes();const exI=new Set(ex.map(c=>c.id));set('eo_codes',[...data.eo_codes.filter(c=>!exI.has(c.id)),...ex]);}
-  if(data.journal){const ex=getJournal();const exI=new Set(ex.map(r=>r.id));set('journal',[...data.journal.filter(r=>!exI.has(r.id)),...ex]);}
-  if(data.report){const ex=getReportAll();localStorage.setItem('report',JSON.stringify({...data.report,...ex}));}
-  if(data.search_history){set('search_history',data.search_history);}
-  if(data.inventory){const ex=getInv();const exI=new Set(ex.map(r=>r.id));set('inventory',[...data.inventory.filter(r=>!exI.has(r.id)),...ex]);}
-  if(data.favorites){const ex=getFavs();const merged=[...new Set([...ex,...data.favorites])];set('favorites',merged);}
-  if(data.eo_range_saved){set('eo_range_saved',data.eo_range_saved);}
-  if(data.eo_range_used){const ex=getObj('eo_range_used');set('eo_range_used',{...data.eo_range_used,...ex});}
-  if(data.hh11_log){const ex=getHH11();const exI=new Set(ex.map(r=>r.id));set('hh11_log',[...data.hh11_log.filter(r=>!exI.has(r.id)),...ex]);}
-  if(data.rk_log){const ex=getRK();const exI=new Set(ex.map(r=>r.id));set('rk_log',[...data.rk_log.filter(r=>!exI.has(r.id)),...ex]);}
+const BACKUP_STATE_KEYS=[
+  'custom_items','custom_barcodes','product_edits','cells','cell_favorites','pack_sizes','notes','credentials','eo_codes','journal','report','search_history','inventory','favorites','eo_range_saved','eo_range_used','hh11_log','rk_log'
+];
+const BACKUP_MIRROR_KEYS=['credentials__mirror','cells__mirror','cell_favorites__mirror','credentials__saved_at','cells__saved_at','cell_favorites__saved_at'];
+function backupOwn(obj,key){return Object.prototype.hasOwnProperty.call(obj||{},key);}
+function backupArr(v){return Array.isArray(v)?v:[];}
+function backupObj(v){return (v && typeof v==='object' && !Array.isArray(v))?v:{};}
+function clearBackupLocalState(){
+  try{
+    BACKUP_STATE_KEYS.concat(BACKUP_MIRROR_KEYS).forEach(k=>localStorage.removeItem(k));
+  }catch(e){console.warn('clear backup state failed',e);}
+}
+function normalizeBackupData(data){
+  if(data && data.state && typeof data.state==='object')data=data.state;
+  if(data && data.appState && typeof data.appState==='object')data=data.appState;
+  return data||{};
+}
+function applyBackupData(data,opts){
+  opts=opts||{};
+  data=normalizeBackupData(data);
+  const mode=opts.mode||'replace';
+
+  if(mode==='merge'){
+    // Старый мягкий режим оставлен как запасной, но обычный импорт его больше не использует.
+    if(data.custom_items){const ex=getCustomItems();const exU=new Set(ex.map(i=>i.ut));set('custom_items',[...ex,...data.custom_items.filter(i=>!exU.has(i.ut))]);}
+    if(data.custom_barcodes){const ex=getCustomBarcodes();set('custom_barcodes',{...ex,...data.custom_barcodes});}
+    if(data.product_edits){const ex=getProductEdits();set('product_edits',{...ex,...data.product_edits});}
+    if(data.cells){const ex=getCells();const exA=new Set(ex.map(c=>c.addr));set('cells',[...ex,...data.cells.filter(c=>!exA.has(c.addr))]);}
+    if(data.cell_favorites){set('cell_favorites',Array.from(new Set([...getCellFavs(),...data.cell_favorites])));}
+    if(data.pack_sizes){const ex=getPackSizes();set('pack_sizes',{...ex,...data.pack_sizes});}
+    if(data.notes){const ex=getNotes();const exI=new Set(ex.map(n=>n.id));set('notes',[...data.notes.filter(n=>!exI.has(n.id)),...ex]);}
+    if(data.credentials){const ex=getCreds();const exI=new Set(ex.map(c=>c.id));set('credentials',[...data.credentials.filter(c=>!exI.has(c.id)),...ex]);}
+    if(data.eo_codes){const ex=getEOCodes();const exI=new Set(ex.map(c=>c.id));set('eo_codes',[...data.eo_codes.filter(c=>!exI.has(c.id)),...ex]);}
+    if(data.journal){const ex=getJournal();const exI=new Set(ex.map(r=>r.id));set('journal',[...data.journal.filter(r=>!exI.has(r.id)),...ex]);}
+    if(data.report){const ex=getReportAll();set('report',{...ex,...data.report});}
+    if(data.search_history){set('search_history',data.search_history);}
+    if(data.inventory){const ex=getInv();const exI=new Set(ex.map(r=>r.id));set('inventory',[...data.inventory.filter(r=>!exI.has(r.id)),...ex]);}
+    if(data.favorites){const ex=getFavs();const merged=[...new Set([...ex,...data.favorites])];set('favorites',merged);}
+    if(data.eo_range_saved){set('eo_range_saved',data.eo_range_saved);}
+    if(data.eo_range_used){const ex=getObj('eo_range_used');set('eo_range_used',{...ex,...data.eo_range_used});}
+    if(data.hh11_log){const ex=getHH11();const exI=new Set(ex.map(r=>r.id));set('hh11_log',[...data.hh11_log.filter(r=>!exI.has(r.id)),...ex]);}
+    if(data.rk_log){const ex=getRK();const exI=new Set(ex.map(r=>r.id));set('rk_log',[...data.rk_log.filter(r=>!exI.has(r.id)),...ex]);}
+    return {mode:'merge'};
+  }
+
+  // Новый основной режим: полная замена локального состояния данными из JSON.
+  // Так телефон больше не держит старые product_edits/custom_barcodes поверх файла с ПК.
+  clearBackupLocalState();
+  set('custom_items', backupArr(data.custom_items));
+  set('custom_barcodes', backupObj(data.custom_barcodes));
+  set('product_edits', backupObj(data.product_edits));
+  set('cells', backupArr(data.cells));
+  set('cell_favorites', backupArr(data.cell_favorites));
+  set('pack_sizes', backupObj(data.pack_sizes));
+  set('notes', backupArr(data.notes));
+  set('credentials', backupArr(data.credentials));
+  set('eo_codes', backupArr(data.eo_codes));
+  set('journal', backupArr(data.journal));
+  set('report', backupObj(data.report));
+  set('search_history', backupArr(data.search_history));
+  set('inventory', backupArr(data.inventory));
+  set('favorites', backupArr(data.favorites));
+  set('eo_range_saved', backupArr(data.eo_range_saved));
+  set('eo_range_used', backupObj(data.eo_range_used));
+  set('hh11_log', backupArr(data.hh11_log));
+  set('rk_log', backupArr(data.rk_log));
+
+  try{repairCredentialsStorage();repairCellsStorage();}catch(e){}
+  return {mode:'replace'};
+}
+function afterFullRestore(){
+  try{repairCredentialsStorage();repairCellsStorage();}catch(e){}
+  setTimeout(()=>location.reload(),250);
 }
 function restoreBackupFromText(){
   const raw=normalizeBackupRaw((document.getElementById('backup-text')?.value||'').trim());
   if(!raw){alert('Вставь JSON-бэкап.');return;}
   try{
-    applyBackupData(JSON.parse(raw));
-    alert('Бэкап восстановлен из текста.');
+    applyBackupData(JSON.parse(raw),{mode:'replace'});
+    alert('JSON восстановлен полностью. Старые локальные данные заменены. Сейчас приложение перезагрузится.');
     closeModal('backup-modal');
-    renderCells('');
+    afterFullRestore();
   }catch(e){alert('Не удалось прочитать JSON. Проверь, что вставлен весь бэкап целиком.');}
 }
 function importData(){
@@ -3812,9 +3881,9 @@ function importData(){
     const reader=new FileReader();
     reader.onload=ev=>{
       try{
-        applyBackupData(JSON.parse(ev.target.result));
-        alert('Бэкап восстановлен!');
-        renderCells('');
+        applyBackupData(JSON.parse(ev.target.result),{mode:'replace'});
+        alert('JSON восстановлен полностью. Старые локальные данные заменены. Сейчас приложение перезагрузится.');
+        afterFullRestore();
       }catch(err){alert('Ошибка чтения файла');}
     };
     reader.readAsText(file);
