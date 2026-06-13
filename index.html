@@ -4028,10 +4028,10 @@ function applyBackupData(data,opts){
         const addr=String(c&&c.addr||c&&c.cell||c&&c.address||'').trim();
         if(!addr)return;
         const key=addr.toUpperCase();
-        const norm=normalizeCellItem(c)||c;
+        const norm=normalizeCellRecord(c)||c;
         if(!byAddr.has(key)){ex.unshift(norm);byAddr.set(key,norm);stats.added.cells++;}
         else if(!same(byAddr.get(key),norm)){
-          const dup=normalizeCellItem({...norm,addr:addr+' ·ДУБЛЬ·'+stamp+'-'+(stats.conflicts.length+1),name:'[ДУБЛЬ JSON: '+addr+'] '+String(norm.name||''),id:uniqId(),conflict:true})||norm;
+          const dup=normalizeCellRecord({...norm,addr:addr+' ·ДУБЛЬ·'+stamp+'-'+(stats.conflicts.length+1),name:'[ДУБЛЬ JSON: '+addr+'] '+String(norm.name||''),id:uniqId(),conflict:true})||norm;
           ex.unshift(dup);stats.added.cells++;stats.conflicts.push('cells '+addr);
         }
       });
@@ -4073,7 +4073,7 @@ function applyBackupData(data,opts){
   set('custom_items', backupArr(data.custom_items));
   set('custom_barcodes', backupObj(data.custom_barcodes));
   set('product_edits', backupObj(data.product_edits));
-  set('cells', backupArr(data.cells));
+  set('cells', normalizeCellsArray(backupArr(data.cells)));
   set('cell_favorites', backupArr(data.cell_favorites));
   set('pack_sizes', backupObj(data.pack_sizes));
   set('notes', backupArr(data.notes));
@@ -4104,7 +4104,7 @@ function restoreBackupFromText(){
     alert('JSON восстановлен полностью. Старые локальные данные заменены. Сейчас приложение перезагрузится.');
     closeModal('backup-modal');
     afterFullRestore();
-  }catch(e){alert('Не удалось прочитать JSON. Проверь, что вставлен весь бэкап целиком.');}
+  }catch(e){alert('Ошибка импорта JSON: '+(e && e.message ? e.message : e));}
 }
 function summarizeMergeStats(stats){
   const a=(stats&&stats.added)||{};
@@ -4120,7 +4120,7 @@ function restoreBackupMergeFromText(){
     alert(summarizeMergeStats(stats));
     closeModal('backup-modal');
     afterFullRestore();
-  }catch(e){console.error(e);alert('Не удалось прочитать JSON. Проверь, что вставлен весь бэкап целиком.');}
+  }catch(e){console.error(e);alert('Ошибка импорта JSON: '+(e && e.message ? e.message : e));}
 }
 function importDataMerge(){
   const input=document.createElement('input');
@@ -4136,7 +4136,7 @@ function importDataMerge(){
         const stats=applyBackupData(parseBackupRawText(ev.target.result),{mode:'merge'});
         alert(summarizeMergeStats(stats));
         afterFullRestore();
-      }catch(err){console.error(err);alert('Ошибка чтения JSON. Проверь, что выбран полный файл бэкапа.');}
+      }catch(err){console.error(err);alert('Ошибка импорта JSON: '+(err && err.message ? err.message : err));}
       setTimeout(()=>input.remove(),1000);
     };
     reader.onerror=()=>{alert('Не удалось прочитать файл.');setTimeout(()=>input.remove(),1000);};
@@ -4159,7 +4159,7 @@ function importData(){
         applyBackupData(parseBackupRawText(ev.target.result),{mode:'replace'});
         alert('JSON восстановлен полностью. Старые локальные данные заменены. Сейчас приложение перезагрузится.');
         afterFullRestore();
-      }catch(err){console.error(err);alert('Ошибка чтения JSON. Проверь, что выбран полный файл бэкапа.');}
+      }catch(err){console.error(err);alert('Ошибка импорта JSON: '+(err && err.message ? err.message : err));}
       setTimeout(()=>input.remove(),1000);
     };
     reader.onerror=()=>{alert('Не удалось прочитать файл.');setTimeout(()=>input.remove(),1000);};
