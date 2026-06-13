@@ -1197,6 +1197,10 @@ window.installPWA = async function(){
       <button class="modal-save" onclick="copyBackupText()">📋 Копировать JSON</button>
     </div>
     <div class="modal-btns">
+      <button class="modal-save" onclick="pasteBackupFromClipboard()">📥 Вставить из буфера</button>
+      <button class="modal-cancel" onclick="clearBackupPasteText()">× Очистить поле</button>
+    </div>
+    <div class="modal-btns">
       <button class="modal-save" onclick="downloadBackupBlob()">⬇ Скачать JSON</button>
       <button class="modal-save" onclick="importDataMerge()">⬆ Добавить из JSON-файла</button>
       <button class="modal-cancel" onclick="importData()">⬆ Из JSON-файла полностью</button>
@@ -3649,7 +3653,7 @@ function makeBackupData(){
     rk_log:getRK(),
     localStorage_snapshot:localSnapshot,
     catalog_snapshot:CATALOG,
-    backup_version:10,
+    backup_version:13,
     exported_at:new Date().toISOString()
   };
 }
@@ -3858,13 +3862,62 @@ function normalizeBackupRaw(raw){
   }
   return raw;
 }
+function parseBackupRawText(raw){
+  raw=normalizeBackupRaw(String(raw||'').replace(/^\uFEFF/,''));
+  raw=(raw||'').trim();
+  if(!raw)throw new Error('empty_json');
+  try{return JSON.parse(raw);}
+  catch(firstErr){
+    const start=raw.indexOf('{');
+    const end=raw.lastIndexOf('}');
+    if(start>=0 && end>start){
+      const cut=raw.slice(start,end+1).trim();
+      try{return JSON.parse(cut);}catch(secondErr){}
+    }
+    throw firstErr;
+  }
+}
 function openBackupPaste(){
   backupPartFull='';
   setBackupModalText('',false);
-  setBackupInfo('Вставь полный JSON или все части бэкапа подряд.');
+  setBackupInfo('Вставь полный JSON или все части бэкапа подряд. Можно вставить руками или нажать «Вставить из буфера».');
   setBackupPartControls(false);
   openModal('backup-modal');
-  setTimeout(()=>document.getElementById('backup-text')?.focus(),100);
+  setTimeout(()=>{
+    const ta=document.getElementById('backup-text');
+    if(ta){
+      ta.readOnly=false;
+      ta.disabled=false;
+      ta.removeAttribute('readonly');
+      ta.focus();
+      try{ta.setSelectionRange(0,ta.value.length);}catch(e){}
+    }
+  },120);
+}
+function clearBackupPasteText(){
+  setBackupModalText('',false);
+  setBackupInfo('Поле очищено. Вставь JSON руками или через кнопку «Вставить из буфера».');
+  setTimeout(()=>document.getElementById('backup-text')?.focus(),80);
+}
+async function pasteBackupFromClipboard(){
+  const ta=document.getElementById('backup-text');
+  if(!ta)return;
+  try{
+    if(!(navigator.clipboard&&navigator.clipboard.readText))throw new Error('clipboard unavailable');
+    const text=await navigator.clipboard.readText();
+    ta.readOnly=false;
+    ta.disabled=false;
+    ta.removeAttribute('readonly');
+    ta.value=text||'';
+    setBackupInfo('Вставлено из буфера: '+(ta.value.length||0)+' символов. Теперь выбери «Добавить» или «Полностью восстановить».');
+    ta.focus();
+  }catch(e){
+    ta.readOnly=false;
+    ta.disabled=false;
+    ta.removeAttribute('readonly');
+    ta.focus();
+    alert('Браузер не дал прочитать буфер. Зажми поле и выбери «Вставить» вручную.');
+  }
 }
 const BACKUP_STATE_KEYS=[
   'custom_items','custom_barcodes','product_edits','cells','cell_favorites','pack_sizes','notes','credentials','eo_codes','journal','report','search_history','inventory','favorites','eo_range_saved','eo_range_used','hh11_log','rk_log'
@@ -4047,7 +4100,7 @@ function restoreBackupFromText(){
   const raw=normalizeBackupRaw((document.getElementById('backup-text')?.value||'').trim());
   if(!raw){alert('Вставь JSON-бэкап.');return;}
   try{
-    applyBackupData(JSON.parse(raw),{mode:'replace'});
+    applyBackupData(parseBackupRawText(raw),{mode:'replace'});
     alert('JSON восстановлен полностью. Старые локальные данные заменены. Сейчас приложение перезагрузится.');
     closeModal('backup-modal');
     afterFullRestore();
@@ -4063,7 +4116,7 @@ function restoreBackupMergeFromText(){
   const raw=normalizeBackupRaw((document.getElementById('backup-text')?.value||'').trim());
   if(!raw){alert('Вставь JSON-бэкап.');return;}
   try{
-    const stats=applyBackupData(JSON.parse(raw),{mode:'merge'});
+    const stats=applyBackupData(parseBackupRawText(raw),{mode:'merge'});
     alert(summarizeMergeStats(stats));
     closeModal('backup-modal');
     afterFullRestore();
@@ -4071,37 +4124,49 @@ function restoreBackupMergeFromText(){
 }
 function importDataMerge(){
   const input=document.createElement('input');
-  input.type='file';input.accept='.json,application/json,text/plain';
+  input.type='file';
+  input.accept='.json,application/json,text/plain';
+  input.style.display='none';
   input.onchange=e=>{
-    const file=e.target.files[0];if(!file)return;
+    const file=e.target.files&&e.target.files[0];
+    if(!file){setTimeout(()=>input.remove(),500);return;}
     const reader=new FileReader();
     reader.onload=ev=>{
       try{
-        const stats=applyBackupData(JSON.parse(normalizeBackupRaw(ev.target.result)),{mode:'merge'});
+        const stats=applyBackupData(parseBackupRawText(ev.target.result),{mode:'merge'});
         alert(summarizeMergeStats(stats));
         afterFullRestore();
-      }catch(err){console.error(err);alert('Ошибка чтения файла');}
+      }catch(err){console.error(err);alert('Ошибка чтения JSON. Проверь, что выбран полный файл бэкапа.');}
+      setTimeout(()=>input.remove(),1000);
     };
+    reader.onerror=()=>{alert('Не удалось прочитать файл.');setTimeout(()=>input.remove(),1000);};
     reader.readAsText(file);
   };
-  document.body.appendChild(input);input.click();document.body.removeChild(input);
+  document.body.appendChild(input);
+  input.click();
 }
 function importData(){
   const input=document.createElement('input');
-  input.type='file';input.accept='.json,application/json,text/plain';
+  input.type='file';
+  input.accept='.json,application/json,text/plain';
+  input.style.display='none';
   input.onchange=e=>{
-    const file=e.target.files[0];if(!file)return;
+    const file=e.target.files&&e.target.files[0];
+    if(!file){setTimeout(()=>input.remove(),500);return;}
     const reader=new FileReader();
     reader.onload=ev=>{
       try{
-        applyBackupData(JSON.parse(ev.target.result),{mode:'replace'});
+        applyBackupData(parseBackupRawText(ev.target.result),{mode:'replace'});
         alert('JSON восстановлен полностью. Старые локальные данные заменены. Сейчас приложение перезагрузится.');
         afterFullRestore();
-      }catch(err){alert('Ошибка чтения файла');}
+      }catch(err){console.error(err);alert('Ошибка чтения JSON. Проверь, что выбран полный файл бэкапа.');}
+      setTimeout(()=>input.remove(),1000);
     };
+    reader.onerror=()=>{alert('Не удалось прочитать файл.');setTimeout(()=>input.remove(),1000);};
     reader.readAsText(file);
   };
-  document.body.appendChild(input);input.click();document.body.removeChild(input);
+  document.body.appendChild(input);
+  input.click();
 }
 
 // ── INVENTORY BY CELL ──
