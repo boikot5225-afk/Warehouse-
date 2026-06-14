@@ -1,6 +1,6 @@
-/* L'Enfer PWA service worker — v45 cache cleanup
+/* L'Enfer PWA service worker — v46 safety diagnostics problems
    Network-first worker: old cached index.html should not haunt the app. */
-const SW_VERSION = 'lenfer-sync-v3-20260614';
+const SW_VERSION = 'lenfer-v35-safety-diagnostics-problems-20260614';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

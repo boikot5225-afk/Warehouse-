@@ -12,7 +12,7 @@
 <meta content="L'Enfer" name="apple-mobile-web-app-title"/>
 <link href="./icons/icon-192.png" rel="apple-touch-icon"/>
 <title>L'Enfer</title>
-<!-- build: pwa-json-barcodes-v45-auth-service-tab-cache-rules-fix -->
+<!-- build: pwa-json-barcodes-v46-safety-diagnostics-problems -->
 <script src="./assets/js/vendor/zxing.min.js?v=20260614-sync-v3"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -138,6 +138,33 @@
 <button class="exi-btn" onclick="fbMigrateLegacyW21()">🧳 Забрать старую w21</button>
 </div>
 <div class="supa-status-line"><span class="supa-mini-badge" id="supa-badge-online">связь: —</span><span class="supa-mini-badge" id="supa-badge-queue">очередь: 0</span><span class="supa-mini-badge" id="supa-badge-sync">синхр.: —</span></div><div class="supa-status" id="supa-status"></div>
+</div>
+</details>
+<details class="backup-extra-fold" open="">
+<summary>🩺 Диагностика и страховка</summary>
+<div class="backup-body">
+<div id="sync-diagnostics"></div>
+<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+<button class="exi-btn" onclick="renderDiagnostics();renderAutoBackups();renderActionLogMini();">↻ Обновить статус</button>
+<button class="exi-btn" onclick="quickIntegrityCheck()">Проверить базу</button>
+<button class="exi-btn" onclick="createAutoBackup('ручная контрольная точка',0);renderAutoBackups();">+ Контрольная точка</button>
+</div>
+<div id="integrity-result" style="margin-top:10px;"></div>
+</div>
+</details>
+<details class="backup-extra-fold">
+<summary>🧯 Автобэкапы на этом устройстве</summary>
+<div class="backup-body">
+<div style="font-size:11px;color:var(--muted);line-height:1.4;margin-bottom:10px;">Приложение само сохраняет снимок перед синхронизацией и импортом. Хранятся последние 7 локальных бэкапов.</div>
+<div id="auto-backup-list"></div>
+<button class="exi-btn" onclick="clearAutoBackups()" style="width:100%;margin-top:8px;">Очистить автобэкапы</button>
+</div>
+</details>
+<details class="backup-extra-fold">
+<summary>🧾 Журнал действий</summary>
+<div class="backup-body">
+<div id="diag-action-log"></div>
+<button class="exi-btn" onclick="clearActionLog()" style="width:100%;margin-top:8px;">Очистить журнал</button>
 </div>
 </details>
 </div>
@@ -574,6 +601,7 @@
 </div>
 </div>
 <div class="gen-box" id="rk-summary" style="margin-top:12px;"></div>
+<div class="cell-filter-bar" id="rk-view-bar" style="margin-top:8px;"></div>
 <div style="display:flex;gap:8px;margin-top:6px;">
 <button class="exi-btn" onclick="rkShare()">📤 Экспорт</button>
 <button class="exi-btn" onclick="rkCopyTSV()">📋 TSV</button>
@@ -581,6 +609,53 @@
 </div>
 <div id="rk-list" style="margin-top:14px;"></div>
 </div>
+<!-- PROBLEMS -->
+<div id="tab-problems" style="display:none">
+<div class="section-head">
+<div class="section-title">Проблемы смены</div>
+<span id="problems-count" style="font-family:'Spectral',serif;font-weight:600;font-size:16px;color:var(--gold);">0</span>
+</div>
+<div class="gen-box" style="border-left:3px solid var(--gold);overflow:visible;position:relative;z-index:44;">
+<div style="font-family:'Oswald',sans-serif;font-size:11px;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Фиксируем только исключения</div>
+<label class="modal-lbl">Тип проблемы</label>
+<select class="calc-inp" id="problem-type">
+<option>пустая ячейка</option>
+<option>излишек</option>
+<option>не найден товар</option>
+<option>расхождение</option>
+<option>пересорт</option>
+<option>брак</option>
+<option>проверить ВМС</option>
+<option>другое</option>
+</select>
+<label class="modal-lbl">Товар, если нужен</label>
+<div class="smart-search-box">
+<input autocapitalize="off" autocomplete="off" autocorrect="off" class="calc-inp" id="problem-search" onfocus="problemSearch(this.value)" oninput="problemSearch(this.value)" placeholder="УТ / ШК / название…" spellcheck="false" style="margin-bottom:0;" type="text"/>
+<button class="search-clear-btn" onclick="clearProductSearch('problem-search','problems')">×</button>
+<div id="problem-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 4px);z-index:260;background:var(--surface);border:2px solid var(--gold);border-radius:10px;max-height:340px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.5);"></div>
+</div>
+<div class="smart-search-tools">
+<button class="smart-chip" onclick="prefixProductSearch('problem-search','УТ-','problems')">УТ-</button>
+<button class="smart-chip" onclick="toggleNumericSearch('problem-search', this)">123</button>
+</div>
+<div id="problem-picked" style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg2);border-radius:8px;font-size:12px;color:var(--text);"></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:12px;">
+<div><label class="modal-lbl">Ячейка</label><input class="calc-inp" id="problem-cell" placeholder="A-01-02" style="margin-bottom:0;text-transform:uppercase;" type="text"/></div>
+<div><label class="modal-lbl">Статус</label><select class="calc-inp" id="problem-status" style="margin-bottom:0;"><option>новая</option><option>в работе</option><option>нужно ВМС</option><option>решено</option></select></div>
+<div><label class="modal-lbl">Системно</label><input class="calc-inp" id="problem-sys" inputmode="numeric" placeholder="0" style="margin-bottom:0;text-align:center;" type="number"/></div>
+<div><label class="modal-lbl">Факт</label><input class="calc-inp" id="problem-fact" inputmode="numeric" placeholder="0" style="margin-bottom:0;text-align:center;" type="number"/></div>
+</div>
+<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-family:'Oswald',sans-serif;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;">
+<input id="problem-wms" style="width:18px;height:18px;accent-color:#c0392b;" type="checkbox"/> Нужно проверить в ВМС
+</label>
+<label class="modal-lbl" style="margin-top:10px;">Комментарий</label>
+<textarea class="calc-inp" id="problem-comment" rows="3" placeholder="что случилось / что сделать" style="resize:vertical;"></textarea>
+<button class="add-btn" onclick="problemAdd()" style="width:100%;margin-top:8px;">+ Добавить проблему</button>
+</div>
+<div class="cell-filter-bar" id="problems-filter-bar" style="margin-top:12px;"></div>
+<div id="problems-list" style="margin-top:14px;"></div>
+</div>
+
 <!-- REPORT -->
 <div id="tab-report" style="display:none">
 <div class="section-head">
@@ -617,6 +692,7 @@
 <button class="navbtn" data-tab="calc" onclick="switchTab('calc')"><span class="ico">🧮</span><span class="lbl">Счёт</span></button>
 <button class="navbtn" data-tab="hh11" onclick="switchTab('hh11')"><span class="ico">🧾</span><span class="lbl">HH 1-1</span></button>
 <button class="navbtn" data-tab="rk" onclick="switchTab('rk')"><span class="ico">🔎</span><span class="lbl">РК</span></button>
+<button class="navbtn" data-tab="problems" onclick="switchTab('problems')"><span class="ico">⚠️</span><span class="lbl">Проблемы</span></button>
 <button class="navbtn" data-tab="eo" onclick="switchTab('eo')"><span class="ico">🏷️</span><span class="lbl">ЕО</span></button>
 <button class="navbtn" data-tab="notes" onclick="switchTab('notes')"><span class="ico">📝</span><span class="lbl">Заметки</span></button>
 <button class="navbtn" data-tab="creds" onclick="switchTab('creds')"><span class="ico">🔑</span><span class="lbl">Доступы</span></button>
