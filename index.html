@@ -36,7 +36,8 @@
 ","","@","\\","^","_","`","|","~",""];for(let e=0;e<c.length;e++)t[3][p.getCharCode(c[e])]=e;const d=["\0","\r","\0","\0","\0","\0","!","'","#","$","%","&","'","(",")","*","+",",","-",".","/",":",";","<","=",">","?","[","]","{","}"];for(let e=0;e<d.length;e++)p.getCharCode(d[e])>0&&(t[4][p.getCharCode(d[e])]=e);return t}(f.createInt32Array(5,256));class Cn{constructor(t){this.text=t}encode(){const t=p.getCharCode(" "),e=p.getCharCode("\n");let r=sn.singletonList(fn.INITIAL_STATE);for(let n=0;n<this.text.length;n++){let i,s=n+1<this.text.length?this.text[n+1]:0;switch(this.text[n]){case p.getCharCode("\r"):i=s===e?2:0;break;case p.getCharCode("."):i=s===t?3:0;break;case p.getCharCode(","):i=s===t?4:0;break;case p.getCharCode(":"):i=s===t?5:0;break;default:i=0}i>0?(r=Cn.updateStateListForPair(r,n,i),n++):r=this.updateStateListForChar(r,n)}return sn.min(r,((t,e)=>t.getBitCount()-e.getBitCount())).toBitArray(this.text)}updateStateListForChar(t,e){const r=[];for(let n of t)this.updateStateForChar(n,e,r);return Cn.simplifyStates(r)}updateStateForChar(t,e,r){let n=255&this.text[e],i=wn[t.getMode()][n]>0,s=null;for(let o=0;o<=4;o++){let a=wn[o][n];if(a>0){if(null==s&&(s=t.endBinaryShift(e)),!i||o===t.getMode()||2===o){const t=s.latchAndAppend(o,a);r.push(t)}if(!i&&gn[t.getMode()][o]>=0){const t=s.shiftAndAppend(o,a);r.push(t)}}}if(t.getBinaryShiftByteCount()>0||0===wn[t.getMode()][n]){let n=t.addBinaryShiftChar(e);r.push(n)}}static updateStateListForPair(t,e,r){const n=[];for(let i of t)this.updateStateForPair(i,e,r,n);return this.simplifyStates(n)}static updateStateForPair(t,e,r,n){let i=t.endBinaryShift(e);if(n.push(i.latchAndAppend(4,r)),4!==t.getMode()&&n.push(i.shiftAndAppend(4,r)),3===r||4===r){let t=i.latchAndAppend(2,16-r).latchAndAppend(2,1);n.push(t)}if(t.getBinaryShiftByteCount()>0){let r=t.addBinaryShiftChar(e).addBinaryShiftChar(e+1);n.push(r)}}static simplifyStates(t){let e=[];for(const r of t){let t=!0;for(const n of e){if(n.isBetterThanOrEqualTo(r)){t=!1;break}r.isBetterThanOrEqualTo(n)&&(e=e.filter((t=>t!==n)))}t&&e.push(r)}return e}}class An{constructor(){}static encodeBytes(t){return An.encode(t,An.DEFAULT_EC_PERCENT,An.DEFAULT_AZTEC_LAYERS)}static encode(t,e,r){let n,i,s,o,h,l=new Cn(t).encode(),c=w.truncDivision(l.getSize()*e,100)+11,d=l.getSize()+c;if(r!==An.DEFAULT_AZTEC_LAYERS){if(n=r<0,i=Math.abs(r),i>(n?An.MAX_NB_BITS_COMPACT:An.MAX_NB_BITS))throw new a(p.format("Illegal value %s for layers",r));s=An.totalBitsInLayer(i,n),o=An.WORD_SIZE[i];let t=s-s%o;if(h=An.stuffBits(l,o),h.getSize()+c>t)throw new a("Data to large for user specified layer");if(n&&h.getSize()>64*o)throw new a("Data to large for user specified layer")}else{o=0,h=null;for(let t=0;;t++){if(t>An.MAX_NB_BITS)throw new a("Data too large for an Aztec code");if(n=t<=3,i=n?t+1:t,s=An.totalBitsInLayer(i,n),d>s)continue;null!=h&&o===An.WORD_SIZE[i]||(o=An.WORD_SIZE[i],h=An.stuffBits(l,o));let e=s-s%o;if(!(n&&h.getSize()>64*o)&&h.getSize()+c<=e)break}}let u,g=An.generateCheckWords(h,s,o),f=h.getSize()/o,C=An.generateModeMessage(n,i,f),A=(n?11:14)+4*i,E=new Int32Array(A);if(n){u=A;for(let t=0;t<E.length;t++)E[t]=t}else{u=A+1+2*w.truncDivision(w.truncDivision(A,2)-1,15);let t=w.truncDivision(A,2),e=w.truncDivision(u,2);for(let r=0;r<t;r++){let n=r+w.truncDivision(r,15);E[t-r-1]=e-n-1,E[t+r]=e+n+1}}let m=new R(u);for(let t=0,e=0;t<i;t++){let r=4*(i-t)+(n?9:12);for(let n=0;n<r;n++){let i=2*n;for(let s=0;s<2;s++)g.get(e+i+s)&&m.set(E[2*t+s],E[2*t+n]),g.get(e+2*r+i+s)&&m.set(E[2*t+n],E[A-1-2*t-s]),g.get(e+4*r+i+s)&&m.set(E[A-1-2*t-s],E[A-1-2*t-n]),g.get(e+6*r+i+s)&&m.set(E[A-1-2*t-n],E[2*t+s])}e+=8*r}if(An.drawModeMessage(m,n,u,C),n)An.drawBullsEye(m,w.truncDivision(u,2),5);else{An.drawBullsEye(m,w.truncDivision(u,2),7);for(let t=0,e=0;t<w.truncDivision(A,2)-1;t+=15,e+=16)for(let t=1&w.truncDivision(u,2);t<u;t+=2)m.set(w.truncDivision(u,2)-e,t),m.set(w.truncDivision(u,2)+e,t),m.set(t,w.truncDivision(u,2)-e),m.set(t,w.truncDivision(u,2)+e)}let I=new nn;return I.setCompact(n),I.setSize(u),I.setLayers(i),I.setCodeWords(f),I.setMatrix(m),I}static drawBullsEye(t,e,r){for(let n=0;n<r;n+=2)for(let r=e-n;r<=e+n;r++)t.set(r,e-n),t.set(r,e+n),t.set(e-n,r),t.set(e+n,r);t.set(e-r,e-r),t.set(e-r+1,e-r),t.set(e-r,e-r+1),t.set(e+r,e-r),t.set(e+r,e-r+1),t.set(e+r,e+r-1)}static generateModeMessage(t,e,r){let n=new C;return t?(n.appendBits(e-1,2),n.appendBits(r-1,6),n=An.generateCheckWords(n,28,4)):(n.appendBits(e-1,5),n.appendBits(r-1,11),n=An.generateCheckWords(n,40,4)),n}static drawModeMessage(t,e,r,n){let i=w.truncDivision(r,2);if(e)for(let e=0;e<7;e++){let r=i-3+e;n.get(e)&&t.set(r,i-5),n.get(e+7)&&t.set(i+5,r),n.get(20-e)&&t.set(r,i+5),n.get(27-e)&&t.set(i-5,r)}else for(let e=0;e<10;e++){let r=i-5+e+w.truncDivision(e,5);n.get(e)&&t.set(r,i-7),n.get(e+10)&&t.set(i+7,r),n.get(29-e)&&t.set(r,i+7),n.get(39-e)&&t.set(i-7,r)}}static generateCheckWords(t,e,r){let n=t.getSize()/r,i=new gr(An.getGF(r)),s=w.truncDivision(e,r),o=An.bitsToWords(t,r,s);i.encode(o,s-n);let a=e%r,h=new C;h.appendBits(0,a);for(const t of Array.from(o))h.appendBits(t,r);return h}static bitsToWords(t,e,r){let n,i,s=new Int32Array(r);for(n=0,i=t.getSize()/e;n<i;n++){let r=0;for(let i=0;i<e;i++)r|=t.get(n*e+i)?1<<e-i-1:0;s[n]=r}return s}static getGF(t){switch(t){case 4:return Q.AZTEC_PARAM;case 6:return Q.AZTEC_DATA_6;case 8:return Q.AZTEC_DATA_8;case 10:return Q.AZTEC_DATA_10;case 12:return Q.AZTEC_DATA_12;default:throw new a("Unsupported word size "+t)}}static stuffBits(t,e){let r=new C,n=t.getSize(),i=(1<<e)-2;for(let s=0;s<n;s+=e){let o=0;for(let r=0;r<e;r++)(s+r>=n||t.get(s+r))&&(o|=1<<e-1-r);(o&i)===i?(r.appendBits(o&i,e),s--):o&i?r.appendBits(o,e):(r.appendBits(1|o,e),s--)}return r}static totalBitsInLayer(t,e){return((e?88:112)+16*t)*t}}An.DEFAULT_EC_PERCENT=33,An.DEFAULT_AZTEC_LAYERS=0,An.MAX_NB_BITS=32,An.MAX_NB_BITS_COMPACT=4,An.WORD_SIZE=Int32Array.from([4,6,6,8,8,8,8,8,8,10,10,10,10,10,10,10,10,10,10,10,10,10,10,12,12,12,12,12,12,12,12,12,12]);class En{encode(t,e,r,n){return this.encodeWithHints(t,e,r,n,null)}encodeWithHints(t,e,r,n,i){let s=Nr.ISO_8859_1,o=An.DEFAULT_EC_PERCENT,a=An.DEFAULT_AZTEC_LAYERS;return null!=i&&(i.has(ur.CHARACTER_SET)&&(s=Rr.forName(i.get(ur.CHARACTER_SET).toString())),i.has(ur.ERROR_CORRECTION)&&(o=w.parseInt(i.get(ur.ERROR_CORRECTION).toString())),i.has(ur.AZTEC_LAYERS)&&(a=w.parseInt(i.get(ur.AZTEC_LAYERS).toString()))),En.encodeLayers(t,e,r,n,s,o,a)}static encodeLayers(t,e,r,n,i,s,o){if(e!==x.AZTEC)throw new a("Can only encode AZTEC, but got "+e);let h=An.encode(p.getBytes(t,i),s,o);return En.renderResult(h,r,n)}static renderResult(t,e,r){let n=t.getMatrix();if(null==n)throw new J;let i=n.getWidth(),s=n.getHeight(),o=Math.max(e,i),a=Math.max(r,s),h=Math.min(o/i,a/s),l=(o-i*h)/2,c=(a-s*h)/2,d=new R(o,a);for(let t=0,e=c;t<s;t++,e+=h)for(let r=0,s=l;r<i;r++,s+=h)n.get(r,t)&&d.setRegion(s,e,h,h);return d}}t.AbstractExpandedDecoder=Xt,t.ArgumentException=o,t.ArithmeticException=q,t.AztecCode=nn,t.AztecCodeReader=gt,t.AztecCodeWriter=En,t.AztecDecoder=tt,t.AztecDetector=ut,t.AztecDetectorResult=st,t.AztecEncoder=An,t.AztecHighLevelEncoder=Cn,t.AztecPoint=dt,t.BarcodeFormat=x,t.Binarizer=c,t.BinaryBitmap=h,t.BitArray=C,t.BitMatrix=R,t.BitSource=de,t.BrowserAztecCodeReader=class extends F{constructor(t=500){super(new gt,t)}},t.BrowserBarcodeReader=class extends F{constructor(t=500,e){super(new se(e),t,e)}},t.BrowserCodeReader=F,t.BrowserDatamatrixCodeReader=class extends F{constructor(t=500){super(new we,t)}},t.BrowserMultiFormatReader=class extends F{constructor(t=null,e=500){const r=new cr;r.setHints(t),super(r,e)}decodeBitmap(t){return this.reader.decodeWithState(t)}},t.BrowserPDF417Reader=class extends F{constructor(t=500){super(new hr,t)}},t.BrowserQRCodeReader=class extends F{constructor(t=500){super(new Le,t)}},t.BrowserQRCodeSvgWriter=_r,t.CharacterSetECI=I,t.ChecksumException=l,t.CodaBarReader=Ot,t.Code128Reader=wt,t.Code39Reader=Ct,t.Code93Reader=At,t.DataMatrixDecodedBitStreamParser=ue,t.DataMatrixDefaultPlacement=yr,t.DataMatrixErrorCorrection=vr,t.DataMatrixHighLevelEncoder=Yr,t.DataMatrixReader=we,t.DataMatrixSymbolInfo=Ur,t.DataMatrixWriter=class{encode(t,e,r,n,i=null){if(""===t.trim())throw new Error("Found empty contents");if(e!==x.DATA_MATRIX)throw new Error("Can only encode DATA_MATRIX, but got "+e);if(r<0||n<0)throw new Error("Requested dimensions can't be negative: "+r+"x"+n);let s,o=0,a=null,h=null;if(null!=i){const t=i.get(ur.DATA_MATRIX_SHAPE);null!=t&&(o=t);const e=i.get(ur.MIN_SIZE);null!=e&&(a=e);const r=i.get(ur.MAX_SIZE);null!=r&&(h=r)}if(null!=i&&i.has(ur.DATA_MATRIX_COMPACT)&&Boolean(i.get(ur.DATA_MATRIX_COMPACT).toString())){const e=i.has(ur.GS1_FORMAT)&&Boolean(i.get(ur.GS1_FORMAT).toString());let r=null;i.has(ur.CHARACTER_SET)&&(r=Rr.forName(i.get(ur.CHARACTER_SET).toString())),s=$r.encodeHighLevel(t,r,e?29:-1,o)}else{const e=null!=i&&i.has(ur.FORCE_C40)&&Boolean(i.get(ur.FORCE_C40).toString());s=Yr.encodeHighLevel(t,o,a,h,e)}const l=Ur.lookup(s.length,o,a,h,!0),c=vr.encodeECC200(s,l),d=new yr(c,l.getSymbolDataWidth(),l.getSymbolDataHeight());return d.place(),this.encodeLowLevel(d,l,r,n)}encodeLowLevel(t,e,r,n){const i=e.getSymbolDataWidth(),s=e.getSymbolDataHeight(),o=new wr(e.getSymbolWidth(),e.getSymbolHeight());let a=0;for(let r=0;r<s;r++){let n;if(r%e.matrixHeight==0){n=0;for(let t=0;t<e.getSymbolWidth();t++)o.setBoolean(n,a,t%2==0),n++;a++}n=0;for(let s=0;s<i;s++)s%e.matrixWidth==0&&(o.setBoolean(n,a,!0),n++),o.setBoolean(n,a,t.getBit(s,r)),n++,s%e.matrixWidth==e.matrixWidth-1&&(o.setBoolean(n,a,r%2==0),n++);if(a++,r%e.matrixHeight==e.matrixHeight-1){n=0;for(let t=0;t<e.getSymbolWidth();t++)o.setBoolean(n,a,!0),n++;a++}}return this.convertByteMatrixToBitMatrix(o,r,n)}convertByteMatrixToBitMatrix(t,e,r){const n=t.getWidth(),i=t.getHeight(),s=Math.max(e,n),o=Math.max(r,i),a=Math.min(s/n,o/i);let h,l=(s-n*a)/2,c=(o-i*a)/2;r<i||e<n?(l=0,c=0,h=new R(n,i)):h=new R(e,r),h.clear();for(let e=0,r=c;e<i;e++,r+=a)for(let i=0,s=l;i<n;i++,s+=a)1===t.get(i,e)&&h.setRegion(s,r,a,a);return h}},t.DecodeHintType=E,t.DecoderResult=Y,t.DefaultGridSampler=lt,t.DetectorResult=it,t.EAN13Reader=Tt,t.EncodeHintType=ur,t.Exception=s,t.FormatException=m,t.GenericGF=Q,t.GenericGFPoly=K,t.GlobalHistogramBinarizer=y,t.GridSampler=at,t.GridSamplerInstance=ct,t.HTMLCanvasElementLuminanceSource=b,t.HybridBinarizer=D,t.ITFReader=Et,t.IllegalArgumentException=a,t.IllegalStateException=J,t.InvertedLuminanceSource=M,t.LuminanceSource=O,t.MathUtils=et,t.MultiFormatOneDReader=se,t.MultiFormatReader=cr,t.MultiFormatWriter=class{encode(t,e,r,n,i){let s;if(e!==x.QR_CODE)throw new a("No encoder available for format "+e);return s=new Sr,s.encode(t,e,r,n,i)}},t.NotFoundException=N,t.OneDReader=ft,t.PDF417DecodedBitStreamParser=or,t.PDF417DecoderErrorCorrection=Ue,t.PDF417Reader=hr,t.PDF417ResultMetadata=je,t.PerspectiveTransform=ht,t.PlanarYUVLuminanceSource=pr,t.QRCodeByteMatrix=wr,t.QRCodeDataMask=_e,t.QRCodeDecodedBitStreamParser=Re,t.QRCodeDecoderErrorCorrectionLevel=Ce,t.QRCodeDecoderFormatInformation=Ae,t.QRCodeEncoder=Ir,t.QRCodeEncoderQRCode=Cr,t.QRCodeMaskUtil=fr,t.QRCodeMatrixUtil=Er,t.QRCodeMode=Te,t.QRCodeReader=Le,t.QRCodeVersion=Ie,t.QRCodeWriter=Sr,t.RGBLuminanceSource=Tr,t.RSS14Reader=ie,t.RSSExpandedReader=re,t.ReaderException=lr,t.ReedSolomonDecoder=$,t.ReedSolomonEncoder=gr,t.ReedSolomonException=j,t.Result=v,t.ResultMetadataType=z,t.ResultPoint=nt,t.StringUtils=p,t.UnsupportedOperationException=_,t.VideoInputDevice=B,t.WhiteRectangleDetector=ot,t.WriterException=Ar,t.ZXingArrays=f,t.ZXingCharset=Rr,t.ZXingInteger=w,t.ZXingStandardCharsets=Nr,t.ZXingStringBuilder=T,t.ZXingStringEncoding=S,t.ZXingSystem=d,t.createAbstractExpandedDecoder=$t,Object.defineProperty(t,"__esModule",{value:!0})}));
 </script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Spectral:ital,wght@0,600;1,600&display=swap');
 
@@ -701,10 +702,10 @@ window.installPWA = async function(){
         </div>
       </details>
       <details class="backup-extra-fold" id="supa-fold" open>
-        <summary>☁ Supabase / единая база</summary>
+        <summary>☁ Firebase / единая база</summary>
         <div class="supa-panel">
           <div class="supa-warning">Режим v40: нормальная синхронизация товаров и ячеек. Сервер хранит только добавленные/правленые товары и пользовательские ячейки. Встроенный каталог целиком не заливается. Доступы/пароли не синхронизируются.</div>
-          <div class="supa-status" style="margin-bottom:8px;">База: <b>icudtjvnnoeibzxyyxfz.supabase.co</b></div>
+          <div class="supa-status" style="margin-bottom:8px;">База: <b>warehouse-dbec9 (Firebase)</b></div>
           <details class="backup-extra-fold">
             <summary>Технические настройки</summary>
             <label class="modal-lbl">Project URL</label>
@@ -4989,457 +4990,245 @@ function hideProductDropdownsOnOutsideClick(e){
 }
 document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
 
-// ── SUPABASE PRODUCTS/CELLS CLEAN STATE SYNC v41 ──
-// Один нормальный контур для товаров и ячеек: больше не пишем в w21_products/w21_cells.
-// Сервер хранит две JSON-записи в w21_pc_sync: products и cells.
-const W21_SUPABASE_DEFAULT_URL = "https://icudtjvnnoeibzxyyxfz.supabase.co";
-const W21_SUPABASE_DEFAULT_KEY = "sb_publishable_U72E36q-R5ZXlWrbWor-Ug_t0gmHDfA";
-const W21_SUPABASE_EMBEDDED = true;
-window.__APP_STABLE_BUILD__ = '2026-06-14-v41-products-cells-state-sync';
-
-const W21_SUPA_SCHEMA_SQL = `-- Warehouse21 / L'Enfer Supabase schema v41
--- Новый простой sync товаров и ячеек через одну таблицу состояния.
--- Выполни один раз в Supabase SQL Editor.
-
-create table if not exists public.w21_pc_sync (
-  key text primary key,
-  payload jsonb not null default '{}'::jsonb,
-  updated_at timestamptz not null default now(),
-  device_id text not null default ''
-);
-
-alter table public.w21_pc_sync add column if not exists payload jsonb not null default '{}'::jsonb;
-alter table public.w21_pc_sync add column if not exists updated_at timestamptz not null default now();
-alter table public.w21_pc_sync add column if not exists device_id text not null default '';
-
-insert into public.w21_pc_sync(key, payload, updated_at, device_id)
-values
-  ('products', '{"items":{}}'::jsonb, now(), ''),
-  ('cells', '{"items":{}}'::jsonb, now(), '')
-on conflict (key) do nothing;
-
-alter table public.w21_pc_sync enable row level security;
-
-do $$ begin create policy "w21_pc_sync_read" on public.w21_pc_sync for select using (true); exception when duplicate_object then null; end $$;
-do $$ begin create policy "w21_pc_sync_write" on public.w21_pc_sync for all using (true) with check (true); exception when duplicate_object then null; end $$;
-`;
-
+// ── FIREBASE SYNC v1 ──
+// Единая синхронизация через Firebase Realtime Database.
+// Синхронизируются: товары (custom_items, custom_barcodes, product_edits, pack_sizes),
+// ячейки (cells, cell_favorites), HH 1-1 (hh11_log), РК (rk_log).
+// Нет таймаутов, нет зависаний, нет SQL — всё через REST Firebase.
 (function(){
   'use strict';
 
-  const VERSION = 'v41';
-  const URL = W21_SUPABASE_DEFAULT_URL;
-  const KEY = W21_SUPABASE_DEFAULT_KEY;
-  const TIMEOUT_MS = 30000;
-  const PULL_EVERY_MS = 12000;
-  const AUTO_KEY = 'w21_v41_auto_sync';
-  const PRODUCT_TOMBS_KEY = 'w21_v41_product_tombstones';
-  const CELL_TOMBS_KEY = 'w21_v41_cell_tombstones';
-  const PRODUCT_KEYS = new Set(['custom_items','custom_barcodes','product_edits','pack_sizes']);
-  const CELL_KEYS = new Set(['cells','cells__mirror','cell_favorites','cell_favorites__mirror']);
+  var FB_CONFIG = {
+    apiKey:      "AIzaSyDabpQ_yMVS_P_s5JyPgxvCiTVGF5-Nu5Q",
+    databaseURL: "https://warehouse-dbec9-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId:   "warehouse-dbec9",
+    appId:       "1:771368960199:web:2491631935a0df2d13fee2"
+  };
 
-  let applying = false;
-  let pushing = false;
-  let pulling = false;
-  let pushTimer = null;
-  let pullTimer = null;
-  let dirtyProducts = new Set();
-  let dirtyCells = new Set();
-  let lastPush = 0;
-  let lastPull = 0;
-  let patched = false;
+  var DB_PATH = 'w21';          // /w21/products, /w21/cells, /w21/hh11, /w21/rk
+  var PULL_EVERY = 6000;        // авто-приём каждые 6 сек
 
-  function now(){ return new Date().toISOString(); }
-  function deviceId(){
+  // Ключи локального хранилища которые синхронизируем
+  var PRODUCT_KEYS = ['custom_items','custom_barcodes','product_edits','pack_sizes'];
+  var CELL_KEYS    = ['cells','cell_favorites'];
+  var HH_KEYS      = ['hh11_log'];
+  var RK_KEYS      = ['rk_log'];
+
+  var db = null;
+  var pulling = false, pushing = false;
+  var dirtyTimer = null;
+  var loopTimer = null;
+
+  // ── Инициализация Firebase ──
+  function initFB(){
     try{
-      let id = localStorage.getItem('w21_device_id');
-      if(!id){ id = 'dev-' + Math.random().toString(36).slice(2) + '-' + Date.now().toString(36); localStorage.setItem('w21_device_id', id); }
-      return id;
-    }catch(_){ return 'dev'; }
+      if(typeof firebase === 'undefined') throw new Error('Firebase SDK не загрузился');
+      if(!firebase.apps.length) firebase.initializeApp(FB_CONFIG);
+      db = firebase.database();
+      return true;
+    }catch(e){ status('Firebase: ошибка инициализации — ' + e.message); return false; }
   }
-  function safeJSON(v, fallback){ try{ return JSON.parse(v); }catch(_){ return fallback; } }
-  function readObj(key){ try{ return JSON.parse(localStorage.getItem(key)||'{}') || {}; }catch(_){ return {}; } }
-  function writeObj(key, obj){ try{ localStorage.setItem(key, JSON.stringify(obj||{})); }catch(_){ } }
-  function tombProducts(){ return readObj(PRODUCT_TOMBS_KEY); }
-  function tombCells(){ return readObj(CELL_TOMBS_KEY); }
-  function setTombProducts(o){ writeObj(PRODUCT_TOMBS_KEY,o); }
-  function setTombCells(o){ writeObj(CELL_TOMBS_KEY,o); }
-  function rememberProductDelete(ut,ts){ if(!ut)return; const o=tombProducts(); o[String(ut)] = ts || now(); setTombProducts(o); }
-  function rememberCellDelete(id,ts){ if(!id)return; const o=tombCells(); o[String(id)] = ts || now(); setTombCells(o); }
-  function forgetProductDelete(ut){ const o=tombProducts(); if(o[String(ut)]){ delete o[String(ut)]; setTombProducts(o); } }
-  function forgetCellDelete(id){ const o=tombCells(); if(o[String(id)]){ delete o[String(id)]; setTombCells(o); } }
-  function autoEnabled(){ try{ return localStorage.getItem(AUTO_KEY) !== '0'; }catch(_){ return true; } }
-  function setAutoEnabled(v){ try{ localStorage.setItem(AUTO_KEY, v ? '1':'0'); }catch(_){ } updateBadges(); }
 
-  function human(e){
-    const m = String((e && (e.message || e.error_description || e.details || e.hint)) || e || 'ошибка');
-    if(/w21_pc_sync|relation .* does not exist|schema cache|404/i.test(m)) return m + ' · выполни SQL-схему v41 в Supabase SQL Editor.';
-    if(/401|403|permission|RLS|policy/i.test(m)) return m + ' · проверь RLS policies / ключ Supabase.';
-    if(/Failed to fetch|NetworkError|Load failed/i.test(m)) return m + ' · нет сети, CORS/доступ к Supabase или ТСД режет запрос.';
-    return m;
-  }
+  // ── Статус ──
   function status(msg, good){
     try{
-      const el=document.getElementById('supa-status');
-      if(el){ el.textContent=String(msg||''); el.style.color=good?'var(--ok)':'var(--muted)'; }
-      updateBadges();
-      if(msg) console.log('[W21 v41 sync]', msg);
-    }catch(_){ }
-  }
-  function updateBadges(){
-    try{
-      const online=document.getElementById('supa-badge-online');
-      const q=document.getElementById('supa-badge-queue');
-      const s=document.getElementById('supa-badge-sync');
-      if(online) online.textContent = navigator.onLine ? 'связь: онлайн' : 'связь: офлайн';
-      if(q) q.textContent = 'очередь: т' + dirtyProducts.size + ' / я' + dirtyCells.size;
-      const t = Math.max(lastPull||0,lastPush||0);
-      if(s) s.textContent = t ? ('синхр.: ' + new Date(t).toLocaleTimeString()) : 'синхр.: —';
-      const btn=document.getElementById('supa-auto-btn');
-      if(btn) btn.textContent = 'Авто: ' + (autoEnabled() ? 'ВКЛ' : 'ВЫКЛ');
-    }catch(_){ }
+      var el = document.getElementById('supa-status');
+      if(el) el.textContent = msg;
+      var badge = document.getElementById('supa-badge-sync');
+      if(badge) badge.textContent = 'синхр.: ' + new Date().toLocaleTimeString('ru',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+      var online = document.getElementById('supa-badge-online');
+      if(online) online.textContent = good ? 'связь: онлайн' : 'связь: …';
+      console.log('[FB sync]', msg);
+    }catch(_){}
   }
 
-  function restBase(){ return URL.replace(/\/+$/,'') + '/rest/v1/'; }
-  function headers(extra){
-    return Object.assign({
-      'apikey': KEY,
-      'Authorization': 'Bearer ' + KEY,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json'
-    }, extra || {});
+  // ── Чтение локальных данных ──
+  function localGet(key){
+    try{ var v = localStorage.getItem(key); return v ? JSON.parse(v) : null; }catch(_){ return null; }
   }
-  function timeoutPromise(label, ms){
-    return new Promise((_,reject)=>setTimeout(()=>reject(new Error((label||'запрос')+' не ответил за '+Math.round((ms||TIMEOUT_MS)/1000)+' сек.')), ms||TIMEOUT_MS));
+  function localSet(key, val){
+    try{ localStorage.setItem(key, JSON.stringify(val)); }catch(_){}
   }
-  async function rest(path, opt, label, ms){
-    const url = restBase() + path;
-    const res = await Promise.race([fetch(url, opt || {}), timeoutPromise(label || path, ms || TIMEOUT_MS)]);
-    const text = await res.text();
-    if(!res.ok){
-      let detail = text;
-      try{ const j=JSON.parse(text); detail = j.message || j.details || j.hint || j.error || text; }catch(_){ }
-      throw new Error((label||path) + ': HTTP ' + res.status + ' — ' + String(detail||'').slice(0,700));
-    }
-    if(!text) return null;
-    try{ return JSON.parse(text); }catch(_){ return text; }
+
+  // ── Отправка ──
+  async function pushAll(){
+    if(pushing || !db) return;
+    pushing = true;
+    try{
+      status('Firebase: отправляю данные…');
+      var payload = {
+        products: {
+          custom_items:    localGet('custom_items')    || [],
+          custom_barcodes: localGet('custom_barcodes') || {},
+          product_edits:   localGet('product_edits')   || {},
+          pack_sizes:      localGet('pack_sizes')      || {}
+        },
+        cells: {
+          cells:          localGet('cells')          || [],
+          cell_favorites: localGet('cell_favorites') || []
+        },
+        hh11: localGet('hh11_log') || [],
+        rk:   localGet('rk_log')   || [],
+        updated_at: Date.now()
+      };
+      await db.ref(DB_PATH).set(payload);
+      status('Firebase: данные отправлены ✓', true);
+    }catch(e){
+      status('Firebase: ошибка отправки — ' + (e.message || e));
+    }finally{ pushing = false; }
   }
-  async function getState(kind){
-    const data = await rest('w21_pc_sync?key=eq.' + encodeURIComponent(kind) + '&select=key,payload,updated_at,device_id&limit=1', {method:'GET', headers:headers()}, 'чтение ' + kind);
-    const row = Array.isArray(data) ? data[0] : null;
-    if(!row) throw new Error('w21_pc_sync.' + kind + ' не найден');
-    const payload = row.payload || {};
-    const items = payload.items && typeof payload.items === 'object' ? payload.items : {};
-    return {row, items};
+
+  // ── Приём ──
+  // Guard чтобы не срабатывал markDirty пока применяем данные с сервера
+  var applying = false;
+
+  function applySnapshot(snap){
+    var data = snap.val();
+    if(!data) return;
+    applying = true;
+    try{
+      // Товары
+      var p = data.products || {};
+      if(p.custom_items    != null) localSet('custom_items',    p.custom_items);
+      if(p.custom_barcodes != null) localSet('custom_barcodes', p.custom_barcodes);
+      if(p.product_edits   != null) localSet('product_edits',   p.product_edits);
+      if(p.pack_sizes      != null) localSet('pack_sizes',      p.pack_sizes);
+      // Ячейки
+      var c = data.cells || {};
+      if(c.cells          != null) localSet('cells',          c.cells);
+      if(c.cell_favorites != null) localSet('cell_favorites', c.cell_favorites);
+      // HH и РК
+      if(data.hh11 != null) localSet('hh11_log', data.hh11);
+      if(data.rk   != null) localSet('rk_log',   data.rk);
+      // Перерисовать UI
+      try{ if(typeof render      === 'function') render(); }catch(_){}
+      try{ if(typeof renderCells === 'function') renderCells(); }catch(_){}
+      try{ if(typeof renderHH11  === 'function') renderHH11(); }catch(_){}
+      try{ if(typeof renderRK    === 'function') renderRK(); }catch(_){}
+    }finally{ applying = false; }
   }
-  async function patchState(kind, items){
-    const body = {payload:{items:items||{}, saved_at:now(), version:VERSION}, updated_at:now(), device_id:deviceId()};
-    await rest('w21_pc_sync?key=eq.' + encodeURIComponent(kind), {method:'PATCH', headers:headers({'Prefer':'return=minimal'}), body:JSON.stringify(body)}, 'запись ' + kind, TIMEOUT_MS);
-    return Object.keys(items||{}).length;
+
+  async function pullAll(){
+    if(pulling || !db) return;
+    pulling = true;
+    try{
+      status('Firebase: получаю данные…');
+      var snap = await db.ref(DB_PATH).get();
+      if(snap.exists()){
+        applySnapshot(snap);
+        status('Firebase: данные получены ✓', true);
+      } else {
+        status('Firebase: база пустая — нажми «Отправить»', true);
+      }
+    }catch(e){
+      status('Firebase: ошибка загрузки — ' + (e.message || e));
+    }finally{ pulling = false; }
   }
-  function rowTime(r){ return Date.parse((r && (r.deleted_at || r.updated_at)) || '') || 0; }
-  function mergeRows(serverItems, rows, keyField){
-    const map = Object.assign({}, serverItems || {});
-    (rows||[]).forEach(r=>{
-      if(!r) return;
-      const k = String(r[keyField] || '').trim();
-      if(!k) return;
-      const old = map[k];
-      if(!old || rowTime(r) >= rowTime(old)) map[k] = r;
+
+  // ── Realtime подписка — мгновенный приём изменений ──
+  function startRealtime(){
+    if(!db) return;
+    db.ref(DB_PATH).on('value', function(snap){
+      if(!applying && snap.exists()) applySnapshot(snap);
     });
-    return map;
   }
 
-  function cleanBarcodes(v){
-    const out=[];
-    function add(x){ String(x||'').split(/[,;\s]+/).forEach(s=>{ s=s.trim(); if(s && out.indexOf(s)<0) out.push(s); }); }
-    if(Array.isArray(v)) v.forEach(add); else add(v);
-    return out;
-  }
-  function baseMap(){ const m=new Map(); try{ (CATALOG||[]).forEach(x=>{ if(x&&x.ut) m.set(String(x.ut),x); }); }catch(_){ } return m; }
-  function allProductMap(){ const m=new Map(); try{ (productAllItems&&productAllItems()||[]).forEach(x=>{ if(x&&x.ut&&!m.has(String(x.ut))) m.set(String(x.ut),x); }); }catch(_){ } return m; }
-  function localCustomMap(){ const m=new Map(); try{ (getCustomItems()||[]).forEach(x=>{ if(x&&x.ut) m.set(String(x.ut),x); }); }catch(_){ } return m; }
-  function productUts(all){
-    const out=new Set();
-    try{ (getCustomItems()||[]).forEach(x=>{ if(x&&x.ut) out.add(String(x.ut)); }); }catch(_){ }
-    try{ Object.keys(getCustomBarcodes()||{}).forEach(k=>k&&out.add(String(k))); }catch(_){ }
-    try{ Object.keys(getProductEdits()||{}).forEach(k=>k&&out.add(String(k))); }catch(_){ }
-    try{ Object.keys(getPackSizes()||{}).forEach(k=>k&&out.add(String(k))); }catch(_){ }
-    if(!all) dirtyProducts.forEach(k=>out.add(String(k)));
-    Object.keys(tombProducts()).forEach(k=>out.add(String(k)));
-    return Array.from(out);
-  }
-  function hasDynamicProduct(ut){
-    ut=String(ut||'');
-    try{ if((getCustomItems()||[]).some(x=>String(x&&x.ut||'')===ut)) return true; }catch(_){ }
-    try{ if(Object.prototype.hasOwnProperty.call(getCustomBarcodes()||{},ut)) return true; }catch(_){ }
-    try{ if(Object.prototype.hasOwnProperty.call(getProductEdits()||{},ut)) return true; }catch(_){ }
-    try{ if(Object.prototype.hasOwnProperty.call(getPackSizes()||{},ut)) return true; }catch(_){ }
-    return false;
-  }
-  function productRow(ut){
-    ut = String(ut||'').trim(); if(!ut) return null;
-    const deleted = tombProducts()[ut] || '';
-    const ts = now();
-    if(deleted){ return {ut, name:ut, barcode:'', barcodes:[], img:'', pack_size:null, source:'deleted', updated_at:deleted || ts, deleted_at:deleted || ts, device_id:deviceId()}; }
-    if(!hasDynamicProduct(ut)) return null;
-    const all = allProductMap();
-    const custom = localCustomMap();
-    const item = all.get(ut) || custom.get(ut) || {ut};
-    const cb = getCustomBarcodes() || {};
-    const edits = getProductEdits() || {};
-    const packs = getPackSizes() || {};
-    const edit = edits[ut] || {};
-    const bcs = cleanBarcodes(cb[ut] || (typeof productBarcode==='function' ? productBarcode(item) : '') || edit.barcode || item.barcode || '');
-    const packVal = packs[ut];
-    const pack = packVal===undefined || packVal===null || packVal==='' ? null : (parseInt(packVal,10) || null);
-    const isCustom = custom.has(ut) || String(ut).startsWith('CUSTOM-') || item.custom === true;
-    const name = String(edit.name || item.name || ut);
-    const img = String(edit.img || item.img || '');
-    return {ut, name, barcode:bcs[0] || '', barcodes:bcs, img, pack_size:pack, source:isCustom ? 'custom' : 'edited', updated_at:ts, deleted_at:null, device_id:deviceId()};
-  }
-  function productRows(all){ return productUts(all).map(ut=>productRow(ut)).filter(Boolean); }
-
-  function cellKey(c){ return String((c && (c.id || c.addr || c.code)) || '').trim(); }
-  function cellRows(all){
-    const rows=[]; const tomb=tombCells(); const ts=now();
-    try{
-      (getCells()||[]).forEach(c=>{
-        const id = cellKey(c); if(!id || tomb[id]) return;
-        if(!all && dirtyCells.size && !dirtyCells.has(id)) return;
-        rows.push({id, addr:String(c.addr||''), name:String(c.name||''), code:String(c.code||''), updated_at:ts, deleted_at:null, device_id:deviceId()});
-      });
-    }catch(_){ }
-    Object.keys(tomb).forEach(id=>rows.push({id, addr:'', name:'', code:'', updated_at:tomb[id]||ts, deleted_at:tomb[id]||ts, device_id:deviceId()}));
-    return rows;
+  // ── Авто-отправка при локальных изменениях ──
+  function schedulePush(ms){
+    clearTimeout(dirtyTimer);
+    dirtyTimer = setTimeout(function(){ pushAll(); }, ms || 1200);
   }
 
-  function mapArrayBy(arr, fn){ const m=new Map(); (Array.isArray(arr)?arr:[]).forEach(x=>{ const k=fn(x); if(k) m.set(String(k),x); }); return m; }
-  function markFromStorageChange(key, beforeValue, afterValue){
+  // Перехватываем изменения localStorage
+  window.supaMarkDirtyKey = function(key, before, after){
     if(applying) return;
-    const keyStr=String(key||'');
-    if(PRODUCT_KEYS.has(keyStr)){
-      const before = keyStr==='custom_items' ? safeJSON(beforeValue,[]) : safeJSON(beforeValue,{});
-      const after  = keyStr==='custom_items' ? safeJSON(afterValue,[])  : safeJSON(afterValue,{});
-      if(keyStr==='custom_items'){
-        const old=mapArrayBy(before,x=>x&&x.ut), neu=mapArrayBy(after,x=>x&&x.ut);
-        old.forEach((x,ut)=>{ if(!neu.has(ut)){ rememberProductDelete(ut, now()); dirtyProducts.add(ut); } });
-        neu.forEach((x,ut)=>{ forgetProductDelete(ut); dirtyProducts.add(ut); });
-      }else{
-        const keys = new Set([].concat(Object.keys(before||{}), Object.keys(after||{})));
-        keys.forEach(ut=>{ if(!ut)return; if(!hasDynamicProduct(ut)) rememberProductDelete(ut, now()); else forgetProductDelete(ut); dirtyProducts.add(ut); });
-      }
-      schedulePush();
+    var k = String(key || '');
+    if(PRODUCT_KEYS.indexOf(k) >= 0 || CELL_KEYS.indexOf(k) >= 0 ||
+       HH_KEYS.indexOf(k) >= 0      || RK_KEYS.indexOf(k) >= 0){
+      schedulePush(1200);
     }
-    if(CELL_KEYS.has(keyStr)){
-      const before = safeJSON(beforeValue,[]), after = safeJSON(afterValue,[]);
-      if(keyStr==='cells' || keyStr==='cells__mirror'){
-        const old=mapArrayBy(before,cellKey), neu=mapArrayBy(after,cellKey);
-        old.forEach((x,id)=>{ if(id&&!neu.has(id)){ rememberCellDelete(id, now()); dirtyCells.add(id); } });
-        neu.forEach((x,id)=>{ if(id){ forgetCellDelete(id); dirtyCells.add(id); } });
-        schedulePush();
-      }
-    }
-  }
+  };
+
+  // ── Публичные функции для кнопок ──
+  window.fbPullNow  = function(){ return pullAll(); };
+  window.fbPushNow  = function(){ return pushAll(); };
+  window.fbFullSync = async function(){ await pullAll(); await pushAll(); };
+
+  // ── Патч storage для отслеживания изменений ──
   function patchStorage(){
-    if(patched) return; patched=true;
-    const orig = Storage.prototype.setItem;
+    if(window.__fbStoragePatched) return;
+    var orig = Storage.prototype.setItem;
     Storage.prototype.setItem = function(key, value){
-      let before=null;
-      try{ if(this===localStorage) before=this.getItem(key); }catch(_){ }
-      const r = orig.apply(this, arguments);
-      try{ if(this===localStorage) markFromStorageChange(key, before, value); }catch(e){ console.warn('sync mark failed', e); }
-      return r;
+      var before = null;
+      try{ if(this === localStorage) before = this.getItem(key); }catch(_){}
+      orig.apply(this, arguments);
+      try{
+        if(this === localStorage && typeof supaMarkDirtyKey === 'function')
+          supaMarkDirtyKey(String(key), before, value);
+      }catch(_){}
     };
+    window.__fbStoragePatched = true;
   }
 
-  function applyProducts(rows){
-    applying=true;
-    try{
-      const custom = getCustomItems().slice();
-      const customByUt = new Map(custom.map(x=>[String(x.ut),x]));
-      const base = baseMap();
-      const cb = getCustomBarcodes();
-      const edits = getProductEdits();
-      const packs = getPackSizes();
-      let added=0, updated=0, deleted=0;
-      (rows||[]).forEach(r=>{
-        const ut=String(r&&r.ut||'').trim(); if(!ut) return;
-        if(r.deleted_at){
-          rememberProductDelete(ut, r.deleted_at || r.updated_at || now());
-          for(let i=custom.length-1;i>=0;i--){ if(String(custom[i].ut)===ut){ custom.splice(i,1); deleted++; } }
-          delete cb[ut]; delete edits[ut]; delete packs[ut]; dirtyProducts.delete(ut);
-          return;
-        }
-        forgetProductDelete(ut);
-        const bcs = cleanBarcodes(r.barcodes && r.barcodes.length ? r.barcodes : r.barcode);
-        if(bcs.length) cb[ut] = bcs.join(', '); else delete cb[ut];
-        if(r.pack_size!==null && r.pack_size!==undefined && r.pack_size!=='') packs[ut] = parseInt(r.pack_size,10)||r.pack_size; else delete packs[ut];
-        const source = String(r.source||'custom');
-        const item = {ut, name:String(r.name||ut), barcode:bcs.join(', '), img:String(r.img||''), custom:source==='custom', source:'supabase'};
-        if(source==='custom' || !base.has(ut)){
-          if(customByUt.has(ut)){ Object.assign(customByUt.get(ut), item); updated++; }
-          else { custom.unshift(item); customByUt.set(ut,item); added++; }
-        }else{
-          const b = base.get(ut) || {};
-          const changedName = r.name && r.name !== b.name;
-          const changedImg = r.img && r.img !== b.img;
-          const changedBc = bcs.join(', ') && bcs.join(', ') !== String(b.barcode||'');
-          if(changedName || changedImg || changedBc){ edits[ut] = {ut, name:r.name || b.name || ut, barcode:bcs.join(', ') || b.barcode || '', img:r.img || b.img || ''}; updated++; }
-          else if(edits[ut]) delete edits[ut];
-        }
-        dirtyProducts.delete(ut);
-      });
-      localStorage.setItem('custom_items', JSON.stringify(custom));
-      localStorage.setItem('custom_barcodes', JSON.stringify(cb));
-      localStorage.setItem('product_edits', JSON.stringify(edits));
-      localStorage.setItem('pack_sizes', JSON.stringify(packs));
-      return {added,updated,deleted};
-    }finally{ applying=false; }
-  }
-  function applyCells(rows){
-    applying=true;
-    try{
-      const cur = getCells().slice();
-      const byId = new Map(); const byAddr = new Map(); const byCode = new Map();
-      cur.forEach(c=>{ const id=cellKey(c); if(id)byId.set(id,c); const a=String(c.addr||'').toLowerCase(); if(a)byAddr.set(a,c); const code=String(c.code||''); if(code)byCode.set(code,c); });
-      let added=0, updated=0, deleted=0;
-      function removeCell(c){ const idx=cur.indexOf(c); if(idx>=0){ cur.splice(idx,1); deleted++; } }
-      (rows||[]).forEach(r=>{
-        const id=String(r&&r.id||'').trim(); if(!id) return;
-        const addr=String(r.addr||''); const code=String(r.code||'');
-        let existing = byId.get(id) || (addr ? byAddr.get(addr.toLowerCase()) : null) || (code ? byCode.get(code) : null);
-        if(r.deleted_at){ rememberCellDelete(id, r.deleted_at || r.updated_at || now()); if(existing) removeCell(existing); dirtyCells.delete(id); return; }
-        forgetCellDelete(id);
-        const next={id, addr:addr||id, name:String(r.name||''), code};
-        if(existing){ Object.assign(existing,next); updated++; }
-        else { cur.unshift(next); added++; }
-        dirtyCells.delete(id);
-      });
-      localStorage.setItem('cells', JSON.stringify(typeof normalizeCellsArray==='function' ? normalizeCellsArray(cur) : cur));
-      return {added,updated,deleted};
-    }finally{ applying=false; }
-  }
-  function refreshUI(){
-    try{ if(typeof query!=='undefined' && query) doSearch(query); else if(typeof render==='function') render(); }catch(_){ }
-    try{ if(typeof renderCells==='function') renderCells(); }catch(_){ }
+  // ── Переподписываем кнопки и тексты ──
+  function relabel(){
+    var btns = document.querySelectorAll('button');
+    btns.forEach(function(b){
+      var on = String(b.getAttribute('onclick') || '');
+      if(on.indexOf('supaConnectAndStart') >= 0){
+        b.setAttribute('onclick','fbFullSync()'); b.textContent = '🔄 Синхронизировать';
+      }
+      if(on.indexOf('supaBootstrapServer') >= 0){
+        b.setAttribute('onclick','fbPushNow()'); b.textContent = '⬆ Отправить на сервер';
+      }
+      if(on.indexOf("supaAutoPullNow") >= 0){
+        b.setAttribute('onclick','fbPullNow()'); b.textContent = '⬇ Получить с сервера';
+      }
+      if(on.indexOf('supaAutoToggle') >= 0){
+        b.setAttribute('onclick','fbPushNow()'); b.textContent = '⬆ Отправить сейчас';
+      }
+      if(on.indexOf('supaDownloadSQL') >= 0){
+        b.style.display = 'none'; // SQL больше не нужен
+      }
+    });
+    var warn = document.querySelector('.supa-warning');
+    if(warn) warn.innerHTML = 'Режим Firebase: данные хранятся в Firebase Realtime Database и доступны на всех устройствах в реальном времени. Товары, ячейки, HH 1-1 и РК синхронизируются автоматически.';
+    var dbEl = document.querySelector('.supa-status');
+    if(dbEl) dbEl.textContent = 'База: warehouse-dbec9 (Firebase, Сингапур)';
   }
 
-  async function pushProductsCells(all){
-    if(pushing) return {products:0,cells:0};
-    pushing=true;
-    try{
-      const pr = productRows(!!all);
-      const cr = cellRows(!!all);
-      if(!pr.length && !cr.length){ status('Отправлять нечего.', true); return {products:0,cells:0}; }
-      let pc=0, cc=0;
-      if(pr.length){
-        status('Читаю серверные товары…');
-        const st = await getState('products');
-        const merged = mergeRows(st.items, pr, 'ut');
-        status('Записываю товары в единый JSON-снимок…');
-        pc = await patchState('products', merged);
-      }
-      if(cr.length){
-        status('Читаю серверные ячейки…');
-        const st = await getState('cells');
-        const merged = mergeRows(st.items, cr, 'id');
-        status('Записываю ячейки в единый JSON-снимок…');
-        cc = await patchState('cells', merged);
-      }
-      if(all){ dirtyProducts.clear(); dirtyCells.clear(); }
-      else { pr.forEach(r=>dirtyProducts.delete(String(r.ut))); cr.forEach(r=>dirtyCells.delete(String(r.id))); }
-      lastPush=Date.now();
-      status('Отправлено: товары ' + pr.length + ', ячейки ' + cr.length + '.', true);
-      return {products:pc,cells:cc};
-    }catch(e){ status('Ошибка отправки: ' + human(e)); throw e; }
-    finally{ pushing=false; updateBadges(); }
-  }
-  async function pullProductsCells(){
-    if(pulling) return {products:{},cells:{}};
-    pulling=true;
-    try{
-      status('Загружаю товары и ячейки с сервера…');
-      const ps = await getState('products');
-      const cs0 = await getState('cells');
-      const products = Object.values(ps.items || {});
-      const cells = Object.values(cs0.items || {});
-      const pstat=applyProducts(products), cstat=applyCells(cells);
-      lastPull=Date.now(); refreshUI();
-      status('Принято: товары +' + pstat.added + '/' + pstat.updated + '/-' + pstat.deleted + ', ячейки +' + cstat.added + '/' + cstat.updated + '/-' + cstat.deleted + '.', true);
-      return {products:pstat,cells:cstat};
-    }catch(e){ status('Ошибка загрузки: ' + human(e)); throw e; }
-    finally{ pulling=false; updateBadges(); }
-  }
-  function schedulePush(){
-    if(!autoEnabled()) return;
-    clearTimeout(pushTimer);
-    pushTimer=setTimeout(()=>pushProductsCells(false).catch(()=>{}), 1500);
-    updateBadges();
-  }
+  // ── Полинг как запасной вариант ──
   function startLoop(){
-    clearInterval(pullTimer);
-    if(!autoEnabled()) return;
-    pullTimer=setInterval(()=>{ if(!document.hidden) pullProductsCells().catch(()=>{}); }, PULL_EVERY_MS);
-  }
-  function stopLoop(){ clearInterval(pullTimer); clearTimeout(pushTimer); }
-  function stopOldSyncNoise(){
-    try{ if(window.__w21SupaPullTimer) clearInterval(window.__w21SupaPullTimer); }catch(_){ }
-    try{ if(window.__w21v35PullTimer) clearInterval(window.__w21v35PullTimer); }catch(_){ }
-    try{ if(window.__w21SupaPushTimer) clearTimeout(window.__w21SupaPushTimer); }catch(_){ }
+    clearInterval(loopTimer);
+    loopTimer = setInterval(function(){
+      if(!document.hidden) pullAll();
+    }, PULL_EVERY);
   }
 
-  window.supaDownloadSQL = function(){ downloadTextAsFile(W21_SUPA_SCHEMA_SQL,'supabase_schema_v41.sql','text/plain;charset=utf-8'); };
-  window.supaAutoToggle = function(){ setAutoEnabled(!autoEnabled()); if(autoEnabled()){ startLoop(); pullProductsCells().catch(e=>alert('Ошибка Supabase: '+human(e))); } else { stopLoop(); status('Автосинхронизация выключена.'); } };
-  window.supaConnectAndStart = async function(){
-    try{
-      status('Проверяю w21_pc_sync…');
-      await getState('products'); await getState('cells');
-      patchStorage(); stopOldSyncNoise(); startLoop();
-      status('Связь есть. v41: товары/ячейки идут через w21_pc_sync.', true);
-      return true;
-    }catch(e){ status('Ошибка связи: '+human(e)); alert('Ошибка Supabase: '+human(e)); return false; }
-  };
-  window.supaBootstrapServer = async function(){
-    try{
-      if(!confirm('Отправить ВСЕ локальные добавленные товары/правки и ВСЕ пользовательские ячейки на сервер?\n\nЭто v41: пишем не в w21_products, а в w21_pc_sync.')) return;
-      await pushProductsCells(true);
-      await pullProductsCells();
-    }catch(e){ alert('Ошибка Supabase: '+human(e)); }
-  };
-  window.supaAutoPullNow = async function(){ try{ await pullProductsCells(); } catch(e){ alert('Ошибка Supabase: '+human(e)); } };
-  window.w21SyncNow = async function(){ await pushProductsCells(false); await pullProductsCells(); };
-  window.w21FullSync = async function(){ await pullProductsCells(); await pushProductsCells(true); await pullProductsCells(); };
-  window.w21SyncStatus = function(){ return {version:VERSION, auto:autoEnabled(), dirty_products:dirtyProducts.size, dirty_cells:dirtyCells.size, local_products:productRows(true).length, local_cells:cellRows(true).length}; };
-
+  // ── Старт ──
   function boot(){
     try{
-      const u=document.getElementById('supa-url'), k=document.getElementById('supa-key');
-      if(u){ u.value=URL; u.readOnly=true; }
-      if(k){ k.value=KEY; k.readOnly=true; }
-      const warn=document.querySelector('.supa-warning');
-      if(warn) warn.innerHTML='Режим v41: нормальная синхронизация товаров и ячеек через одну таблицу w21_pc_sync. Старые w21_products/w21_cells больше не используются. Встроенный каталог целиком не заливается. Доступы/пароли не синхронизируются.';
-      const st=document.querySelector('.supa-status');
-      if(st) st.innerHTML='База: <b>icudtjvnnoeibzxyyxfz.supabase.co</b> · sync: <b>w21_pc_sync</b>';
-      const btns=[].slice.call(document.querySelectorAll('button'));
-      btns.forEach(b=>{
-        const on=String(b.getAttribute('onclick')||'');
-        if(on.includes('supaConnectAndStart')){ b.textContent='🔌 Проверить базу'; }
-        if(on.includes('supaAutoPullNow')){ b.textContent='⬇ Получить товары/ячейки'; }
-        if(on.includes('supaBootstrapServer')){ b.textContent='⬆ Отправить товары/ячейки'; }
+      if(!initFB()) return;
+      patchStorage();
+      relabel();
+      // Realtime — мгновенные обновления
+      startRealtime();
+      // Полинг — запасной
+      startLoop();
+      // Первичная загрузка
+      pullAll().then(function(){ status('Firebase: синхронизация активна.', true); });
+      window.addEventListener('online',  function(){ pullAll(); });
+      window.addEventListener('focus',   function(){ pullAll(); });
+      document.addEventListener('visibilitychange', function(){
+        if(!document.hidden) pullAll();
       });
-      patchStorage(); stopOldSyncNoise(); updateBadges();
-      if(autoEnabled()){ startLoop(); setTimeout(()=>pullProductsCells().catch(()=>{}), 1200); }
-      window.addEventListener('online',()=>{ if(autoEnabled()){ pushProductsCells(false).catch(()=>{}); pullProductsCells().catch(()=>{}); } });
-      document.addEventListener('visibilitychange',()=>{ if(!document.hidden && autoEnabled()) pullProductsCells().catch(()=>{}); });
-      window.addEventListener('focus',()=>{ if(autoEnabled()) pullProductsCells().catch(()=>{}); });
-      status('v41 готов: товары/ячейки подключены через w21_pc_sync.', true);
-    }catch(e){ status('v41 boot error: '+human(e)); }
+    }catch(e){ status('Firebase boot error: ' + e.message); }
   }
 
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
-  else setTimeout(boot,0);
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
+  else setTimeout(boot, 0);
 })();
+
 </script>
 
 </body>
