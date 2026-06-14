@@ -947,6 +947,7 @@ function toggleEOUsed(code, cardId){
   if(card)card.classList.toggle('eo-used',!!used[code]);
 }
 function drawBarcodeBig(canvas,text){
+  if(!canvas)return;
   const p=code128(String(text||''));
   const viewportW=Math.max(320, window.innerWidth||360);
   const bw=Math.max(4, Math.min(9, Math.floor((viewportW*1.35)/Math.max(1,p.length))));
@@ -957,11 +958,30 @@ function drawBarcodeBig(canvas,text){
   ctx.fillStyle='#000';
   for(let i=0;i<p.length;i++)if(p[i]==='1')ctx.fillRect(i*bw,0,bw,h);
 }
+function ensureBarcodeZoomOverlay(){
+  let ov=document.getElementById('bc-zoom');
+  if(!ov){
+    ov=document.createElement('div');
+    ov.id='bc-zoom';
+    ov.style.display='none';
+    ov.innerHTML=''+
+      '<button type="button" id="bc-zoom-close" onclick="closeZoom()">Закрыть</button>'+
+      '<div id="bc-zoom-title"></div>'+
+      '<div id="bc-zoom-subtitle"></div>'+
+      '<canvas id="bc-zoom-canvas"></canvas>'+
+      '<div id="bc-zoom-code"></div>'+
+      '<div id="bc-zoom-nav"><button type="button" id="bc-zoom-prev" onclick="zoomNavMove(-1)">← Предыдущий</button><button type="button" id="bc-zoom-next" onclick="zoomNavMove(1)">Следующий →</button></div>'+
+      '<div id="bc-zoom-list"></div>';
+    ov.addEventListener('click',function(e){if(e.target===ov)closeZoom();});
+    document.body.appendChild(ov);
+  }
+  return ov;
+}
 let zoomNavState=null;
 function zoomBarcode(code, list, meta, nav){
   code=String(code||'').trim();
   if(!code)return;
-  const ov=document.getElementById('bc-zoom');
+  const ov=ensureBarcodeZoomOverlay();
   nav=nav||null;
   const cv=document.getElementById('bc-zoom-canvas');
   const codeEl=document.getElementById('bc-zoom-code');
@@ -987,7 +1007,7 @@ function zoomBarcode(code, list, meta, nav){
   }
   if(titleEl)titleEl.textContent=title||'';
   if(subEl)subEl.textContent=subtitle||'';
-  codeEl.textContent=code;
+  if(codeEl)codeEl.textContent=code;
   drawBarcodeBig(cv,code);
   if(listEl){
     listEl.innerHTML=codes.length>1?codes.map(x=>'<button type="button" class="'+(x===code?'active':'')+'" data-code="'+escHtml(x)+'">'+escHtml(x)+'</button>').join(''):'';
@@ -2610,8 +2630,6 @@ function makeBackupData(){
     rk_log:getRK(),
     problems_log:getProblems(),
     action_log:getActionLog(),
-    audit_log:getAuditLog(),
-    user_profile:getUserProfileLocal(),
     localStorage_snapshot:localSnapshot,
     catalog_snapshot:CATALOG,
     backup_version:23,
