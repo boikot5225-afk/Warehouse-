@@ -127,6 +127,8 @@ function toggleFav(ut){
 const getNotes = () => get('notes');
 const getCreds = () => getSafeCredentials();
 const getEOCodes = () => get('eo_codes');
+const getProblems = () => get('problems_log');
+const getActionLog = () => get('action_log');
 function saveCustomBarcode(ut,bc){const o=getCustomBarcodes();o[ut]=bc;set('custom_barcodes',o);}
 const getPackSizes = () => getObj('pack_sizes');
 function savePackSize(ut,n){const o=getPackSizes();if(n)o[ut]=n;else delete o[ut];set('pack_sizes',o);}
@@ -146,6 +148,27 @@ function productBarcodeList(i){
   add(cb[(i&&i.ut)||'']);
   add(cb[key]);
   return vals;
+}
+
+
+// ── LIGHT ACTION LOG ──
+function logAction(type, text, meta){
+  try{
+    const arr=getActionLog();
+    arr.unshift({id:Date.now()+Math.floor(Math.random()*1000),type:String(type||'action'),text:String(text||''),meta:meta||{},ts:new Date().toLocaleString('ru-RU'),iso:new Date().toISOString()});
+    set('action_log',arr.slice(0,300));
+  }catch(e){}
+}
+function renderActionLogMini(){
+  const box=document.getElementById('diag-action-log');
+  if(!box)return;
+  const arr=getActionLog().slice(0,12);
+  if(!arr.length){box.innerHTML='<div class="no-results" style="padding:12px;">Журнал пока пуст</div>';return;}
+  box.innerHTML=arr.map(x=>'<div style="border-bottom:1px solid var(--border);padding:7px 0;font-size:11px;line-height:1.35;"><b style="color:var(--gold);">'+escHtml(x.ts||'')+'</b> · '+escHtml(x.text||x.type||'')+'</div>').join('');
+}
+function clearActionLog(){
+  if(!confirm('Очистить локальный журнал действий?'))return;
+  set('action_log',[]);renderActionLogMini();
 }
 
 
@@ -252,7 +275,9 @@ function runSearchByContext(ctx){
   else if(ctx==='calc'){const el=document.getElementById('calc-prod-search');calcProdSearch(el?el.value:'');}
   else if(ctx==='hh11'){const el=document.getElementById('hh11-search');hh11Search(el?el.value:'');}
   else if(ctx==='rk'){const el=document.getElementById('rk-search');rkSearch(el?el.value:'');}
+  else if(ctx==='problems'){const el=document.getElementById('problem-search');problemSearch(el?el.value:'');}
 }
+
 function clearProductSearch(id,ctx){const el=document.getElementById(id);if(!el)return;el.value='';try{el.dispatchEvent(new Event('input',{bubbles:true}));}catch(e){} el.focus();runSearchByContext(ctx);}
 function prefixProductSearch(id,prefix,ctx){const el=document.getElementById(id);if(!el)return;el.value=prefix;el.focus();try{el.setSelectionRange(el.value.length,el.value.length);}catch(e){}runSearchByContext(ctx);}
 function toggleNumericSearch(id,btn){const el=document.getElementById(id);if(!el)return;const on=el.getAttribute('inputmode')==='numeric';if(on){el.setAttribute('inputmode','text');if(btn)btn.classList.remove('primary');}else{el.setAttribute('inputmode','numeric');if(btn)btn.classList.add('primary');}el.focus();}
@@ -300,7 +325,7 @@ function drawBarcode(canvas,text){
 }
 
 // ── TABS ──
-const TABS=['catalog','cells','notes','eo','creds','calc','hh11','rk','report','service'];
+const TABS=['catalog','cells','notes','eo','creds','calc','hh11','rk','problems','report','service'];
 function switchTab(tab){
   document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   TABS.forEach(t=>{const el=document.getElementById('tab-'+t);if(el)el.style.display=t===tab?'':'none';});
@@ -312,6 +337,8 @@ function switchTab(tab){
   if(tab==='eo'){renderEO();renderEORange();}
   if(tab==='hh11')renderHH11();
   if(tab==='rk')renderRK();
+  if(tab==='problems')renderProblems();
+  if(tab==='service'){renderDiagnostics();renderAutoBackups();renderActionLogMini();}
   if(tab==='report')renderReport();
   window.scrollTo(0,0);
 }
@@ -1723,7 +1750,7 @@ function shareJournal(){
 const getHH11 = () => get('hh11_log');
 let hh11Picked=null;
 let hh11Mode='listed';
-let hh11View='all';
+let hh11View='active';
 function jsStr(s){return String(s??'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/[\r\n]+/g,' ');}
 function hh11AllItems(){return productAllItems();}
 function hh11SetMode(mode){
@@ -1840,12 +1867,13 @@ function hh11Add(){
   const sys=Math.max(0,parseInt(sysEl&&sysEl.value)||0);
   const fact=Math.max(0,parseInt(factEl&&factEl.value)||0);
   const row={id:Date.now()+Math.floor(Math.random()*1000),eo:eo,ut:hh11Picked.ut,name:hh11Picked.name,mode:hh11Mode,sys:hh11Mode==='listed'?sys:'',fact:fact,comment:(cEl&&cEl.value||'').trim(),mismatch:mEl&&mEl.checked?1:0,placed:0,shortage:0,ts:new Date().toLocaleString('ru-RU')};
-  const arr=getHH11();arr.unshift(row);set('hh11_log',arr);
+  const arr=getHH11();arr.unshift(row);set('hh11_log',arr);logAction('hh11','Добавлена строка HH 1-1: '+(row.ut||row.name||''),{id:row.id});
   if(eo)hh11MarkEOUsed(eo);
   if(eoEl)eoEl.value=''; if(sysEl)sysEl.value=''; if(factEl)factEl.value=''; if(cEl)cEl.value=''; if(mEl)mEl.checked=false;
   hh11ClearPicked();renderHH11();
 }
-function hh11Del(id){set('hh11_log',getHH11().filter(x=>x.id!==id));renderHH11();}
+function hh11Del(id){set('hh11_log',getHH11().filter(x=>x.id!==id));logAction('hh11','Удалена строка HH 1-1',{id:id});renderHH11();}
+function hh11Archive(id){const arr=getHH11();const r=arr.find(x=>x.id===id);if(!r)return;r.archived=r.archived?0:1;r.archivedTs=r.archived?new Date().toLocaleString('ru-RU'):'';set('hh11_log',arr);logAction('hh11',(r.archived?'В архив HH 1-1':'Из архива HH 1-1'),{id:id});renderHH11();}
 function hh11TogglePlaced(id){
   const arr=getHH11();const r=arr.find(x=>x.id===id);if(!r)return;
   r.placed=r.placed?0:1;
@@ -1877,7 +1905,7 @@ function hh11EditEO(id,val){
 function hh11Stats(arr){
   const listed=arr.filter(x=>x.mode==='listed');
   const found=arr.filter(x=>x.mode==='found');
-  return {all:arr.length,listed:listed.length,found:found.length,placed:arr.filter(x=>x.placed).length,shortage:arr.filter(x=>x.shortage).length,openListed:listed.filter(x=>!x.placed&&!x.shortage).length,mismatch:arr.filter(x=>x.mismatch).length};
+  return {all:arr.length,active:arr.filter(x=>!x.archived).length,archive:arr.filter(x=>x.archived).length,listed:listed.length,found:found.length,placed:arr.filter(x=>x.placed).length,shortage:arr.filter(x=>x.shortage).length,openListed:listed.filter(x=>!x.placed&&!x.shortage&&!x.archived).length,mismatch:arr.filter(x=>x.mismatch).length};
 }
 function hh11BoardButton(view,label,num,accent){
   const active=hh11View===view;
@@ -1904,6 +1932,7 @@ function hh11RenderBoard(arr){
   const b=document.getElementById('hh11-board');if(!b)return;
   const st=hh11Stats(arr);
   b.innerHTML=hh11RenderOverview(arr)+'<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;">'+
+    hh11BoardButton('active','Активные',st.active)+
     hh11BoardButton('all','Все',st.all)+
     hh11BoardButton('listed','Числятся',st.listed)+
     hh11BoardButton('found','Не числятся',st.found,'#c0392b')+
@@ -1911,6 +1940,7 @@ function hh11RenderBoard(arr){
     hh11BoardButton('placed','Размещено',st.placed,'#5a8a4a')+
     hh11BoardButton('shortage','Недостача',st.shortage,'#c0392b')+
     hh11BoardButton('mismatch','Пересорт',st.mismatch,'#c0392b')+
+    hh11BoardButton('archive','Архив',st.archive,'#777')+
     '</div>';
 }
 function hh11PlacementIds(){
@@ -1925,12 +1955,14 @@ function hh11ZoomPlacement(id){
   zoomBarcode(String(it.eo),null,{title:it.name||it.ut,subtitle:pos+' · '+it.ut,eo:it.eo},{kind:'hh11',ids:ids,currentId:id,canPrev:idx>0,canNext:idx>=0&&idx<ids.length-1,fullscreen:true,placement:true});
 }
 function hh11Filtered(arr){
-  if(hh11View==='listed')return arr.filter(x=>x.mode==='listed');
-  if(hh11View==='found')return arr.filter(x=>x.mode==='found');
-  if(hh11View==='open')return arr.filter(x=>x.mode==='listed'&&!x.placed&&!x.shortage);
-  if(hh11View==='placed')return arr.filter(x=>x.placed);
-  if(hh11View==='shortage')return arr.filter(x=>x.shortage);
-  if(hh11View==='mismatch')return arr.filter(x=>x.mismatch);
+  if(hh11View==='active')return arr.filter(x=>!x.archived);
+  if(hh11View==='archive')return arr.filter(x=>x.archived);
+  if(hh11View==='listed')return arr.filter(x=>x.mode==='listed'&&!x.archived);
+  if(hh11View==='found')return arr.filter(x=>x.mode==='found'&&!x.archived);
+  if(hh11View==='open')return arr.filter(x=>x.mode==='listed'&&!x.placed&&!x.shortage&&!x.archived);
+  if(hh11View==='placed')return arr.filter(x=>x.placed&&!x.archived);
+  if(hh11View==='shortage')return arr.filter(x=>x.shortage&&!x.archived);
+  if(hh11View==='mismatch')return arr.filter(x=>x.mismatch&&!x.archived);
   return arr;
 }
 function hh11RenderGroup(title,items,kind){
@@ -1951,7 +1983,7 @@ function hh11RenderGroup(title,items,kind){
     h+='<div style="background:var(--bg2);border-radius:8px;padding:9px 10px;margin-bottom:7px;border-left:3px solid '+border+';opacity:'+rowOpacity+';">'+
       '<div style="display:flex;gap:8px;align-items:flex-start;"><div style="flex:1;min-width:0;">'+
         (eo?'<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px;flex-wrap:wrap;"><span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:var(--text);background:rgba(0,0,0,0.16);border:1px solid var(--border);border-radius:6px;padding:3px 6px;">ЕО '+escHtml(eo)+'</span><button onclick="zoomBarcode(\''+safeEO+'\',null,{title:\''+jsStr(it.name||it.ut)+'\',subtitle:\''+jsStr(it.ut)+'\',eo:\''+safeEO+'\'},{compact:true})" style="background:none;border:1px solid var(--border);border-radius:6px;padding:3px 7px;color:var(--muted);font-family:\'Oswald\',sans-serif;font-size:10px;cursor:pointer;">ШК</button>'+(kind==='listed'&&!placed&&!shortage?'<button onclick="hh11ZoomPlacement('+it.id+')" style="background:rgba(212,168,67,.12);border:1px solid var(--gold);border-radius:6px;padding:3px 7px;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:10px;cursor:pointer;">⤢ размещение</button>':'')+badges+'</div>':(badges?'<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px;flex-wrap:wrap;">'+badges+'</div>':''))+
-        '<div style="'+textDeco+'font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:var(--gold);">'+escHtml(it.ut)+'</div><div style="'+textDeco+'font-size:12px;color:var(--text);line-height:1.25;">'+escHtml(it.name)+'</div></div><button onclick="hh11Del('+it.id+')" style="background:none;border:none;color:var(--red-bright);font-size:14px;cursor:pointer;">✕</button></div>'+ 
+        '<div style="'+textDeco+'font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:var(--gold);">'+escHtml(it.ut)+'</div><div style="'+textDeco+'font-size:12px;color:var(--text);line-height:1.25;">'+escHtml(it.name)+'</div></div><div style="display:flex;gap:6px;align-items:flex-start;"><button onclick="hh11Archive('+it.id+')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:10px;padding:4px 7px;cursor:pointer;">'+(it.archived?'↩':'арх')+'</button><button onclick="hh11Del('+it.id+')" style="background:none;border:none;color:var(--red-bright);font-size:14px;cursor:pointer;">✕</button></div></div>'+ 
       '<div style="display:grid;grid-template-columns:'+(kind==='listed'?'1fr 1fr':'1fr')+';gap:6px;margin-top:8px;">'+
       (kind==='listed'?'<div><label class="modal-lbl">Система</label><input class="calc-inp" type="number" inputmode="numeric" value="'+(it.sys||0)+'" onchange="hh11EditQty('+it.id+',\'sys\',this.value)" style="margin-bottom:0;font-size:16px;padding:9px;text-align:center;"></div>':'')+
       '<div><label class="modal-lbl">Факт</label><input class="calc-inp" type="number" inputmode="numeric" value="'+(it.fact||0)+'" onchange="hh11EditQty('+it.id+',\'fact\',this.value)" style="margin-bottom:0;font-size:16px;padding:9px;text-align:center;"></div></div>'+ 
@@ -2035,6 +2067,8 @@ function hh11Clear(){if(confirm('Очистить HH 1-1 за смену?')){set
 
 // ── RK CHECK JOURNAL ──
 const getRK = () => get('rk_log');
+let rkView='active';
+function rkSetView(v){rkView=v;renderRK();}
 let rkPicked=null;
 function rkAllItems(){return productAllItems();}
 function rkTodayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
@@ -2177,7 +2211,7 @@ function rkAdd(){
     comment:'',
     ts:Date.now()
   };
-  const arr=getRK();arr.unshift(row);set('rk_log',arr);
+  const arr=getRK();arr.unshift(row);set('rk_log',arr);logAction('rk','Добавлена строка РК: '+(row.ut||row.name||row.eo||''),{id:row.id});
   ['rk-surplus','rk-shortage','rk-defect','rk-comment'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   rkClearPicked();rkResetStatus();rkRefreshEOState();renderRK();
 }
@@ -2193,11 +2227,14 @@ function rkAddNoDiff(){
     comment:'',
     ts:Date.now()
   };
-  const arr=getRK();arr.unshift(row);set('rk_log',arr);
+  const arr=getRK();arr.unshift(row);set('rk_log',arr);logAction('rk','Добавлена ЕО без расхождений: '+(row.eo||''),{id:row.id});
   ['rk-surplus','rk-shortage','rk-defect','rk-comment'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   rkClearPicked();rkResetStatus();rkRefreshEOState();renderRK();
 }
-function rkDel(id){set('rk_log',getRK().filter(x=>x.id!==id));renderRK();rkRefreshEOState();}
+function rkDel(id){set('rk_log',getRK().filter(x=>x.id!==id));logAction('rk','Удалена строка РК',{id:id});renderRK();rkRefreshEOState();}
+function rkArchive(id){const arr=getRK();const r=arr.find(x=>x.id===id);if(!r)return;r.archived=r.archived?0:1;r.archivedTs=r.archived?new Date().toLocaleString('ru-RU'):'';set('rk_log',arr);logAction('rk',(r.archived?'В архив РК':'Из архива РК'),{id:id});renderRK();rkRefreshEOState();}
+function rkFilteredByView(arr){arr=arr||getRK();if(rkView==='archive')return arr.filter(x=>x.archived);if(rkView==='all')return arr;return arr.filter(x=>!x.archived);}
+function rkRenderViewBar(){const b=document.getElementById('rk-view-bar');if(!b)return;const arr=getRK();const active=arr.filter(x=>!x.archived).length, arch=arr.filter(x=>x.archived).length;const btn=(v,l,n)=>'<button class="cell-chip '+(rkView===v?'active':'')+'" onclick="rkSetView(\''+v+'\')">'+l+' <b>'+n+'</b></button>';b.innerHTML=btn('active','Активные',active)+btn('archive','Архив',arch)+btn('all','Все',arr.length);}
 function rkGroups(arr){
   const ordered=(arr||getRK()).slice().reverse();
   const map=new Map(), groups=[];
@@ -2218,7 +2255,8 @@ function rkStats(arr){
 }
 function renderRK(){
   rkEnsureDate();rkRefreshEOState();
-  const arr=getRK();
+  const arr=rkFilteredByView(getRK());
+  rkRenderViewBar();
   const st=rkStats(arr);
   const cnt=document.getElementById('rk-count');if(cnt)cnt.textContent=st.eo+' ЕО / '+st.rows+' строк';
   const sum=document.getElementById('rk-summary');
@@ -2239,7 +2277,7 @@ function renderRK(){
       const comm=(x.status||'');
       const title=x.ut?('<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:var(--gold);">'+escHtml(x.ut)+'</div><div style="font-size:12px;color:var(--text);line-height:1.25;">'+escHtml(x.name)+'</div>'):'<div style="font-size:12px;color:var(--text);font-weight:700;">ЕО без расхождений</div>';
       return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:9px 10px;margin-top:7px;">'+
-        '<div style="display:flex;justify-content:space-between;gap:8px;"><div style="flex:1;min-width:0;">'+title+'</div><button onclick="rkDel('+x.id+')" style="background:none;border:none;color:var(--red-bright);font-size:14px;cursor:pointer;">✕</button></div>'+ 
+        '<div style="display:flex;justify-content:space-between;gap:8px;"><div style="flex:1;min-width:0;">'+title+'</div><div style="display:flex;gap:6px;align-items:flex-start;"><button onclick="rkArchive('+x.id+')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:10px;padding:4px 7px;cursor:pointer;">'+(x.archived?'↩':'арх')+'</button><button onclick="rkDel('+x.id+')" style="background:none;border:none;color:var(--red-bright);font-size:14px;cursor:pointer;">✕</button></div></div>'+ 
         '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:7px;font-size:11px;text-align:center;color:var(--muted);"><div>Изл.<br><b style="color:var(--text);">'+(parseInt(x.surplus)||0)+'</b></div><div>Нед.<br><b style="color:var(--text);">'+(parseInt(x.shortage)||0)+'</b></div><div>Брак<br><b style="color:var(--text);">'+(parseInt(x.defect)||0)+'</b></div></div>'+ 
         '<div style="font-size:11px;color:var(--muted);margin-top:7px;">'+escHtml(comm)+'</div></div>';
     }).join('');
@@ -2264,6 +2302,73 @@ function rkExportText(){
 function rkCopyTSV(){const text=rkExportTSV();navigator.clipboard.writeText(text).then(()=>alert('TSV РК скопирован. Можно вставлять в Excel.')).catch(()=>{const ta=document.createElement('textarea');ta.value=text;document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);alert('TSV РК скопирован. Можно вставлять в Excel.');});}
 function rkShare(){shareText(rkExportText());}
 function rkClear(){if(confirm('Очистить журнал проверки РК?')){set('rk_log',[]);renderRK();rkRefreshEOState();}}
+
+
+// ── SHIFT PROBLEMS MVP ──
+let problemPicked=null;
+let problemsView='active';
+function problemSearch(q){showProductResults('problem-results',q,'problemPick','<div class="smart-empty">Товар не выбран. Можно создать проблему только по ячейке/комментарию.</div>',30);}
+function problemPick(ut,name){
+  problemPicked={ut:ut,name:name};
+  const r=document.getElementById('problem-results');if(r)r.style.display='none';
+  const st=document.getElementById('problem-search');if(st)st.value='';
+  const p=document.getElementById('problem-picked');
+  if(p){p.style.display='block';p.innerHTML='<b style="color:var(--gold);">'+escHtml(ut)+'</b><br>'+escHtml(name)+'<button onclick="problemClearPicked()" style="float:right;background:none;border:none;color:var(--red-bright);font-size:14px;cursor:pointer;">✕</button>';}
+}
+function problemClearPicked(){problemPicked=null;const p=document.getElementById('problem-picked');if(p){p.style.display='none';p.innerHTML='';}}
+function problemSetView(v){problemsView=v;renderProblems();}
+function problemAdd(){
+  const type=(document.getElementById('problem-type')||{}).value||'другое';
+  const cell=String((document.getElementById('problem-cell')||{}).value||'').trim().toUpperCase();
+  const sys=Math.max(0,parseInt((document.getElementById('problem-sys')||{}).value)||0);
+  const fact=Math.max(0,parseInt((document.getElementById('problem-fact')||{}).value)||0);
+  const status=(document.getElementById('problem-status')||{}).value||'новая';
+  const needWms=(document.getElementById('problem-wms')||{}).checked?1:0;
+  const comment=String((document.getElementById('problem-comment')||{}).value||'').trim();
+  if(!problemPicked && !cell && !comment){alert('Укажи товар, ячейку или комментарий. Пустую проблему плодить не будем.');return;}
+  const row={id:Date.now()+Math.floor(Math.random()*1000),type:type,ut:problemPicked?problemPicked.ut:'',name:problemPicked?problemPicked.name:'',cell:cell,sys:sys,fact:fact,status:needWms?'нужно ВМС':status,needWms:needWms,comment:comment,archived:0,createdAt:new Date().toLocaleString('ru-RU'),updatedAt:new Date().toLocaleString('ru-RU')};
+  const arr=getProblems();arr.unshift(row);set('problems_log',arr);
+  ['problem-cell','problem-sys','problem-fact','problem-comment','problem-search'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+  const w=document.getElementById('problem-wms');if(w)w.checked=false;
+  problemClearPicked();logAction('problem','Создана проблема: '+type+(row.ut?' · '+row.ut:'')+(cell?' · '+cell:''));renderProblems();
+}
+function problemUpdateStatus(id,status){const arr=getProblems();const r=arr.find(x=>x.id===id);if(!r)return;r.status=status;r.needWms=status==='нужно ВМС'?1:(r.needWms||0);r.updatedAt=new Date().toLocaleString('ru-RU');set('problems_log',arr);logAction('problem','Статус проблемы: '+status,{id:id});renderProblems();}
+function problemArchive(id){const arr=getProblems();const r=arr.find(x=>x.id===id);if(!r)return;r.archived=r.archived?0:1;r.updatedAt=new Date().toLocaleString('ru-RU');set('problems_log',arr);logAction('problem',(r.archived?'В архив: ':'Из архива: ')+(r.type||'проблема'),{id:id});renderProblems();}
+function problemDel(id){if(!confirm('Удалить проблему?'))return;set('problems_log',getProblems().filter(x=>x.id!==id));logAction('problem','Удалена проблема',{id:id});renderProblems();}
+function problemFiltered(arr){
+  arr=arr||getProblems();
+  if(problemsView==='active')return arr.filter(x=>!x.archived && x.status!=='решено');
+  if(problemsView==='wms')return arr.filter(x=>!x.archived && (x.needWms || x.status==='нужно ВМС'));
+  if(problemsView==='done')return arr.filter(x=>!x.archived && x.status==='решено');
+  if(problemsView==='archive')return arr.filter(x=>x.archived);
+  return arr;
+}
+function problemStats(arr){arr=arr||getProblems();return {all:arr.length,active:arr.filter(x=>!x.archived&&x.status!=='решено').length,wms:arr.filter(x=>!x.archived&&(x.needWms||x.status==='нужно ВМС')).length,done:arr.filter(x=>!x.archived&&x.status==='решено').length,archive:arr.filter(x=>x.archived).length};}
+function problemChip(view,label,num){const active=problemsView===view;return '<button class="cell-chip '+(active?'active':'')+'" onclick="problemSetView(\''+view+'\')">'+label+' <b>'+num+'</b></button>';}
+function renderProblems(){
+  const arr=getProblems();
+  const pst=problemStats(arr);
+  const cnt=document.getElementById('problems-count');if(cnt)cnt.textContent=pst.active+' акт. / '+pst.wms+' ВМС';
+  const bar=document.getElementById('problems-filter-bar');
+  if(bar)bar.innerHTML=problemChip('active','Активные',pst.active)+problemChip('wms','ВМС',pst.wms)+problemChip('done','Решено',pst.done)+problemChip('archive','Архив',pst.archive)+problemChip('all','Все',pst.all);
+  const box=document.getElementById('problems-list');if(!box)return;
+  const data=problemFiltered(arr);
+  if(!data.length){box.innerHTML='<div class="no-results">Проблем нет. И это подозрительно, но приятно.</div>';return;}
+  box.innerHTML=data.map(x=>{
+    const accent=(x.status==='нужно ВМС'||x.needWms)?'var(--red-bright)':(x.status==='решено'?'#5a8a4a':'var(--gold)');
+    const item=x.ut?'<div style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:var(--gold);">'+escHtml(x.ut)+'</div><div style="font-size:12px;color:var(--text);line-height:1.25;">'+escHtml(x.name||'')+'</div>':'<div style="font-size:12px;color:var(--muted);">Без товара</div>';
+    return '<div class="gen-box" style="border-left:3px solid '+accent+';padding:11px;margin-bottom:10px;">'+
+      '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;"><div style="flex:1;min-width:0;">'+
+      '<div style="font-family:\'Oswald\',sans-serif;font-size:11px;color:'+accent+';text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">'+escHtml(x.type||'проблема')+'</div>'+item+
+      '<div style="font-size:11px;color:var(--muted);margin-top:6px;">'+(x.cell?'Ячейка: <b style="color:var(--text);">'+escHtml(x.cell)+'</b> · ':'')+'сист.: '+(parseInt(x.sys)||0)+' · факт: '+(parseInt(x.fact)||0)+'</div>'+ 
+      (x.comment?'<div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.35;">'+escHtml(x.comment)+'</div>':'')+
+      '<div style="font-size:10px;color:var(--muted);margin-top:6px;">'+escHtml(x.createdAt||'')+'</div></div>'+ 
+      '<button onclick="problemDel('+x.id+')" style="background:none;border:none;color:var(--red-bright);font-size:14px;cursor:pointer;">✕</button></div>'+ 
+      '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;">'+
+      ['новая','в работе','нужно ВМС','решено'].map(v=>'<button onclick="problemUpdateStatus('+x.id+',\''+v+'\')" class="exi-btn" style="flex:1;min-width:95px;border-color:'+(x.status===v?'var(--gold)':'var(--border)')+';color:'+(x.status===v?'var(--gold)':'var(--muted)')+';">'+v+'</button>').join('')+
+      '<button onclick="problemArchive('+x.id+')" class="exi-btn" style="flex:1;min-width:95px;">'+(x.archived?'↩ вернуть':'в архив')+'</button></div></div>';
+  }).join('');
+}
 
 // ── REPORT ──
 const REPORT_DEFAULT_TASKS = ["Заведение излишков (Сухой)", "Заведение излишков (Холод)", "Пересчет мест хранения по заданиям на пересчет (Сухой)", "Пересчет мест хранения по заданиям на пересчет (Холод)", "Плановый пересчет хранения (Сухой)", "Плановый пересчет хранения (Холод)", "Подсчёт ТОПов (Сухой)", "Подсчёт ТОПов (Холод)", "Проверка зоны хранения и выборочный пересчет мест с ревизором УР", "Проверка и обработка брака", "Проверка и обработка буферных зон", "Проверка пустых мест хранения (Сухой)", "Проверка пустых мест хранения (Холод)"];
@@ -2461,9 +2566,11 @@ function makeBackupData(){
     eo_range_used:getObj('eo_range_used'),
     hh11_log:getHH11(),
     rk_log:getRK(),
+    problems_log:getProblems(),
+    action_log:getActionLog(),
     localStorage_snapshot:localSnapshot,
     catalog_snapshot:CATALOG,
-    backup_version:22,
+    backup_version:23,
     exported_at:new Date().toISOString()
   };
 }
@@ -2480,6 +2587,34 @@ function backupFileName(ext){
 function backupText(pretty){
   return JSON.stringify(makeBackupData(),null,pretty?2:0);
 }
+const AUTO_BACKUP_KEY='lenfer_auto_backups_v1';
+function getAutoBackups(){try{const v=JSON.parse(localStorage.getItem(AUTO_BACKUP_KEY)||'[]');return Array.isArray(v)?v:[];}catch(e){return [];}}
+function saveAutoBackups(arr){try{localStorage.setItem(AUTO_BACKUP_KEY,JSON.stringify((arr||[]).slice(0,7)));}catch(e){console.warn('auto backup save failed',e);}}
+function createAutoBackup(label,throttleMs){
+  try{
+    const nowTs=Date.now();
+    const arr=getAutoBackups();
+    throttleMs=Number(throttleMs||0);
+    if(throttleMs && arr[0] && (nowTs-Number(arr[0].ts||0)<throttleMs) && String(arr[0].label||'')===String(label||''))return false;
+    const rec={id:nowTs+'-'+Math.random().toString(36).slice(2,7),ts:nowTs,iso:new Date().toISOString(),label:String(label||'auto'),json:backupText(false)};
+    arr.unshift(rec);saveAutoBackups(arr);
+    renderAutoBackups();
+    logAction('backup','Автобэкап: '+(label||'auto'));
+    return true;
+  }catch(e){console.warn('auto backup failed',e);return false;}
+}
+function formatAutoBackupTs(ts){try{return new Date(Number(ts)||Date.now()).toLocaleString('ru-RU');}catch(e){return ''+ts;}}
+function renderAutoBackups(){
+  const box=document.getElementById('auto-backup-list');if(!box)return;
+  const arr=getAutoBackups();
+  if(!arr.length){box.innerHTML='<div class="no-results" style="padding:12px;">Автобэкапов пока нет</div>';return;}
+  box.innerHTML=arr.map((b,i)=>'<div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 10px;margin-bottom:7px;">'+
+    '<div style="font-size:11px;color:var(--text);line-height:1.35;"><b style="color:var(--gold);">'+escHtml(formatAutoBackupTs(b.ts))+'</b><br>'+escHtml(b.label||'auto')+'</div>'+ 
+    '<div style="display:flex;gap:6px;margin-top:7px;"><button class="exi-btn" onclick="downloadAutoBackup('+i+')">⬇ JSON</button><button class="exi-btn" onclick="restoreAutoBackup('+i+')">↩ Восстановить</button></div></div>').join('');
+}
+function downloadAutoBackup(i){const b=getAutoBackups()[i];if(!b)return;downloadTextAsFile(b.json||'', 'lenfer-autobackup-'+String(b.iso||'').replace(/[:.]/g,'-')+'.json','application/json;charset=utf-8');}
+function restoreAutoBackup(i){const b=getAutoBackups()[i];if(!b)return;if(!confirm('Восстановить этот автобэкап полностью? Текущие локальные данные будут заменены.'))return;createAutoBackup('перед восстановлением автобэкапа',0);applyBackupData(parseBackupRawText(b.json||''),{mode:'replace'});afterFullRestore();}
+function clearAutoBackups(){if(!confirm('Удалить сохранённые автобэкапы на этом устройстве?'))return;saveAutoBackups([]);renderAutoBackups();}
 function setBackupReadOnly(flag){
   const ta=document.getElementById('backup-text');
   if(ta)ta.readOnly=!!flag;
@@ -2638,7 +2773,7 @@ function addedProductsData(){
   });
   return {
     type:'lenfer-added-products',
-    backup_version:22,
+    backup_version:23,
     exported_at:new Date().toISOString(),
     count:items.length,
     custom_items:items,
@@ -2674,7 +2809,7 @@ function cellsExportData(){
   const cells=normalizeCellsArray(getCells()).map(c=>({...c}));
   return {
     type:'lenfer-cells',
-    backup_version:22,
+    backup_version:23,
     exported_at:new Date().toISOString(),
     count:cells.length,
     cells:cells,
@@ -2827,7 +2962,7 @@ async function pasteBackupFromClipboard(){
   }
 }
 const BACKUP_STATE_KEYS=[
-  'custom_items','custom_barcodes','product_edits','cells','cell_favorites','pack_sizes','notes','credentials','eo_codes','journal','report','search_history','inventory','favorites','eo_range_saved','eo_range_used','hh11_log','rk_log'
+  'custom_items','custom_barcodes','product_edits','cells','cell_favorites','pack_sizes','notes','credentials','eo_codes','journal','report','search_history','inventory','favorites','eo_range_saved','eo_range_used','hh11_log','rk_log','problems_log','action_log'
 ];
 const BACKUP_MIRROR_KEYS=['credentials__mirror','cells__mirror','cell_favorites__mirror','credentials__saved_at','cells__saved_at','cell_favorites__saved_at'];
 function backupOwn(obj,key){return Object.prototype.hasOwnProperty.call(obj||{},key);}
@@ -2869,7 +3004,7 @@ function applyBackupData(data,opts){
   const mode=opts.mode||'replace';
 
   if(mode==='merge'){
-    const stats={mode:'merge',added:{custom_items:0,custom_barcodes:0,product_edits:0,cells:0,cell_favorites:0,pack_sizes:0,notes:0,credentials:0,eo_codes:0,journal:0,report:0,search_history:0,inventory:0,favorites:0,eo_range_saved:0,eo_range_used:0,hh11_log:0,rk_log:0,unknown_keys:0},conflicts:[]};
+    const stats={mode:'merge',added:{custom_items:0,custom_barcodes:0,product_edits:0,cells:0,cell_favorites:0,pack_sizes:0,notes:0,credentials:0,eo_codes:0,journal:0,report:0,search_history:0,inventory:0,favorites:0,eo_range_saved:0,eo_range_used:0,hh11_log:0,rk_log:0,problems_log:0,action_log:0,unknown_keys:0},conflicts:[]};
     const stamp=Date.now().toString(36);
     const same=(a,b)=>{try{return JSON.stringify(a)===JSON.stringify(b);}catch(e){return false;}};
     const uniqId=()=>Date.now()+Math.floor(Math.random()*1000000);
@@ -3094,6 +3229,8 @@ function applyBackupData(data,opts){
     })();
 
     addArrayById('rk_log',getRK,(v)=>set('rk_log',v),x=>x.id);
+    addArrayById('problems_log',getProblems,(v)=>set('problems_log',v),x=>x.id);
+    addArrayById('action_log',getActionLog,(v)=>set('action_log',v.slice(0,300)),x=>x.id);
     if(data.search_history){const ex=get('search_history');const merged=Array.from(new Set([...backupArr(data.search_history),...ex]));stats.added.search_history=Math.max(0,merged.length-ex.length);set('search_history',merged);}
     if(data.favorites){const ex=getFavs();const merged=Array.from(new Set([...ex,...backupArr(data.favorites)]));stats.added.favorites=Math.max(0,merged.length-ex.length);set('favorites',merged);}
     if(data.eo_range_saved){const cur=get('eo_range_saved');if(!cur.length){set('eo_range_saved',backupArr(data.eo_range_saved));stats.added.eo_range_saved=backupArr(data.eo_range_saved).length;}else if(!same(cur,data.eo_range_saved)){stats.conflicts.push('eo_range_saved оставлен локальный, входящий не перетёрт');}}
@@ -3133,6 +3270,8 @@ function applyBackupData(data,opts){
   set('eo_range_used', backupObj(data.eo_range_used));
   set('hh11_log', backupArr(data.hh11_log));
   set('rk_log', backupArr(data.rk_log));
+  set('problems_log', backupArr(data.problems_log));
+  set('action_log', backupArr(data.action_log).slice(0,300));
 
   try{repairCredentialsStorage();repairCellsStorage();}catch(e){}
   return {mode:'replace'};
@@ -3145,6 +3284,7 @@ function restoreBackupFromText(){
   const raw=normalizeBackupRaw((document.getElementById('backup-text')?.value||'').trim());
   if(!raw){alert('Вставь JSON-бэкап.');return;}
   try{
+    createAutoBackup('перед полным восстановлением из вставки',0);
     applyBackupData(parseBackupRawText(raw),{mode:'replace'});
     alert('JSON восстановлен полностью. Старые локальные данные заменены. Сейчас приложение перезагрузится.');
     closeModal('backup-modal');
@@ -3161,6 +3301,7 @@ function restoreBackupMergeFromText(){
   const raw=normalizeBackupRaw((document.getElementById('backup-text')?.value||'').trim());
   if(!raw){alert('Вставь JSON-бэкап.');return;}
   try{
+    createAutoBackup('перед добавлением из вставки',0);
     const stats=applyBackupData(parseBackupRawText(raw),{mode:'merge'});
     alert(summarizeMergeStats(stats));
     closeModal('backup-modal');
@@ -3178,6 +3319,7 @@ function importDataMerge(){
     const reader=new FileReader();
     reader.onload=ev=>{
       try{
+        createAutoBackup('перед добавлением из файла',0);
         const stats=applyBackupData(parseBackupRawText(ev.target.result),{mode:'merge'});
         alert(summarizeMergeStats(stats));
         afterFullRestore();
@@ -3201,6 +3343,7 @@ function importData(){
     const reader=new FileReader();
     reader.onload=ev=>{
       try{
+        createAutoBackup('перед полным восстановлением из файла',0);
         applyBackupData(parseBackupRawText(ev.target.result),{mode:'replace'});
         alert('JSON восстановлен полностью. Старые локальные данные заменены. Сейчас приложение перезагрузится.');
         afterFullRestore();
@@ -3578,7 +3721,7 @@ function startAppStable(){
   safeStartPart('отчёт', typeof renderReport==='function' ? renderReport : null);
 }
 startAppStable();
-window.__APP_STABLE_BUILD__='2026-06-14-v34-sync-timeout-fix';
+window.__APP_STABLE_BUILD__='2026-06-14-v35-safety-diagnostics-problems';
 
 function hideProductDropdownsOnOutsideClick(e){
   try{
@@ -3587,6 +3730,40 @@ function hideProductDropdownsOnOutsideClick(e){
   }catch(_){ }
 }
 document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
+
+
+// ── SERVICE DIAGNOSTICS ──
+function countDeletedLocal(){try{const d=JSON.parse(localStorage.getItem('__lenfer_sync_deleted_ids_v3')||'{}');const out={};Object.keys(d||{}).forEach(k=>out[k]=Object.keys(d[k]||{}).length);return out;}catch(e){return {};}}
+function renderDiagnostics(){
+  const box=document.getElementById('sync-diagnostics');if(!box)return;
+  const d=(typeof window.lenferSyncDiagnostics==='function')?window.lenferSyncDiagnostics():{};
+  const counts={products:getCustomItems().length,cells:getCells().length,hh:getHH11().length,rk:getRK().length,problems:getProblems().length,actions:getActionLog().length};
+  const del=d.deletedCounts||countDeletedLocal();
+  const fmt=ts=>ts?new Date(Number(ts)).toLocaleString('ru-RU'):'—';
+  box.innerHTML='<div class="diag-grid">'+
+    '<div class="diag-cell"><span>Версия</span><b>'+escHtml(d.build||window.__APP_STABLE_BUILD__||'—')+'</b></div>'+ 
+    '<div class="diag-cell"><span>Аккаунт</span><b>'+escHtml(d.user||'—')+'</b></div>'+ 
+    '<div class="diag-cell"><span>Путь</span><b>'+escHtml(d.dbPath||'—')+'</b></div>'+ 
+    '<div class="diag-cell"><span>Realtime</span><b>'+(d.realtime?'подключён':'—')+'</b></div>'+ 
+    '<div class="diag-cell"><span>Очередь</span><b>'+(d.dirty?'есть':'0')+'</b></div>'+ 
+    '<div class="diag-cell"><span>Последнее получение</span><b>'+escHtml(fmt(d.lastPullAt))+'</b></div>'+ 
+    '<div class="diag-cell"><span>Товары</span><b>'+counts.products+'</b></div>'+ 
+    '<div class="diag-cell"><span>Ячейки</span><b>'+counts.cells+'</b></div>'+ 
+    '<div class="diag-cell"><span>HH</span><b>'+counts.hh+'</b></div>'+ 
+    '<div class="diag-cell"><span>РК</span><b>'+counts.rk+'</b></div>'+ 
+    '<div class="diag-cell"><span>Проблемы</span><b>'+counts.problems+'</b></div>'+ 
+    '<div class="diag-cell"><span>Удаления</span><b>товары '+(del.custom_items||0)+' · HH '+(del.hh11_log||0)+' · РК '+(del.rk_log||0)+' · пробл. '+(del.problems_log||0)+'</b></div>'+ 
+    '</div>';
+}
+function quickIntegrityCheck(){
+  const issues=[];
+  const byUt={};productAllItems().forEach(p=>{const u=String(p.ut||'').trim();if(!u)issues.push('Товар без УТ: '+(p.name||'без названия'));else if(byUt[u])issues.push('Дубль УТ: '+u);else byUt[u]=1;if(!String(p.name||'').trim())issues.push('Товар без названия: '+u);});
+  const bc={};productAllItems().forEach(p=>productBarcodeList(p).forEach(b=>{if(bc[b]&&bc[b]!==p.ut)issues.push('Один ШК у разных УТ: '+b+' → '+bc[b]+' / '+p.ut); else bc[b]=p.ut;}));
+  const cellSeen={};getCells().forEach(c=>{const a=String(c.addr||'').trim().toUpperCase();if(!a)issues.push('Ячейка без адреса');else if(cellSeen[a])issues.push('Дубль ячейки: '+a);else cellSeen[a]=1;});
+  getHH11().forEach(x=>{if(!x.id)issues.push('HH без id: '+(x.ut||x.name||''));});
+  getRK().forEach(x=>{if(!x.id)issues.push('РК без id: '+(x.ut||x.eo||''));});
+  const out=document.getElementById('integrity-result');if(out)out.innerHTML=issues.length?('<div style="color:var(--red-bright);font-size:12px;line-height:1.45;">'+issues.slice(0,60).map(escHtml).join('<br>')+(issues.length>60?'<br>…ещё '+(issues.length-60):'')+'</div>'):'<div style="color:#5a8a4a;font-size:12px;">Грубых проблем не найдено.</div>';
+}
 
 // ── FIREBASE AUTH + SYNC v3: per-key versions + tombstones ──
 // Цель: удаление с одного устройства не должно воскресать на другом.
@@ -3610,10 +3787,10 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
   var SYNC_KEYS = [
     'custom_items','custom_barcodes','product_edits','pack_sizes',
     'cells','cell_favorites',
-    'hh11_log','rk_log'
+    'hh11_log','rk_log','problems_log'
   ];
-  var SYNC_ARRAY_KEYS = ['custom_items','cells','cell_favorites','hh11_log','rk_log'];
-  var SYNC_KEYED_ARRAYS = ['custom_items','cells','hh11_log','rk_log'];
+  var SYNC_ARRAY_KEYS = ['custom_items','cells','cell_favorites','hh11_log','rk_log','problems_log'];
+  var SYNC_KEYED_ARRAYS = ['custom_items','cells','hh11_log','rk_log','problems_log'];
   var SYNC_OBJECT_KEYS = ['custom_barcodes','product_edits','pack_sizes'];
   var SYNC_META_KEY = '__lenfer_sync_key_versions_v3';
   var SYNC_DELETED_KEY = '__lenfer_sync_deleted_ids_v3';
@@ -3716,7 +3893,7 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
     if(item == null) return '';
     if(key === 'custom_items') return String(item.ut || item.baseUt || '').trim();
     if(key === 'cells') return String(item.id || item.addr || item.code || '').trim();
-    if(key === 'hh11_log' || key === 'rk_log') return String(item.id || '').trim();
+    if(key === 'hh11_log' || key === 'rk_log' || key === 'problems_log') return String(item.id || '').trim();
     return '';
   }
 
@@ -3815,7 +3992,7 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
     });
     var arr = Object.keys(map).map(function(k){ return map[k]; });
     // Журналы удобнее видеть новыми сверху. Если id числовой/временной — сортируем мягко.
-    if(key === 'hh11_log' || key === 'rk_log'){
+    if(key === 'hh11_log' || key === 'rk_log' || key === 'problems_log'){
       arr.sort(function(a,b){ return Number(b.id || 0) - Number(a.id || 0); });
     }
     return arr;
@@ -3858,6 +4035,7 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
       if(c.cell_favorites != null){ store.cell_favorites = normalizeValueForKey('cell_favorites', c.cell_favorites); present.cell_favorites = true; }
       if(data.hh11 != null){ store.hh11_log = normalizeValueForKey('hh11_log', data.hh11); present.hh11_log = true; }
       if(data.rk   != null){ store.rk_log   = normalizeValueForKey('rk_log', data.rk); present.rk_log = true; }
+      if(data.problems != null){ store.problems_log = normalizeValueForKey('problems_log', data.problems); present.problems_log = true; }
     }
 
     if(data.key_versions && typeof data.key_versions === 'object'){
@@ -3901,6 +4079,7 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
       },
       hh11: cleanStore.hh11_log || [],
       rk:   cleanStore.rk_log   || [],
+      problems: cleanStore.problems_log || [],
       updated_at: ts,
       updated_by: currentUser ? currentUser.uid : null,
       updated_by_session: FB_SESSION_ID
@@ -4000,8 +4179,18 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
       var queue = byId('supa-badge-queue');
       if(queue) queue.textContent = dirty ? 'очередь: есть' : 'очередь: 0';
       console.log('[FB auth sync]', msg);
+      try{ if(typeof renderDiagnostics==='function')renderDiagnostics(); }catch(_){ }
     }catch(_){ }
   }
+
+
+  window.lenferSyncDiagnostics = function(){
+    var meta = readMeta();
+    var deleted = readDeleted();
+    var delCounts = {};
+    try{Object.keys(deleted||{}).forEach(function(k){delCounts[k]=Object.keys(deleted[k]||{}).length;});}catch(_){ }
+    return {user: currentUser ? (currentUser.email || currentUser.uid) : '', uid: currentUser ? currentUser.uid : '', dbPath: DB_PATH || '', project: FB_CONFIG.projectId, databaseURL: FB_CONFIG.databaseURL, dirty: !!dirty, pulling: !!pulling, pushing: !!pushing, realtime: !!realtimeRef, lastPullAt: lastPullAt || 0, lastAppliedUpdatedAt: lastAppliedUpdatedAt || 0, session: FB_SESSION_ID, meta: meta, deletedCounts: delCounts, build: window.__APP_STABLE_BUILD__ || ''};
+  };
 
   function authStatus(msg){ var el = byId('fb-auth-status'); if(el) el.textContent = msg; }
 
@@ -4091,6 +4280,7 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
     if(!force && !dirty) return;
     pushing = true;
     try{
+      createAutoBackup('перед отправкой в Firebase', 180000);
       status('Firebase: отправляю и сверяю версии…');
       var localParts = makeLocalStore(!!force);
       var finalPayload = null;
@@ -4184,6 +4374,8 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
       try{ if(typeof renderCells === 'function') renderCells(); }catch(_){ }
       try{ if(typeof renderHH11  === 'function') renderHH11(); }catch(_){ }
       try{ if(typeof renderRK    === 'function') renderRK(); }catch(_){ }
+      try{ if(typeof renderProblems === 'function') renderProblems(); }catch(_){ }
+      try{ if(typeof renderDiagnostics === 'function') renderDiagnostics(); }catch(_){ }
     }finally{ applying = false; }
   }
 
@@ -4192,6 +4384,7 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
     if(!requireUser('получения')) return;
     pulling = true;
     try{
+      createAutoBackup('перед получением из Firebase', 180000);
       status('Firebase: получаю данные…');
       lastPullAt = Date.now();
       var snap = await db.ref(DB_PATH).get();
@@ -4209,6 +4402,7 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
     if(!db) return;
     if(!requireUser('миграции старой w21')) return;
     try{
+      createAutoBackup('перед миграцией старой w21', 0);
       status('Firebase: читаю старую общую w21…');
       var snap = await db.ref(LEGACY_DB_PATH).get();
       if(!snap.exists()){
@@ -4316,9 +4510,9 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
       if(on.indexOf('supaDownloadSQL') >= 0){ b.setAttribute('onclick','fbMigrateLegacyW21()'); b.textContent = '🧳 Забрать старую w21'; }
     });
     var warn = document.querySelector('.supa-warning');
-    if(warn) warn.innerHTML = 'Firebase Sync v3: удаление защищено tombstone-метками. Старое устройство больше не должно воскрешать удалённые РК/HH/товары.';
+    if(warn) warn.innerHTML = 'Firebase Sync v3.1: добавлены автобэкапы, диагностика, проблемы смены и архив HH/РК. Старые ключи синхронизации сохранены.';
     var dbEl = document.querySelector('.supa-status');
-    if(dbEl) dbEl.textContent = 'База: warehouse-dbec9 (Firebase + Auth + sync v3)';
+    if(dbEl) dbEl.textContent = 'База: warehouse-dbec9 (Firebase + Auth + sync v3.1)';
     updateAuthUI();
   }
 
@@ -4334,7 +4528,7 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
     startRealtime();
     startLoop();
     startPushLoop();
-    pullAll().then(function(){ status('Firebase: синхронизация аккаунта активна.', true); });
+    pullAll().then(function(){ status('Firebase: синхронизация аккаунта активна.', true); try{renderDiagnostics();renderAutoBackups();renderActionLogMini();}catch(_){ } });
   }
 
   function boot(){
