@@ -5018,6 +5018,7 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
   var pulling = false, pushing = false;
   var dirtyTimer = null;
   var loopTimer = null;
+  var pushTimer = null;
 
   // ── Инициализация Firebase ──
   function initFB(){
@@ -5133,10 +5134,10 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
     });
   }
 
-  // ── Авто-отправка при локальных изменениях ──
+  // ── Авто-отправка: при изменениях + каждые 10 сек ──
   function schedulePush(ms){
     clearTimeout(dirtyTimer);
-    dirtyTimer = setTimeout(function(){ pushAll(); }, ms || 1200);
+    dirtyTimer = setTimeout(function(){ pushAll(); }, ms || 2000);
   }
 
   // Перехватываем изменения localStorage
@@ -5145,9 +5146,16 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
     var k = String(key || '');
     if(PRODUCT_KEYS.indexOf(k) >= 0 || CELL_KEYS.indexOf(k) >= 0 ||
        HH_KEYS.indexOf(k) >= 0      || RK_KEYS.indexOf(k) >= 0){
-      schedulePush(1200);
+      schedulePush(2000);
     }
   };
+
+  function startPushLoop(){
+    clearInterval(pushTimer);
+    pushTimer = setInterval(function(){
+      if(!document.hidden) pushAll();
+    }, 10000);
+  }
 
   // ── Публичные функции для кнопок ──
   window.fbPullNow  = function(){ return pullAll(); };
@@ -5215,6 +5223,8 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
       startRealtime();
       // Полинг — запасной
       startLoop();
+      // Авто-отправка каждые 10 сек
+      startPushLoop();
       // Первичная загрузка
       pullAll().then(function(){ status('Firebase: синхронизация активна.', true); });
       window.addEventListener('online',  function(){ pullAll(); });
