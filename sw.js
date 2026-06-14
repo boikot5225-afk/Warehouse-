@@ -1,51 +1,56 @@
-const CACHE_NAME = 'lenfer-pwa-2026-06-10-v4-creds-fullscreen';
-const APP_SHELL = [
-  './',
-  './index.html',
-  './manifest.webmanifest',
-  './icons/icon-192.png',
-  './icons/icon-512.png'
-];
+/* L'Enfer PWA service worker — v45 cache cleanup
+   Network-first worker: old cached index.html should not haunt the app. */
+const SW_VERSION = 'lenfer-modular-v1-20260614';
 
-self.addEventListener('install', event => {
-  event.waitUntil(
-    caches.open(CACHE_NAME)
-      .then(cache => cache.addAll(APP_SHELL))
-      .then(() => self.skipWaiting())
-  );
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
 });
 
-self.addEventListener('activate', event => {
-  event.waitUntil(
-    caches.keys().then(keys => Promise.all(
-      keys.filter(key => key !== CACHE_NAME).map(key => caches.delete(key))
-    )).then(() => self.clients.claim())
-  );
+self.addEventListener('activate', (event) => {
+  event.waitUntil((async () => {
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((key) => caches.delete(key)));
+    } catch (e) {
+      // Cache cleanup is best-effort.
+    }
+    await self.clients.claim();
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of clients) {
+      try { client.postMessage({ type: 'LENFER_SW_UPDATED', version: SW_VERSION }); } catch (e) {}
+    }
+  })());
 });
 
-self.addEventListener('fetch', event => {
+self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
-  if (url.origin !== location.origin) return;
+  if (url.origin !== self.location.origin) return;
 
-  if (req.mode === 'navigate') {
-    event.respondWith(
-      fetch(req).then(res => {
-        const copy = res.clone();
-        caches.open(CACHE_NAME).then(cache => cache.put('./index.html', copy)).catch(() => {});
-        return res;
-      }).catch(() => caches.match('./index.html'))
-    );
+  // HTML and app files: always try network first so fixes arrive immediately.
+  if (req.mode === 'navigate' || /\/(index\.html|register\.html|manifest\.webmanifest)$/.test(url.pathname)) {
+    event.respondWith((async () => {
+      try {
+        const fresh = await fetch(req, { cache: 'no-store' });
+        return fresh;
+      } catch (e) {
+        const cached = await caches.match(req);
+        return cached || Response.error();
+      }
+    })());
     return;
   }
 
-  event.respondWith(
-    caches.match(req).then(cached => cached || fetch(req).then(res => {
-      const copy = res.clone();
-      caches.open(CACHE_NAME).then(cache => cache.put(req, copy)).catch(() => {});
-      return res;
-    }))
-  );
+  // Other local static files: network first, then cache fallback.
+  event.respondWith((async () => {
+    try {
+      const fresh = await fetch(req);
+      return fresh;
+    } catch (e) {
+      const cached = await caches.match(req);
+      return cached || Response.error();
+    }
+  })());
 });
