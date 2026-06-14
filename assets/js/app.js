@@ -3588,9 +3588,9 @@ function hideProductDropdownsOnOutsideClick(e){
 }
 document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
 
-// ── FIREBASE AUTH + SYNC v2 ──
-// Firebase Realtime Database + Firebase Authentication.
-// Данные пользователя лежат в /users/<uid>/w21, а не в общей ветке /w21.
+// ── FIREBASE AUTH + SYNC v3: per-key versions + tombstones ──
+// Цель: удаление с одного устройства не должно воскресать на другом.
+// Теперь синхронизация хранит версии по каждому ключу и метки удаления для массивов с id.
 (function(){
   'use strict';
 
@@ -3606,7 +3606,19 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
   var DB_PATH = null;           // users/<uid>/w21
   var PULL_EVERY = 60000;       // запасной авто-приём раз в минуту; realtime работает сразу
 
-  // Ключи локального хранилища которые синхронизируем
+  // Синхронизируемые ключи. Доступы/пароли намеренно не включены.
+  var SYNC_KEYS = [
+    'custom_items','custom_barcodes','product_edits','pack_sizes',
+    'cells','cell_favorites',
+    'hh11_log','rk_log'
+  ];
+  var SYNC_ARRAY_KEYS = ['custom_items','cells','cell_favorites','hh11_log','rk_log'];
+  var SYNC_KEYED_ARRAYS = ['custom_items','cells','hh11_log','rk_log'];
+  var SYNC_OBJECT_KEYS = ['custom_barcodes','product_edits','pack_sizes'];
+  var SYNC_META_KEY = '__lenfer_sync_key_versions_v3';
+  var SYNC_DELETED_KEY = '__lenfer_sync_deleted_ids_v3';
+
+  // Совместимость со старой разметкой/названиями.
   var PRODUCT_KEYS = ['custom_items','custom_barcodes','product_edits','pack_sizes'];
   var CELL_KEYS    = ['cells','cell_favorites'];
   var HH_KEYS      = ['hh11_log'];
@@ -3621,12 +3633,322 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
   var loopTimer = null;
   var pushTimer = null;
   var applying = false;
-  var dirty = false;              // true только после реального локального изменения
-  var lastAppliedUpdatedAt = 0;   // чтобы не перерисовывать один и тот же снимок по кругу
+  var dirty = false;
+  var lastAppliedUpdatedAt = 0;
   var lastPullAt = 0;
   var FB_SESSION_ID = 's' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
 
   function byId(id){ return document.getElementById(id); }
+  function has(arr, v){ return arr.indexOf(v) >= 0; }
+  function now(){ return Date.now(); }
+
+  function parseJSON(raw, fallback){
+    try{
+      if(raw == null || raw === '') return fallback;
+      var v = JSON.parse(raw);
+      return v == null ? fallback : v;
+    }catch(_){ return fallback; }
+  }
+
+  function localGet(key){
+    return parseJSON(localStorage.getItem(key), null);
+  }
+
+  function defaultForKey(key){
+    if(has(SYNC_OBJECT_KEYS, key)) return {};
+    return [];
+  }
+
+  function normalizeValueForKey(key, val){
+    if(val == null) return defaultForKey(key);
+    if(has(SYNC_OBJECT_KEYS, key)){
+      return (val && typeof val === 'object' && !Array.isArray(val)) ? val : {};
+    }
+    if(has(SYNC_ARRAY_KEYS, key)) return Array.isArray(val) ? val : [];
+    return val;
+  }
+
+  function mirrorKeyForSync(key){
+    if(key === 'cells') return 'cells__mirror';
+    if(key === 'cell_favorites') return 'cell_favorites__mirror';
+    return '';
+  }
+
+  function rawSetLocal(key, val){
+    try{
+      var json = JSON.stringify(normalizeValueForKey(key, val));
+      localStorage.setItem(key, json);
+      var mirror = mirrorKeyForSync(key);
+      if(mirror) localStorage.setItem(mirror, json);
+      if(key === 'cells') localStorage.setItem('cells__saved_at', String(Date.now()));
+      if(key === 'cell_favorites') localStorage.setItem('cell_favorites__saved_at', String(Date.now()));
+    }catch(e){
+      try{ console.warn('sync local set failed', key, e); }catch(_){ }
+    }
+  }
+
+  function readMeta(){
+    var m = parseJSON(localStorage.getItem(SYNC_META_KEY), {});
+    return (m && typeof m === 'object' && !Array.isArray(m)) ? m : {};
+  }
+
+  function writeMeta(meta){
+    try{ localStorage.setItem(SYNC_META_KEY, JSON.stringify(meta || {})); }catch(_){ }
+  }
+
+  function markKeyVersion(key, ts){
+    if(!has(SYNC_KEYS, key)) return;
+    var meta = readMeta();
+    meta[key] = Math.max(Number(meta[key] || 0), Number(ts || Date.now()));
+    writeMeta(meta);
+  }
+
+  function readDeleted(){
+    var d = parseJSON(localStorage.getItem(SYNC_DELETED_KEY), {});
+    return (d && typeof d === 'object' && !Array.isArray(d)) ? d : {};
+  }
+
+  function writeDeleted(deleted){
+    try{ localStorage.setItem(SYNC_DELETED_KEY, JSON.stringify(deleted || {})); }catch(_){ }
+  }
+
+  function recordKey(key, item){
+    if(item == null) return '';
+    if(key === 'custom_items') return String(item.ut || item.baseUt || '').trim();
+    if(key === 'cells') return String(item.id || item.addr || item.code || '').trim();
+    if(key === 'hh11_log' || key === 'rk_log') return String(item.id || '').trim();
+    return '';
+  }
+
+  function maxDeletedTsForKey(deleted, key){
+    var obj = deleted && deleted[key];
+    var m = 0;
+    if(obj && typeof obj === 'object'){
+      Object.keys(obj).forEach(function(id){ m = Math.max(m, Number(obj[id] || 0)); });
+    }
+    return m;
+  }
+
+  function unionDeleted(a, b){
+    var out = {};
+    [a || {}, b || {}].forEach(function(src){
+      if(!src || typeof src !== 'object') return;
+      Object.keys(src).forEach(function(key){
+        var srcObj = src[key];
+        if(!srcObj || typeof srcObj !== 'object') return;
+        if(!out[key]) out[key] = {};
+        Object.keys(srcObj).forEach(function(id){
+          var sid = String(id);
+          out[key][sid] = Math.max(Number(out[key][sid] || 0), Number(srcObj[id] || 0));
+        });
+      });
+    });
+    return out;
+  }
+
+  function filterDeleted(key, val, deleted){
+    val = normalizeValueForKey(key, val);
+    if(!has(SYNC_KEYED_ARRAYS, key) || !Array.isArray(val)) return val;
+    var tomb = deleted && deleted[key];
+    if(!tomb || typeof tomb !== 'object') return val;
+    return val.filter(function(item){
+      var id = recordKey(key, item);
+      return !id || !tomb[id];
+    });
+  }
+
+  function rememberRemovedIdsFromRaw(key, beforeRaw, afterRaw, ts){
+    if(!has(SYNC_KEYED_ARRAYS, key)) return;
+    var before = normalizeValueForKey(key, parseJSON(beforeRaw, []));
+    var after  = normalizeValueForKey(key, parseJSON(afterRaw, []));
+    if(!Array.isArray(before) || !Array.isArray(after)) return;
+
+    var beforeIds = {};
+    before.forEach(function(item){ var id = recordKey(key, item); if(id) beforeIds[id] = true; });
+    var afterIds = {};
+    after.forEach(function(item){ var id = recordKey(key, item); if(id) afterIds[id] = true; });
+
+    var deleted = readDeleted();
+    var touched = false;
+
+    // Удаления: сохраняем tombstone, чтобы другое устройство не воскресило запись.
+    before.forEach(function(item){
+      var id = recordKey(key, item);
+      if(id && !afterIds[id]){
+        if(!deleted[key]) deleted[key] = {};
+        deleted[key][id] = Math.max(Number(deleted[key][id] || 0), Number(ts || Date.now()));
+        touched = true;
+      }
+    });
+
+    // Осознанное повторное создание с тем же id/ut на этом устройстве: снимаем старый tombstone.
+    // Старые вкладки без свежего действия сюда не попадут, значит удаление всё равно защищено.
+    after.forEach(function(item){
+      var id = recordKey(key, item);
+      if(id && !beforeIds[id] && deleted[key] && deleted[key][id]){
+        delete deleted[key][id];
+        touched = true;
+      }
+    });
+
+    if(touched) writeDeleted(deleted);
+  }
+
+  function arrayToMap(key, arr){
+    var map = {};
+    (Array.isArray(arr) ? arr : []).forEach(function(item, idx){
+      var id = recordKey(key, item);
+      if(id) map[id] = item;
+      else map['__noid_' + idx + '_' + Math.random().toString(36).slice(2)] = item;
+    });
+    return map;
+  }
+
+  function mergeKeyedArrays(key, older, newer, deleted){
+    older = filterDeleted(key, older || [], deleted);
+    newer = filterDeleted(key, newer || [], deleted);
+    var map = arrayToMap(key, older);
+    newer.forEach(function(item){
+      var id = recordKey(key, item);
+      if(id) map[id] = item;
+      else map['__noid_new_' + Math.random().toString(36).slice(2)] = item;
+    });
+    var arr = Object.keys(map).map(function(k){ return map[k]; });
+    // Журналы удобнее видеть новыми сверху. Если id числовой/временной — сортируем мягко.
+    if(key === 'hh11_log' || key === 'rk_log'){
+      arr.sort(function(a,b){ return Number(b.id || 0) - Number(a.id || 0); });
+    }
+    return arr;
+  }
+
+  function makeLocalStore(force){
+    var ts = now();
+    var meta = readMeta();
+    var deleted = readDeleted();
+    var store = {};
+    SYNC_KEYS.forEach(function(key){
+      var val = normalizeValueForKey(key, localGet(key));
+      val = filterDeleted(key, val, deleted);
+      store[key] = val;
+      if(force && !meta[key]) meta[key] = ts;
+    });
+    if(force) writeMeta(meta);
+    return { store: store, versions: meta, deleted: deleted, ts: ts };
+  }
+
+  function extractRemote(data){
+    data = data || {};
+    var store = {};
+    var versions = {};
+    var present = {};
+    var deleted = data.deleted_ids || data.deleted || {};
+
+    if(data.store && typeof data.store === 'object'){
+      SYNC_KEYS.forEach(function(key){
+        if(data.store[key] != null){ store[key] = normalizeValueForKey(key, data.store[key]); present[key] = true; }
+      });
+    }else{
+      var p = data.products || {};
+      if(p.custom_items    != null){ store.custom_items    = normalizeValueForKey('custom_items', p.custom_items); present.custom_items = true; }
+      if(p.custom_barcodes != null){ store.custom_barcodes = normalizeValueForKey('custom_barcodes', p.custom_barcodes); present.custom_barcodes = true; }
+      if(p.product_edits   != null){ store.product_edits   = normalizeValueForKey('product_edits', p.product_edits); present.product_edits = true; }
+      if(p.pack_sizes      != null){ store.pack_sizes      = normalizeValueForKey('pack_sizes', p.pack_sizes); present.pack_sizes = true; }
+      var c = data.cells || {};
+      if(c.cells          != null){ store.cells          = normalizeValueForKey('cells', c.cells); present.cells = true; }
+      if(c.cell_favorites != null){ store.cell_favorites = normalizeValueForKey('cell_favorites', c.cell_favorites); present.cell_favorites = true; }
+      if(data.hh11 != null){ store.hh11_log = normalizeValueForKey('hh11_log', data.hh11); present.hh11_log = true; }
+      if(data.rk   != null){ store.rk_log   = normalizeValueForKey('rk_log', data.rk); present.rk_log = true; }
+    }
+
+    if(data.key_versions && typeof data.key_versions === 'object'){
+      SYNC_KEYS.forEach(function(key){ versions[key] = Number(data.key_versions[key] || 0); });
+    }else{
+      var fallbackTs = Number(data.updated_at || 0);
+      Object.keys(store).forEach(function(key){ versions[key] = fallbackTs; });
+    }
+
+    SYNC_KEYS.forEach(function(key){
+      if(store[key] == null) store[key] = defaultForKey(key);
+      if(!versions[key]) versions[key] = 0;
+    });
+    return { store: store, versions: versions, deleted: deleted, present: present };
+  }
+
+  function payloadFromParts(store, versions, deleted, ts){
+    store = store || {};
+    versions = versions || {};
+    deleted = deleted || {};
+    ts = Number(ts || Date.now());
+    var cleanStore = {};
+    SYNC_KEYS.forEach(function(key){
+      cleanStore[key] = filterDeleted(key, normalizeValueForKey(key, store[key]), deleted);
+    });
+    return {
+      sync_schema: 3,
+      store: cleanStore,
+      key_versions: versions,
+      deleted_ids: deleted,
+      // Старый формат оставлен, чтобы старые вкладки хотя бы читали основные разделы.
+      products: {
+        custom_items:    cleanStore.custom_items    || [],
+        custom_barcodes: cleanStore.custom_barcodes || {},
+        product_edits:   cleanStore.product_edits   || {},
+        pack_sizes:      cleanStore.pack_sizes      || {}
+      },
+      cells: {
+        cells:          cleanStore.cells          || [],
+        cell_favorites: cleanStore.cell_favorites || []
+      },
+      hh11: cleanStore.hh11_log || [],
+      rk:   cleanStore.rk_log   || [],
+      updated_at: ts,
+      updated_by: currentUser ? currentUser.uid : null,
+      updated_by_session: FB_SESSION_ID
+    };
+  }
+
+  function mergeLocalWithRemote(localParts, remoteData){
+    var remoteParts = extractRemote(remoteData || {});
+    var deleted = unionDeleted(remoteParts.deleted, localParts.deleted);
+    var outStore = {};
+    var outVersions = {};
+
+    SYNC_KEYS.forEach(function(key){
+      var lv = Number(localParts.versions[key] || 0);
+      var rv = Number(remoteParts.versions[key] || 0);
+      var dlv = maxDeletedTsForKey(deleted, key);
+      var localVal = filterDeleted(key, normalizeValueForKey(key, localParts.store[key]), deleted);
+      var remoteVal = filterDeleted(key, normalizeValueForKey(key, remoteParts.store[key]), deleted);
+
+      if(has(SYNC_KEYED_ARRAYS, key)){
+        // Добавления с разных устройств объединяем, удаления через tombstone отсекают «зомби».
+        outStore[key] = lv >= rv ? mergeKeyedArrays(key, remoteVal, localVal, deleted)
+                                 : mergeKeyedArrays(key, localVal, remoteVal, deleted);
+      }else{
+        // Для словарей/простых массивов действует latest-wins по ключу.
+        outStore[key] = lv >= rv ? localVal : remoteVal;
+      }
+      outVersions[key] = Math.max(lv, rv, dlv);
+    });
+
+    return payloadFromParts(outStore, outVersions, deleted, Date.now());
+  }
+
+  function applyDeletedTombstonesLocally(deleted){
+    var changed = false;
+    var meta = readMeta();
+    SYNC_KEYED_ARRAYS.forEach(function(key){
+      var current = normalizeValueForKey(key, localGet(key));
+      var filtered = filterDeleted(key, current, deleted);
+      if(JSON.stringify(current) !== JSON.stringify(filtered)){
+        rawSetLocal(key, filtered);
+        meta[key] = Math.max(Number(meta[key] || 0), maxDeletedTsForKey(deleted, key));
+        changed = true;
+      }
+    });
+    if(changed) writeMeta(meta);
+    return changed;
+  }
 
   // ── Инициализация Firebase ──
   function initFB(){
@@ -3641,9 +3963,7 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
     }catch(e){ status('Firebase: ошибка инициализации — ' + e.message); return false; }
   }
 
-  function userPath(user){
-    return USER_ROOT + '/' + user.uid + '/w21';
-  }
+  function userPath(user){ return USER_ROOT + '/' + user.uid + '/w21'; }
 
   function redirectToAuth(){
     try{
@@ -3653,10 +3973,7 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
   }
 
   function setAuthHint(ok){
-    try{
-      if(ok) localStorage.setItem('lenfer_auth_ok_hint','1');
-      else localStorage.removeItem('lenfer_auth_ok_hint');
-    }catch(_){ }
+    try{ if(ok) localStorage.setItem('lenfer_auth_ok_hint','1'); else localStorage.removeItem('lenfer_auth_ok_hint'); }catch(_){ }
     try{
       document.documentElement.classList.toggle('auth-required', !ok);
       document.documentElement.classList.toggle('auth-ok', !!ok);
@@ -3670,7 +3987,6 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
     updateAuthUI();
   }
 
-  // ── Статус ──
   function status(msg, good){
     try{
       var el = byId('supa-status');
@@ -3682,15 +3998,12 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
       var online = byId('supa-badge-online');
       if(online) online.textContent = good ? 'связь: онлайн' : 'связь: …';
       var queue = byId('supa-badge-queue');
-      if(queue) queue.textContent = currentUser ? 'аккаунт: есть' : 'аккаунт: нет';
+      if(queue) queue.textContent = dirty ? 'очередь: есть' : 'очередь: 0';
       console.log('[FB auth sync]', msg);
     }catch(_){ }
   }
 
-  function authStatus(msg){
-    var el = byId('fb-auth-status');
-    if(el) el.textContent = msg;
-  }
+  function authStatus(msg){ var el = byId('fb-auth-status'); if(el) el.textContent = msg; }
 
   function updateAuthUI(){
     try{
@@ -3741,25 +4054,16 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
     return (e && e.message) ? e.message : String(e || 'неизвестная ошибка');
   }
 
-  // ── Регистрация / вход ──
   window.fbRegister = async function(){
     if(!auth && !initFB()) return;
-    try{
-      var v = getAuthInput();
-      authStatus('Firebase: создаю аккаунт…');
-      await auth.createUserWithEmailAndPassword(v.email, v.pass);
-      authStatus('Аккаунт создан ✓');
-    }catch(e){ authStatus('Ошибка регистрации: ' + humanAuthError(e)); }
+    try{ var v = getAuthInput(); authStatus('Firebase: создаю аккаунт…'); await auth.createUserWithEmailAndPassword(v.email, v.pass); authStatus('Аккаунт создан ✓'); }
+    catch(e){ authStatus('Ошибка регистрации: ' + humanAuthError(e)); }
   };
 
   window.fbLogin = async function(){
     if(!auth && !initFB()) return;
-    try{
-      var v = getAuthInput();
-      authStatus('Firebase: вхожу…');
-      await auth.signInWithEmailAndPassword(v.email, v.pass);
-      authStatus('Вход выполнен ✓');
-    }catch(e){ authStatus('Ошибка входа: ' + humanAuthError(e)); }
+    try{ var v = getAuthInput(); authStatus('Firebase: вхожу…'); await auth.signInWithEmailAndPassword(v.email, v.pass); authStatus('Вход выполнен ✓'); }
+    catch(e){ authStatus('Ошибка входа: ' + humanAuthError(e)); }
   };
 
   window.fbLogout = async function(){
@@ -3780,50 +4084,36 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
     return true;
   }
 
-  // ── Чтение локальных данных ──
-  function localGet(key){
-    try{ var v = localStorage.getItem(key); return v ? JSON.parse(v) : null; }catch(_){ return null; }
-  }
-  function localSet(key, val){
-    try{ localStorage.setItem(key, JSON.stringify(val)); }catch(_){ }
-  }
-
-  // ── Отправка ──
+  // ── Отправка: транзакция + merge. Старый снимок больше не может затереть свежие удаления. ──
   async function pushAll(force){
     if(pushing || !db) return;
     if(!requireUser('отправки')) return;
     if(!force && !dirty) return;
     pushing = true;
     try{
-      status('Firebase: отправляю данные…');
-      var ts = Date.now();
-      var payload = {
-        products: {
-          custom_items:    localGet('custom_items')    || [],
-          custom_barcodes: localGet('custom_barcodes') || {},
-          product_edits:   localGet('product_edits')   || {},
-          pack_sizes:      localGet('pack_sizes')      || {}
-        },
-        cells: {
-          cells:          localGet('cells')          || [],
-          cell_favorites: localGet('cell_favorites') || []
-        },
-        hh11: localGet('hh11_log') || [],
-        rk:   localGet('rk_log')   || [],
-        updated_at: ts,
-        updated_by: currentUser ? currentUser.uid : null,
-        updated_by_session: FB_SESSION_ID
-      };
-      await db.ref(DB_PATH).set(payload);
+      status('Firebase: отправляю и сверяю версии…');
+      var localParts = makeLocalStore(!!force);
+      var finalPayload = null;
+      await new Promise(function(resolve, reject){
+        db.ref(DB_PATH).transaction(function(remote){
+          finalPayload = mergeLocalWithRemote(localParts, remote || {});
+          return finalPayload;
+        }, function(error, committed, snap){
+          if(error) reject(error);
+          else {
+            try{ if(snap && snap.val) finalPayload = snap.val(); }catch(_){ }
+            resolve({ committed: committed, snap: snap });
+          }
+        }, false);
+      });
       dirty = false;
-      lastAppliedUpdatedAt = ts;
-      status('Firebase: данные отправлены ✓', true);
+      if(finalPayload) applySnapshot(finalPayload, true);
+      status('Firebase: данные отправлены и сведены ✓', true);
     }catch(e){
       status('Firebase: ошибка отправки — ' + (e.message || e));
     }finally{ pushing = false; }
   }
 
-  // ── Сохранение раскрытой карточки при realtime-перерисовке ──
   function rememberOpenCatalogCard(){
     try{
       var card = document.querySelector('#results .card.open');
@@ -3840,9 +4130,7 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
       try{
         var cards = document.querySelectorAll('#results .card[data-ut]');
         var target = null;
-        for(var i=0;i<cards.length;i++){
-          if(String(cards[i].getAttribute('data-ut')) === String(state.ut)){ target = cards[i]; break; }
-        }
+        for(var i=0;i<cards.length;i++) if(String(cards[i].getAttribute('data-ut')) === String(state.ut)){ target = cards[i]; break; }
         if(!target) return;
         target.classList.add('open');
         var item = (typeof productAllItems === 'function') ? productAllItems().find(function(x){ return String(x && x.ut || '') === String(state.ut); }) : null;
@@ -3857,29 +4145,41 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
   }
 
   // ── Приём ──
-  function applySnapshot(snap){
+  function applySnapshot(snap, force){
     var data = snap && typeof snap.val === 'function' ? snap.val() : snap;
     if(!data) return;
     var remoteUpdatedAt = Number(data.updated_at || 0);
-    if(remoteUpdatedAt && remoteUpdatedAt === lastAppliedUpdatedAt) return;
+    if(!force && remoteUpdatedAt && remoteUpdatedAt === lastAppliedUpdatedAt) return;
     if(remoteUpdatedAt) lastAppliedUpdatedAt = remoteUpdatedAt;
+
+    var remote = extractRemote(data);
+    var localMeta = readMeta();
+    var localDeleted = readDeleted();
+    var mergedDeleted = unionDeleted(localDeleted, remote.deleted);
     var catalogState = rememberOpenCatalogCard();
+
     applying = true;
     try{
-      // Товары
-      var p = data.products || {};
-      if(p.custom_items    != null) localSet('custom_items',    p.custom_items);
-      if(p.custom_barcodes != null) localSet('custom_barcodes', p.custom_barcodes);
-      if(p.product_edits   != null) localSet('product_edits',   p.product_edits);
-      if(p.pack_sizes      != null) localSet('pack_sizes',      p.pack_sizes);
-      // Ячейки
-      var c = data.cells || {};
-      if(c.cells          != null) localSet('cells',          c.cells);
-      if(c.cell_favorites != null) localSet('cell_favorites', c.cell_favorites);
-      // HH и РК
-      if(data.hh11 != null) localSet('hh11_log', data.hh11);
-      if(data.rk   != null) localSet('rk_log',   data.rk);
-      // Перерисовать UI
+      writeDeleted(mergedDeleted);
+      SYNC_KEYS.forEach(function(key){
+        var rv = Number(remote.versions[key] || 0);
+        var lv = Number(localMeta[key] || 0);
+        var dv = maxDeletedTsForKey(mergedDeleted, key);
+        var remoteVal = filterDeleted(key, normalizeValueForKey(key, remote.store[key]), mergedDeleted);
+        var localVal  = filterDeleted(key, normalizeValueForKey(key, localGet(key)), mergedDeleted);
+
+        if(remote.present[key] && rv >= lv){
+          rawSetLocal(key, remoteVal);
+          localMeta[key] = Math.max(rv, dv, lv && rv >= lv ? lv : 0);
+        }else if(dv > lv){
+          var filtered = filterDeleted(key, localVal, mergedDeleted);
+          rawSetLocal(key, filtered);
+          localMeta[key] = Math.max(lv, dv);
+        }
+      });
+      applyDeletedTombstonesLocally(mergedDeleted);
+      writeMeta(localMeta);
+
       try{ if(typeof render      === 'function'){ render(); restoreOpenCatalogCard(catalogState); } }catch(_){ }
       try{ if(typeof renderCells === 'function') renderCells(); }catch(_){ }
       try{ if(typeof renderHH11  === 'function') renderHH11(); }catch(_){ }
@@ -3896,17 +4196,15 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
       lastPullAt = Date.now();
       var snap = await db.ref(DB_PATH).get();
       if(snap.exists()){
-        applySnapshot(snap);
+        applySnapshot(snap, false);
         status('Firebase: данные получены ✓', true);
-      } else {
-        status('Firebase: личная база пустая — если данные сейчас есть на этом устройстве, нажми «Отправить с этого устройства»', true);
+      }else{
+        status('Firebase: личная база пустая — если данные есть на этом устройстве, нажми «Отправить с этого устройства»', true);
       }
-    }catch(e){
-      status('Firebase: ошибка загрузки — ' + (e.message || e));
-    }finally{ pulling = false; }
+    }catch(e){ status('Firebase: ошибка загрузки — ' + (e.message || e)); }
+    finally{ pulling = false; }
   }
 
-  // ── Миграция со старой общей ветки /w21 ──
   window.fbMigrateLegacyW21 = async function(){
     if(!db) return;
     if(!requireUser('миграции старой w21')) return;
@@ -3917,16 +4215,13 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
         status('Firebase: старая w21 пустая или недоступна');
         return;
       }
-      applySnapshot(snap);
+      applySnapshot(snap, true);
       dirty = true;
       await pushAll(true);
       status('Firebase: старая w21 перенесена в твой аккаунт ✓', true);
-    }catch(e){
-      status('Firebase: миграция w21 не удалась — ' + (e.message || e));
-    }
+    }catch(e){ status('Firebase: миграция w21 не удалась — ' + (e.message || e)); }
   };
 
-  // ── Realtime подписка — мгновенный приём изменений ──
   function startRealtime(){
     if(!db || !requireUser('realtime')) return;
     stopRealtime();
@@ -3939,16 +4234,13 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
         status('Firebase: своё обновление принято ✓', true);
         return;
       }
-      applySnapshot(data);
+      applySnapshot(data, false);
     }, function(err){
       status('Firebase: realtime ошибка — ' + (err && err.message ? err.message : err));
     });
   }
 
-  function stopRealtime(){
-    try{ if(realtimeRef) realtimeRef.off(); }catch(_){ }
-    realtimeRef = null;
-  }
+  function stopRealtime(){ try{ if(realtimeRef) realtimeRef.off(); }catch(_){ } realtimeRef = null; }
 
   function stopSync(){
     clearTimeout(dirtyTimer);
@@ -3957,23 +4249,23 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
     stopRealtime();
   }
 
-  // ── Авто-отправка: при изменениях + каждые 10 сек ──
   function schedulePush(ms){
     if(!currentUser) return;
     dirty = true;
+    status('Firebase: есть локальные изменения, жду отправку…');
     clearTimeout(dirtyTimer);
-    dirtyTimer = setTimeout(function(){ pushAll(false); }, ms || 2000);
+    dirtyTimer = setTimeout(function(){ pushAll(false); }, ms || 1800);
   }
 
-  // Перехватываем изменения localStorage
   window.supaMarkDirtyKey = function(key, before, after){
     if(applying) return;
     if(String(before) === String(after)) return;
     var k = String(key || '');
-    if(PRODUCT_KEYS.indexOf(k) >= 0 || CELL_KEYS.indexOf(k) >= 0 ||
-       HH_KEYS.indexOf(k) >= 0      || RK_KEYS.indexOf(k) >= 0){
-      schedulePush(2000);
-    }
+    if(!has(SYNC_KEYS, k)) return;
+    var ts = Date.now();
+    rememberRemovedIdsFromRaw(k, before, after, ts);
+    markKeyVersion(k, ts);
+    schedulePush(1800);
   };
 
   function startPushLoop(){
@@ -3983,19 +4275,17 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
     }, 10000);
   }
 
-  // ── Публичные функции для кнопок ──
   window.fbPullNow  = function(){ return pullAll(); };
   window.fbPushNow  = function(){ return pushAll(true); };
-  window.fbFullSync = async function(){ await pullAll(); await pushAll(true); };
+  window.fbFullSync = async function(){ await pullAll(); await pushAll(false); };
+  window.fbRepairSync = async function(){ dirty = true; await pushAll(true); await pullAll(); };
 
-  // Алиасы для старых кнопок/обработчиков, чтобы ничего не падало.
   window.supaConnectAndStart = window.fbFullSync;
   window.supaBootstrapServer = window.fbPushNow;
   window.supaAutoPullNow = window.fbPullNow;
   window.supaAutoToggle = window.fbPushNow;
   window.supaDownloadSQL = function(){ status('SQL больше не нужен: используется Firebase Realtime Database + Auth.'); };
 
-  // ── Патч storage для отслеживания изменений ──
   function patchStorage(){
     if(window.__fbStoragePatched) return;
     var origSet = Storage.prototype.setItem;
@@ -4004,57 +4294,37 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
       var before = null;
       try{ if(this === localStorage) before = this.getItem(key); }catch(_){ }
       origSet.apply(this, arguments);
-      try{
-        if(this === localStorage && typeof supaMarkDirtyKey === 'function')
-          supaMarkDirtyKey(String(key), before, value);
-      }catch(_){ }
+      try{ if(this === localStorage && typeof supaMarkDirtyKey === 'function') supaMarkDirtyKey(String(key), before, value); }catch(_){ }
     };
     Storage.prototype.removeItem = function(key){
       var before = null;
       try{ if(this === localStorage) before = this.getItem(key); }catch(_){ }
       origRemove.apply(this, arguments);
-      try{
-        if(this === localStorage && typeof supaMarkDirtyKey === 'function')
-          supaMarkDirtyKey(String(key), before, null);
-      }catch(_){ }
+      try{ if(this === localStorage && typeof supaMarkDirtyKey === 'function') supaMarkDirtyKey(String(key), before, null); }catch(_){ }
     };
     window.__fbStoragePatched = true;
   }
 
-  // ── Переподписываем кнопки и тексты ──
   function relabel(){
     var btns = document.querySelectorAll('button');
     btns.forEach(function(b){
       var on = String(b.getAttribute('onclick') || '');
-      if(on.indexOf('supaConnectAndStart') >= 0){
-        b.setAttribute('onclick','fbFullSync()'); b.textContent = '🔄 Синхронизировать';
-      }
-      if(on.indexOf('supaBootstrapServer') >= 0){
-        b.setAttribute('onclick','fbPushNow()'); b.textContent = '⬆ Отправить с этого устройства';
-      }
-      if(on.indexOf('supaAutoPullNow') >= 0){
-        b.setAttribute('onclick','fbPullNow()'); b.textContent = '⬇ Получить с сервера';
-      }
-      if(on.indexOf('supaAutoToggle') >= 0){
-        b.setAttribute('onclick','fbPushNow()'); b.textContent = '⬆ Отправить сейчас';
-      }
-      if(on.indexOf('supaDownloadSQL') >= 0){
-        b.setAttribute('onclick','fbMigrateLegacyW21()'); b.textContent = '🧳 Забрать старую w21';
-      }
+      if(on.indexOf('supaConnectAndStart') >= 0){ b.setAttribute('onclick','fbFullSync()'); b.textContent = '🔄 Синхронизировать'; }
+      if(on.indexOf('supaBootstrapServer') >= 0){ b.setAttribute('onclick','fbPushNow()'); b.textContent = '⬆ Отправить с этого устройства'; }
+      if(on.indexOf('supaAutoPullNow') >= 0){ b.setAttribute('onclick','fbPullNow()'); b.textContent = '⬇ Получить с сервера'; }
+      if(on.indexOf('supaAutoToggle') >= 0){ b.setAttribute('onclick','fbPushNow()'); b.textContent = '⬆ Отправить сейчас'; }
+      if(on.indexOf('supaDownloadSQL') >= 0){ b.setAttribute('onclick','fbMigrateLegacyW21()'); b.textContent = '🧳 Забрать старую w21'; }
     });
     var warn = document.querySelector('.supa-warning');
-    if(warn) warn.innerHTML = 'Режим Firebase Auth: вход вынесен на <b>register.html</b>. Без аккаунта приложение перенаправит на регистрацию; данные каждого аккаунта лежат отдельно в <b>users/&lt;uid&gt;/w21</b>.';
+    if(warn) warn.innerHTML = 'Firebase Sync v3: удаление защищено tombstone-метками. Старое устройство больше не должно воскрешать удалённые РК/HH/товары.';
     var dbEl = document.querySelector('.supa-status');
-    if(dbEl) dbEl.textContent = 'База: warehouse-dbec9 (Firebase + Auth)';
+    if(dbEl) dbEl.textContent = 'База: warehouse-dbec9 (Firebase + Auth + sync v3)';
     updateAuthUI();
   }
 
-  // ── Полинг как запасной вариант ──
   function startLoop(){
     clearInterval(loopTimer);
-    loopTimer = setInterval(function(){
-      if(!document.hidden && currentUser) pullAll();
-    }, PULL_EVERY);
+    loopTimer = setInterval(function(){ if(!document.hidden && currentUser) pullAll(); }, PULL_EVERY);
   }
 
   function startAfterLogin(){
@@ -4067,7 +4337,6 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
     pullAll().then(function(){ status('Firebase: синхронизация аккаунта активна.', true); });
   }
 
-  // ── Старт ──
   function boot(){
     try{
       if(!initFB()) return;
@@ -4085,19 +4354,13 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
           redirectToAuth();
         }
       });
-      function pullIfStale(){
-        if(!currentUser) return;
-        if(Date.now() - lastPullAt > 30000) pullAll();
-      }
+      function pullIfStale(){ if(!currentUser) return; if(Date.now() - lastPullAt > 30000) pullAll(); }
       window.addEventListener('online',  pullIfStale);
       window.addEventListener('focus',   pullIfStale);
-      document.addEventListener('visibilitychange', function(){
-        if(!document.hidden) pullIfStale();
-      });
+      document.addEventListener('visibilitychange', function(){ if(!document.hidden) pullIfStale(); });
     }catch(e){ status('Firebase boot error: ' + e.message); }
   }
 
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else setTimeout(boot, 0);
 })();
-

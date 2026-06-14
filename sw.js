@@ -1,6 +1,6 @@
 /* L'Enfer PWA service worker — v45 cache cleanup
    Network-first worker: old cached index.html should not haunt the app. */
-const SW_VERSION = 'lenfer-modular-v1-20260614';
+const SW_VERSION = 'lenfer-sync-v3-20260614';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
