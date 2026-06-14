@@ -632,3 +632,29 @@ html.auth-gate-error::before{
 .member-row span{color:var(--muted);}
 .member-row small{color:var(--faint);}
 @media(max-width:520px){.collab-panel .collab-row{grid-template-columns:1fr}.collab-panel .collab-row .exi-btn{width:100%;}}
+
+
+/* ── WMS IMPORT / BRIDGE ── */
+.wms-panel{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:10px;padding:12px;margin-bottom:12px;}
+.wms-warning{font-size:11px;line-height:1.45;color:var(--muted);background:rgba(212,168,67,.08);border:1px solid rgba(212,168,67,.20);border-radius:8px;padding:9px 10px;margin-bottom:12px;}
+.wms-search-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start;}
+.wms-actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:8px;}
+.wms-status{margin-top:10px;font-size:11px;line-height:1.4;color:var(--muted);background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;}
+.wms-status-ok{color:#89d185;border-color:rgba(137,209,133,.35);}
+.wms-status-err{color:var(--red-bright);border-color:rgba(231,76,60,.35);}
+.wms-status-wait{color:var(--gold);border-color:rgba(212,168,67,.35);}
+.wms-import-fold{margin:12px 0;}
+.wms-result{margin-top:12px;}
+.wms-card{display:flex;gap:11px;background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:11px;margin-bottom:10px;align-items:flex-start;}
+.wms-img{width:54px;height:54px;object-fit:cover;border-radius:8px;background:var(--bg2);border:1px solid var(--border);flex-shrink:0;}
+.wms-card-body{min-width:0;flex:1;}
+.wms-product-name{font-size:12px;line-height:1.45;color:var(--text);font-weight:700;margin-bottom:5px;}
+.wms-meta{font-size:10.5px;line-height:1.45;color:var(--muted);}
+.wms-result-actions{margin-bottom:10px;}
+.wms-table-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--surface);}
+.wms-table{width:100%;border-collapse:collapse;min-width:760px;font-size:10.5px;}
+.wms-table th,.wms-table td{padding:8px 9px;border-bottom:1px solid var(--border);text-align:left;vertical-align:top;white-space:nowrap;}
+.wms-table th{font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.8px;color:var(--gold);background:var(--bg2);font-size:9px;position:sticky;top:0;}
+.wms-table tr:last-child td{border-bottom:none;}
+.wms-table td.num{text-align:right;font-weight:700;color:var(--gold);}
+@media(max-width:430px){.wms-search-row{grid-template-columns:1fr}.wms-card{padding:10px}.wms-table{font-size:10px;}}
