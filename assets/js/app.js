@@ -387,7 +387,7 @@ window.switchTab = switchTab;
 
 // ── WMS IMPORT / BRIDGE ──
 let wmsLastResult = null;
-const WMS_AUTO_UNAVAILABLE = 'Авто-поиск недоступен в этой среде. Нужен Android WebView-мост или браузерный bridge. Можно вставить JSON-ответ ВМС в импорт ниже.';
+const WMS_AUTO_UNAVAILABLE = 'Авто-поиск доступен только в Android-обёртке с ВМС-входом. Обычная PWA в браузере не может сама ходить в ВМС.';
 
 function wmsSetStatus(text, kind){
   const el=document.getElementById('wms-status');
@@ -422,7 +422,7 @@ function wmsCopyTextarea(text){
 function wmsClearResult(){
   wmsLastResult=null;
   const box=document.getElementById('wms-result');if(box)box.innerHTML='';
-  wmsSetStatus('Очищено. Введи УТ или вставь JSON-ответ из ВМС.','');
+  wmsSetStatus('Очищено. Введи УТ и жми «Найти».','');
 }
 function wmsClearImportText(){const el=document.getElementById('wms-import-text');if(el)el.value='';}
 async function wmsPasteImportFromClipboard(){
@@ -624,7 +624,7 @@ async function wmsLookupFromApp(){
 function renderWms(){
   const box=document.getElementById('wms-result');
   if(box && !wmsLastResult && !box.innerHTML){
-    box.innerHTML='<div class="hint" style="padding:34px 12px;"><span class="mark">✶</span><span class="txt">Введи УТ или вставь ответ ВМС</span></div>';
+    box.innerHTML='<div class="hint" style="padding:34px 12px;"><span class="mark">✶</span><span class="txt">Введи УТ и жми «Найти»</span></div>';
   }
 }
 window.wmsLookupFromApp=wmsLookupFromApp;
@@ -4041,7 +4041,7 @@ function startAppStable(){
   safeStartPart('отчёт', typeof renderReport==='function' ? renderReport : null);
 }
 startAppStable();
-window.__APP_STABLE_BUILD__='2026-06-15-v37-wms-import-bridge';
+window.__APP_STABLE_BUILD__='2026-06-15-v38-android-wms-wrapper-ready';
 
 function hideProductDropdownsOnOutsideClick(e){
   try{
