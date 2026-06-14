@@ -7096,5 +7096,226 @@ try{
 })();
 </script>
 
+<script>
+/* ============================================================
+   v38: ЕДИНАЯ СИНХРОНИЗАЦИЯ (товары + ячейки + HH + РК + состояние)
+   Один контур, прямой Supabase REST, авто-приём и авто-отправка.
+   Раньше синхронизировались только товары/ячейки, а HH/РК отправлялись
+   и принимались по отдельной (фактически выключенной) ветке. Теперь всё
+   идёт одним циклом и через REST (обход зависания supabase-js на ТСД).
+   Ошибки видны в строке статуса, а не глотаются молча.
+   ============================================================ */
+(function(){
+  'use strict';
+  var TIMEOUT_MS = 25000;
+  var CHUNK      = 25;
+  var PULL_EVERY = 6000;
+  var SINCE_KEY  = 'w21_v38_since';
+  var TABLES     = ['w21_products','w21_cells','w21_hh11','w21_rk','w21_state'];
+  var SYNCED_KEYS = new Set([
+    'custom_items','custom_barcodes','product_edits','pack_sizes',
+    'cells','cells__mirror','cell_favorites','cell_favorites__mirror',
+    'hh11_log','rk_log',
+    'notes','eo_codes','journal','report','search_history','inventory',
+    'favorites','eo_range_saved','eo_range_used','recent_products'
+  ]);
+
+  window.__APP_STABLE_BUILD__ = '2026-06-14-v38-unified-rest-sync';
+
+  function cfg(){
+    try{
+      var c = (typeof supaGetConfig === 'function') ? supaGetConfig() : {};
+      return {
+        url: (c && c.url) || (typeof W21_SUPABASE_DEFAULT_URL !== 'undefined' ? W21_SUPABASE_DEFAULT_URL : ''),
+        key: (c && c.key) || (typeof W21_SUPABASE_DEFAULT_KEY !== 'undefined' ? W21_SUPABASE_DEFAULT_KEY : '')
+      };
+    }catch(_){
+      return { url:(typeof W21_SUPABASE_DEFAULT_URL!=='undefined'?W21_SUPABASE_DEFAULT_URL:''),
+               key:(typeof W21_SUPABASE_DEFAULT_KEY!=='undefined'?W21_SUPABASE_DEFAULT_KEY:'') };
+    }
+  }
+  function baseUrl(){ var c=cfg(); if(!c.url||!c.key) throw new Error('Supabase URL/ключ не заданы'); return c.url.replace(/\/+$/,'')+'/rest/v1'; }
+  function headers(extra){ var c=cfg(); return Object.assign({'apikey':c.key,'Authorization':'Bearer '+c.key,'Content-Type':'application/json'}, extra||{}); }
+  function status(msg, good){ try{ if(typeof supaStatus==='function') supaStatus(msg, good); else console.log('[sync]', msg); }catch(_){ console.log('[sync]', msg); } }
+  function human(e){ try{ return (typeof supaHumanError==='function') ? supaHumanError(e) : (e && (e.message||e.error||String(e))); }catch(_){ return String(e&&e.message||e); } }
+  function chunks(a,n){ var o=[]; a=a||[]; for(var i=0;i<a.length;i+=n) o.push(a.slice(i,i+n)); return o; }
+  function syncEnabled(){ try{ return (typeof supaAutoEnabled!=='function') ? true : !!supaAutoEnabled(); }catch(_){ return true; } }
+
+  async function rest(path, opt, label){
+    opt = opt || {};
+    var timer=null, ctrl=null;
+    if(typeof AbortController!=='undefined'){ ctrl=new AbortController(); opt.signal=ctrl.signal; }
+    var url = baseUrl()+'/'+String(path).replace(/^\/+/,'');
+    try{
+      var timeout = new Promise(function(_, reject){
+        timer = setTimeout(function(){ try{ if(ctrl) ctrl.abort(); }catch(_){ }
+          reject(new Error((label||'Supabase REST')+' не ответил за '+Math.round(TIMEOUT_MS/1000)+' сек.')); }, TIMEOUT_MS);
+      });
+      var res = await Promise.race([fetch(url, opt), timeout]);
+      var text = await res.text();
+      if(!res.ok){
+        var detail = text;
+        try{ var j=JSON.parse(text); detail = j.message||j.details||j.hint||j.error||text; }catch(_){ }
+        throw new Error((label||'Supabase REST')+': HTTP '+res.status+' — '+String(detail||'').slice(0,300));
+      }
+      if(!text) return null;
+      try{ return JSON.parse(text); }catch(_){ return text; }
+    } finally { if(timer) clearTimeout(timer); }
+  }
+
+  async function upsert(table, rows, onConflict){
+    rows = (rows||[]).filter(Boolean);
+    if(!rows.length) return 0;
+    var sent=0, list=chunks(rows, CHUNK);
+    for(var i=0;i<list.length;i++){
+      var ch = list[i];
+      var path = encodeURIComponent(table)+'?on_conflict='+encodeURIComponent(onConflict);
+      await rest(path, { method:'POST', headers:headers({'Prefer':'resolution=merge-duplicates,return=minimal'}), body:JSON.stringify(ch) }, 'upsert '+table);
+      sent += ch.length;
+    }
+    return rows.length;
+  }
+
+  async function select(table, since){
+    var offset=0, limit=1000, all=[];
+    while(true){
+      var path = encodeURIComponent(table)+'?select=*&order=updated_at.asc&limit='+limit+'&offset='+offset;
+      if(since) path += '&updated_at=gt.'+encodeURIComponent(since);
+      var data = await rest(path, { method:'GET', headers:headers() }, 'select '+table);
+      var arr = Array.isArray(data) ? data : [];
+      all = all.concat(arr);
+      if(arr.length < limit) break;
+      offset += limit;
+    }
+    return all;
+  }
+
+  function getSince(){ try{ return localStorage.getItem(SINCE_KEY)||''; }catch(_){ return ''; } }
+  function setSince(ts){ if(!ts) return; try{ localStorage.setItem(SINCE_KEY, ts); }catch(_){ } }
+  function maxTs(rows){ var m=''; (rows||[]).forEach(function(r){ var t=r&&r.updated_at; if(t && (!m || t>m)) m=t; }); return m; }
+
+  /* Строки берём у уже существующих, проверенных билдеров приложения. */
+  function rowsProducts(){ try{ if(typeof supaProductRows==='function') return supaProductRows(true); if(typeof v35ProductRows==='function') return v35ProductRows(); }catch(_){ } return []; }
+  function rowsCells(){ try{ if(typeof supaCellRows==='function') return supaCellRows(); }catch(_){ } return []; }
+  function rowsHH(){ try{ if(typeof supaHHRows==='function') return supaHHRows(); }catch(_){ } return []; }
+  function rowsRK(){ try{ if(typeof supaRKRows==='function') return supaRKRows(); }catch(_){ } return []; }
+  function rowsState(){ try{ if(typeof supaStateRows==='function') return supaStateRows(); }catch(_){ } return []; }
+
+  var pushing=false, pulling=false;
+
+  async function pushAll(){
+    if(pushing || !syncEnabled()) return;
+    pushing = true;
+    try{
+      status('Синхронизация: отправляю на сервер…');
+      var p = await upsert('w21_products', rowsProducts(), 'ut');
+      var c = await upsert('w21_cells',    rowsCells(),    'id');
+      var h = await upsert('w21_hh11',     rowsHH(),       'semantic_key');
+      var r = await upsert('w21_rk',       rowsRK(),       'semantic_key');
+      var s = 0; try{ s = await upsert('w21_state', rowsState(), 'key'); }catch(e){ console.warn('state push', e); }
+      try{ if(typeof v35PushPending==='function') await v35PushPending();
+           else if(typeof supaPushPendingDeletes==='function') await supaPushPendingDeletes(); }catch(e){ console.warn('pending deletes', e); }
+      status('Отправлено: товары '+p+', ячейки '+c+', HH '+h+', РК '+r+', состояние '+s+'.', true);
+    }catch(e){
+      status('Ошибка отправки: '+human(e));
+      throw e;
+    }finally{ pushing=false; }
+  }
+
+  async function pullAll(full){
+    if(pulling || !syncEnabled()) return;
+    pulling = true;
+    try{
+      var since = full ? '' : getSince();
+      status(full ? 'Синхронизация: полная загрузка с сервера…' : 'Синхронизация: приём изменений…');
+      var maxAll = since || '';
+      var sum = {};
+      for(var i=0;i<TABLES.length;i++){
+        var t = TABLES[i];
+        var rows = await select(t, since);
+        if(typeof supaApplyTableRows==='function') sum[t] = supaApplyTableRows(t, rows) || {};
+        var m = maxTs(rows); if(m && (!maxAll || m>maxAll)) maxAll = m;
+      }
+      if(maxAll) setSince(maxAll);
+      try{ if(typeof supaRenderAfterPull==='function') supaRenderAfterPull(); }catch(_){ }
+      var ph=sum['w21_products']||{}, ch=sum['w21_cells']||{}, hh=sum['w21_hh11']||{}, rk=sum['w21_rk']||{};
+      status('Принято: товары +'+(ph.added||0)+'/'+(ph.updated||0)+', ячейки +'+(ch.added||0)+'/'+(ch.updated||0)+
+             ', HH +'+(hh.added||0)+'/'+(hh.updated||0)+', РК +'+(rk.added||0)+'/'+(rk.updated||0)+'.', true);
+    }catch(e){
+      status('Ошибка загрузки: '+human(e));
+    }finally{ pulling=false; }
+  }
+
+  /* Любое локальное изменение синхронизируемых данных => отложенная отправка. */
+  var dirtyTimer=null;
+  function scheduleDirtyPush(){ clearTimeout(dirtyTimer); dirtyTimer=setTimeout(function(){ pushAll().catch(function(){}); }, 1200); }
+  window.supaMarkDirtyKey = function(key, before, after){
+    try{
+      if(typeof __w21SupaApplyingRemote!=='undefined' && __w21SupaApplyingRemote) return;
+      if(typeof __w21v35Applying!=='undefined' && __w21v35Applying) return;
+      if(SYNCED_KEYS.has(String(key||''))) scheduleDirtyPush();
+    }catch(_){ }
+  };
+
+  /* Ручные точки входа. */
+  window.w21PullNow  = function(){ return pullAll(false); };
+  window.w21SyncNow  = async function(){ await pushAll(); await pullAll(false); };
+  window.w21FullSync = async function(){ await pullAll(true); await pushAll(); await pullAll(false); };
+  window.w21SyncStatus = function(){
+    return { build:window.__APP_STABLE_BUILD__, enabled:syncEnabled(), since:getSince(),
+             products:rowsProducts().length, cells:rowsCells().length, hh:rowsHH().length, rk:rowsRK().length };
+  };
+
+  var loopTimer=null;
+  function startLoop(){ clearInterval(loopTimer); loopTimer=setInterval(function(){ if(!document.hidden) pullAll(false); }, PULL_EVERY); }
+  function stopOldLoops(){
+    try{ if(typeof __w21SupaPullTimer!=='undefined' && __w21SupaPullTimer) clearInterval(__w21SupaPullTimer); }catch(_){ }
+    try{ if(typeof __w21v35PullTimer!=='undefined' && __w21v35PullTimer)  clearInterval(__w21v35PullTimer); }catch(_){ }
+  }
+
+  function relabelButtons(){
+    var btns = [].slice.call(document.querySelectorAll('button'));
+    btns.forEach(function(b){
+      var on = String(b.getAttribute('onclick')||'');
+      if(on.indexOf('supaConnectAndStart')>=0 || on.indexOf('w21SyncCheck')>=0){
+        b.setAttribute('onclick','w21FullSync().catch(function(e){alert("Ошибка синхронизации: "+(e&&e.message||e));})');
+        b.textContent='🔄 Полная синхронизация';
+      }
+      if(on.indexOf('supaBootstrapServer')>=0 || on.indexOf('w21SyncSendLocal')>=0){
+        b.setAttribute('onclick','w21SyncNow().catch(function(e){alert("Ошибка синхронизации: "+(e&&e.message||e));})');
+        b.textContent='⬆ Отправить сейчас';
+      }
+      if(on.indexOf("supaAutoPullNow('manual')")>=0 || on.indexOf('w21SyncGetServer')>=0){
+        b.setAttribute('onclick','w21PullNow().catch(function(e){alert("Ошибка синхронизации: "+(e&&e.message||e));})');
+        b.textContent='⬇ Получить с сервера';
+      }
+    });
+    var note = document.getElementById('supa-mode-note');
+    if(note) note.innerHTML = 'Режим v38: единая синхронизация. Товары, ячейки, HH 1-1, РК и состояние идут одним циклом через прямой Supabase REST: авто-приём каждые 6 сек, авто-отправка при любом изменении. Доступы/пароли не синхронизируются.';
+    var warn = document.querySelector('.supa-warning');
+    if(warn) warn.innerHTML = 'Режим v38: данные хранятся в одной базе и доступны на всех устройствах. Добавления и правки HH/РК теперь тоже улетают на сервер и подтягиваются обратно. Если что-то не приходит — строка статуса покажет причину/HTTP-код.';
+  }
+
+  function boot(){
+    try{
+      relabelButtons();
+      if(!syncEnabled()){ status('Синхронизация выключена (нет URL/ключа).'); return; }
+      try{ if(typeof supaPatchStorageForAutoSync==='function') supaPatchStorageForAutoSync(); }catch(_){ }
+      stopOldLoops();
+      setTimeout(function(){
+        pullAll(true).then(function(){ return pushAll(); }).catch(function(){}).then(startLoop, startLoop);
+      }, 500);
+      window.addEventListener('online', function(){ pushAll().catch(function(){}); pullAll(false).catch(function(){}); });
+      window.addEventListener('focus', function(){ pullAll(false).catch(function(){}); });
+      document.addEventListener('visibilitychange', function(){ if(!document.hidden) pullAll(false).catch(function(){}); });
+      status('v38: единая синхронизация запущена.', true);
+    }catch(e){ status('v38 boot error: '+human(e)); }
+  }
+
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot);
+  else setTimeout(boot, 0);
+})();
+</script>
+
 </body>
 </html>
