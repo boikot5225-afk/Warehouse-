@@ -129,6 +129,34 @@ const getCreds = () => getSafeCredentials();
 const getEOCodes = () => get('eo_codes');
 const getProblems = () => get('problems_log');
 const getActionLog = () => get('action_log');
+const getAuditLog = () => get('audit_log');
+const getUserProfileLocal = () => getObj('user_profile');
+function currentActor(){
+  const p = window.lenferCurrentUserProfile || getUserProfileLocal() || {};
+  const uid = String(p.uid || '');
+  const email = String(p.email || '');
+  const name = String(p.name || p.displayName || email || (uid ? ('uid:'+uid.slice(0,6)) : 'Пользователь')).trim();
+  return {uid, email, name};
+}
+function createMeta(row){
+  const a=currentActor(); const ts=new Date().toISOString(); const ru=new Date().toLocaleString('ru-RU');
+  return {...(row||{}), createdByUid:(row&&row.createdByUid)||a.uid, createdByName:(row&&row.createdByName)||a.name, createdByEmail:(row&&row.createdByEmail)||a.email, createdAtIso:(row&&row.createdAtIso)||ts, updatedByUid:a.uid, updatedByName:a.name, updatedByEmail:a.email, updatedAtIso:ts, updatedAtRu:ru};
+}
+function touchMeta(row){
+  const a=currentActor(); const ts=new Date().toISOString(); const ru=new Date().toLocaleString('ru-RU');
+  if(!row || typeof row!=='object')return row;
+  row.updatedByUid=a.uid; row.updatedByName=a.name; row.updatedByEmail=a.email; row.updatedAtIso=ts; row.updatedAtRu=ru;
+  if(!row.createdByName){row.createdByUid=a.uid;row.createdByName=a.name;row.createdByEmail=a.email;row.createdAtIso=row.createdAtIso||ts;}
+  return row;
+}
+function authorLine(x){
+  if(!x || typeof x!=='object')return '';
+  const c=x.createdByName||x.createdByEmail||'';
+  const u=x.updatedByName||x.updatedByEmail||'';
+  const when=x.updatedAtRu||x.updatedAt||x.ts||x.createdAt||'';
+  if(!c && !u)return '';
+  return '<div class="meta-author">'+(c?'Создал: <b>'+escHtml(c)+'</b>':'')+(u&&u!==c?' · изм.: <b>'+escHtml(u)+'</b>':'')+(when?' · '+escHtml(when):'')+'</div>';
+}
 function saveCustomBarcode(ut,bc){const o=getCustomBarcodes();o[ut]=bc;set('custom_barcodes',o);}
 const getPackSizes = () => getObj('pack_sizes');
 function savePackSize(ut,n){const o=getPackSizes();if(n)o[ut]=n;else delete o[ut];set('pack_sizes',o);}
@@ -154,20 +182,30 @@ function productBarcodeList(i){
 // ── LIGHT ACTION LOG ──
 function logAction(type, text, meta){
   try{
+    const a=currentActor();
+    const entry={id:Date.now()+Math.floor(Math.random()*1000),type:String(type||'action'),text:String(text||''),meta:meta||{},ts:new Date().toLocaleString('ru-RU'),iso:new Date().toISOString(),actorUid:a.uid,actorName:a.name,actorEmail:a.email};
     const arr=getActionLog();
-    arr.unshift({id:Date.now()+Math.floor(Math.random()*1000),type:String(type||'action'),text:String(text||''),meta:meta||{},ts:new Date().toLocaleString('ru-RU'),iso:new Date().toISOString()});
+    arr.unshift(entry);
     set('action_log',arr.slice(0,300));
+    const aud=getAuditLog();
+    aud.unshift(entry);
+    set('audit_log',aud.slice(0,500));
   }catch(e){}
+}
+function combinedAuditLog(){
+  const map=new Map();
+  [...getAuditLog(),...getActionLog()].forEach(x=>{if(!x)return; map.set(String(x.id||x.iso||Math.random()),x);});
+  return Array.from(map.values()).sort((a,b)=>String(b.iso||'').localeCompare(String(a.iso||'')));
 }
 function renderActionLogMini(){
   const box=document.getElementById('diag-action-log');
   if(!box)return;
-  const arr=getActionLog().slice(0,12);
+  const arr=combinedAuditLog().slice(0,18);
   if(!arr.length){box.innerHTML='<div class="no-results" style="padding:12px;">Журнал пока пуст</div>';return;}
-  box.innerHTML=arr.map(x=>'<div style="border-bottom:1px solid var(--border);padding:7px 0;font-size:11px;line-height:1.35;"><b style="color:var(--gold);">'+escHtml(x.ts||'')+'</b> · '+escHtml(x.text||x.type||'')+'</div>').join('');
+  box.innerHTML=arr.map(x=>'<div style="border-bottom:1px solid var(--border);padding:7px 0;font-size:11px;line-height:1.35;"><b style="color:var(--gold);">'+escHtml(x.ts||'')+'</b> · <span style="color:var(--text);">'+escHtml(x.actorName||x.actorEmail||'Пользователь')+'</span> · '+escHtml(x.text||x.type||'')+'</div>').join('');
 }
 function clearActionLog(){
-  if(!confirm('Очистить локальный журнал действий?'))return;
+  if(!confirm('Очистить только локальный журнал на этом устройстве? Общий аудит в базе не стирается.'))return;
   set('action_log',[]);renderActionLogMini();
 }
 
@@ -184,13 +222,14 @@ function saveProductInfoEdit(oldUt,newUt,newName,newBc){
   if(!oldUt||!newUt||!newName){alert('Укажи УТ и наименование');return false;}
   const custom=getCustomItems();
   const ci=custom.findIndex(x=>String(x.ut||'')===oldUt || String(x.baseUt||'')===oldUt);
-  if(ci>=0){custom[ci]={...custom[ci],ut:newUt,name:newName,barcode:newBc};set('custom_items',custom);return true;}
+  if(ci>=0){custom[ci]=touchMeta({...custom[ci],ut:newUt,name:newName,barcode:newBc});set('custom_items',custom);logAction('product','Изменён товар: '+newUt,{ut:newUt});return true;}
   const current=productAllItems().find(x=>String(x.ut||'')===oldUt);
   const baseKey=(current&&current.baseUt)||oldUt;
   const edits=getProductEdits();
-  edits[baseKey]={ut:newUt,name:newName,barcode:newBc,img:(current&&current.img)||''};
+  edits[baseKey]=touchMeta({ut:newUt,name:newName,barcode:newBc,img:(current&&current.img)||''});
   set('product_edits',edits);
   if(newBc)saveCustomBarcode(newUt,newBc);
+  logAction('product','Изменён встроенный товар: '+newUt,{ut:newUt});
   return true;
 }
 function productEditSave(e,oldUt,cid){
@@ -602,16 +641,18 @@ function saveItem(){
   const ut=document.getElementById('item-ut').value.trim()||'CUSTOM-'+Date.now();
   const bc=document.getElementById('item-bc').value.trim();
   const img=document.getElementById('item-photo').dataset.img||'';
-  const items=getCustomItems();items.unshift({ut,name,barcode:bc,img,custom:true});
+  const items=getCustomItems();items.unshift(createMeta({ut,name,barcode:bc,img,custom:true}));
   try{set('custom_items',items);}catch(e){alert('Фото слишком большое, не хватает места.');return;}
   closeModal('item-modal');
   ['item-name','item-ut','item-bc'].forEach(id=>document.getElementById(id).value='');
   const p=document.getElementById('item-photo');p.innerHTML='📷 Добавить фото';p.dataset.img='';
+  logAction('product','Добавлен товар: '+ut,{ut:ut});
   if(query)doSearch(query);
 }
 function delItem(ut){
   if(!confirm('Удалить товар?'))return;
   set('custom_items',getCustomItems().filter(i=>i.ut!==ut));
+  logAction('product','Удалён товар: '+ut,{ut:ut});
   if(query)doSearch(query);
 }
 
@@ -1866,39 +1907,39 @@ function hh11Add(){
   if(eoEl&&eo)eoEl.value=eo;
   const sys=Math.max(0,parseInt(sysEl&&sysEl.value)||0);
   const fact=Math.max(0,parseInt(factEl&&factEl.value)||0);
-  const row={id:Date.now()+Math.floor(Math.random()*1000),eo:eo,ut:hh11Picked.ut,name:hh11Picked.name,mode:hh11Mode,sys:hh11Mode==='listed'?sys:'',fact:fact,comment:(cEl&&cEl.value||'').trim(),mismatch:mEl&&mEl.checked?1:0,placed:0,shortage:0,ts:new Date().toLocaleString('ru-RU')};
+  const row=createMeta({id:Date.now()+Math.floor(Math.random()*1000),eo:eo,ut:hh11Picked.ut,name:hh11Picked.name,mode:hh11Mode,sys:hh11Mode==='listed'?sys:'',fact:fact,comment:(cEl&&cEl.value||'').trim(),mismatch:mEl&&mEl.checked?1:0,placed:0,shortage:0,ts:new Date().toLocaleString('ru-RU')});
   const arr=getHH11();arr.unshift(row);set('hh11_log',arr);logAction('hh11','Добавлена строка HH 1-1: '+(row.ut||row.name||''),{id:row.id});
   if(eo)hh11MarkEOUsed(eo);
   if(eoEl)eoEl.value=''; if(sysEl)sysEl.value=''; if(factEl)factEl.value=''; if(cEl)cEl.value=''; if(mEl)mEl.checked=false;
   hh11ClearPicked();renderHH11();
 }
 function hh11Del(id){set('hh11_log',getHH11().filter(x=>x.id!==id));logAction('hh11','Удалена строка HH 1-1',{id:id});renderHH11();}
-function hh11Archive(id){const arr=getHH11();const r=arr.find(x=>x.id===id);if(!r)return;r.archived=r.archived?0:1;r.archivedTs=r.archived?new Date().toLocaleString('ru-RU'):'';set('hh11_log',arr);logAction('hh11',(r.archived?'В архив HH 1-1':'Из архива HH 1-1'),{id:id});renderHH11();}
+function hh11Archive(id){const arr=getHH11();const r=arr.find(x=>x.id===id);if(!r)return;r.archived=r.archived?0:1;r.archivedTs=r.archived?new Date().toLocaleString('ru-RU'):'';touchMeta(r);set('hh11_log',arr);logAction('hh11',(r.archived?'В архив HH 1-1':'Из архива HH 1-1'),{id:id});renderHH11();}
 function hh11TogglePlaced(id){
   const arr=getHH11();const r=arr.find(x=>x.id===id);if(!r)return;
   r.placed=r.placed?0:1;
   if(r.placed)r.shortage=0;
   r.placedTs=r.placed?new Date().toLocaleString('ru-RU'):'';
-  set('hh11_log',arr);renderHH11();
+  touchMeta(r);set('hh11_log',arr);logAction('hh11',r.placed?'HH отмечена размещенной':'HH размещение отменено',{id:id});renderHH11();
 }
 function hh11ToggleShortage(id){
   const arr=getHH11();const r=arr.find(x=>x.id===id);if(!r)return;
   r.shortage=r.shortage?0:1;
   if(r.shortage){r.placed=0;r.placedTs='';}
-  set('hh11_log',arr);renderHH11();
+  touchMeta(r);set('hh11_log',arr);logAction('hh11',r.shortage?'HH отмечена недостача':'HH недостача снята',{id:id});renderHH11();
 }
 function hh11ToggleMismatch(id){
   const arr=getHH11();const r=arr.find(x=>x.id===id);if(!r)return;
   r.mismatch=r.mismatch?0:1;
-  set('hh11_log',arr);renderHH11();
+  touchMeta(r);set('hh11_log',arr);logAction('hh11',r.mismatch?'HH отмечен пересорт':'HH пересорт снят',{id:id});renderHH11();
 }
 function hh11EditQty(id,field,val){
   const arr=getHH11();const r=arr.find(x=>x.id===id);if(!r)return;
-  r[field]=Math.max(0,parseInt(val)||0);set('hh11_log',arr);renderHH11();
+  r[field]=Math.max(0,parseInt(val)||0);touchMeta(r);set('hh11_log',arr);logAction('hh11','Изменено количество HH',{id:id,field:field});renderHH11();
 }
 function hh11EditEO(id,val){
   const arr=getHH11();const r=arr.find(x=>x.id===id);if(!r)return;
-  r.eo=normalizeEOCode(val);set('hh11_log',arr);
+  r.eo=normalizeEOCode(val);touchMeta(r);set('hh11_log',arr);logAction('hh11','Изменена ЕО HH',{id:id});
   if(r.eo)hh11MarkEOUsed(r.eo);
   renderHH11();
 }
@@ -1992,6 +2033,7 @@ function hh11RenderGroup(title,items,kind){
       (kind==='listed'?'<button onclick="hh11TogglePlaced('+it.id+')" class="exi-btn" style="flex:1;min-width:120px;border-color:'+(placed?'#5a8a4a':'var(--border)')+';color:'+(placed?'#5a8a4a':'var(--muted)')+';">'+(placed?'↩ Вернуть':'✓ Размещено')+'</button><button onclick="hh11ToggleShortage('+it.id+')" class="exi-btn" style="flex:1;min-width:110px;border-color:'+(shortage?'#c0392b':'var(--border)')+';color:'+(shortage?'#c0392b':'var(--muted)')+';">Недостача</button>':'')+
       '<button onclick="hh11ToggleMismatch('+it.id+')" class="exi-btn" style="flex:1;min-width:110px;border-color:'+(mismatch?'#c0392b':'var(--border)')+';color:'+(mismatch?'#c0392b':'var(--muted)')+';">Пересорт</button></div>'+ 
       (placed&&it.placedTs?'<div style="font-size:10px;color:#5a8a4a;margin-top:5px;">Размещено: '+escHtml(it.placedTs)+'</div>':'')+
+      authorLine(it)+
       '</div>';
   });
   h+='</div>';return h;
@@ -2117,7 +2159,7 @@ function rkSaveNewItem(){
   if(!ut||!name){alert('Укажи УТ и наименование');return;}
   const items=getCustomItems();
   const exists=rkAllItems().some(i=>String(i.ut).toLowerCase()===ut.toLowerCase());
-  if(!exists){items.unshift({ut:ut,name:name,barcode:bc,img:'',custom:true});set('custom_items',items);}else if(bc){saveCustomBarcode(ut,bc);}
+  if(!exists){items.unshift(createMeta({ut:ut,name:name,barcode:bc,img:'',custom:true}));set('custom_items',items);logAction('product','Добавлен товар из РК: '+ut,{ut:ut});}else if(bc){saveCustomBarcode(ut,bc);logAction('product','Добавлен/изменён ШК из РК: '+ut,{ut:ut});}
   document.getElementById('rk-new-ut').value='';document.getElementById('rk-new-name').value='';document.getElementById('rk-new-bc').value='';
   const f=document.getElementById('rk-new-item-form');if(f)f.style.display='none';
   rkPick(ut,name);
@@ -2197,7 +2239,7 @@ function rkAdd(){
   const status=(document.getElementById('rk-status')&&document.getElementById('rk-status').value||'').trim();
   if(!status){alert('Выбери итог для этой SKU. При выборе новой SKU поле сбрасывается специально, чтобы не записать старый итог.');return;}
   if(!rkValidateIssue(true))return;
-  const row={
+  const row=createMeta({
     id:Date.now()+Math.floor(Math.random()*1000),
     date:base.date,
     eo:base.eo,
@@ -2210,14 +2252,14 @@ function rkAdd(){
     status:status,
     comment:'',
     ts:Date.now()
-  };
+  });
   const arr=getRK();arr.unshift(row);set('rk_log',arr);logAction('rk','Добавлена строка РК: '+(row.ut||row.name||row.eo||''),{id:row.id});
   ['rk-surplus','rk-shortage','rk-defect','rk-comment'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   rkClearPicked();rkResetStatus();rkRefreshEOState();renderRK();
 }
 function rkAddNoDiff(){
   const base=rkBaseRow(true); if(!base)return;
-  const row={
+  const row=createMeta({
     id:Date.now()+Math.floor(Math.random()*1000),
     date:base.date,
     eo:base.eo,
@@ -2226,13 +2268,13 @@ function rkAddNoDiff(){
     status:'Без расхождений',
     comment:'',
     ts:Date.now()
-  };
+  });
   const arr=getRK();arr.unshift(row);set('rk_log',arr);logAction('rk','Добавлена ЕО без расхождений: '+(row.eo||''),{id:row.id});
   ['rk-surplus','rk-shortage','rk-defect','rk-comment'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   rkClearPicked();rkResetStatus();rkRefreshEOState();renderRK();
 }
 function rkDel(id){set('rk_log',getRK().filter(x=>x.id!==id));logAction('rk','Удалена строка РК',{id:id});renderRK();rkRefreshEOState();}
-function rkArchive(id){const arr=getRK();const r=arr.find(x=>x.id===id);if(!r)return;r.archived=r.archived?0:1;r.archivedTs=r.archived?new Date().toLocaleString('ru-RU'):'';set('rk_log',arr);logAction('rk',(r.archived?'В архив РК':'Из архива РК'),{id:id});renderRK();rkRefreshEOState();}
+function rkArchive(id){const arr=getRK();const r=arr.find(x=>x.id===id);if(!r)return;r.archived=r.archived?0:1;r.archivedTs=r.archived?new Date().toLocaleString('ru-RU'):'';touchMeta(r);set('rk_log',arr);logAction('rk',(r.archived?'В архив РК':'Из архива РК'),{id:id});renderRK();rkRefreshEOState();}
 function rkFilteredByView(arr){arr=arr||getRK();if(rkView==='archive')return arr.filter(x=>x.archived);if(rkView==='all')return arr;return arr.filter(x=>!x.archived);}
 function rkRenderViewBar(){const b=document.getElementById('rk-view-bar');if(!b)return;const arr=getRK();const active=arr.filter(x=>!x.archived).length, arch=arr.filter(x=>x.archived).length;const btn=(v,l,n)=>'<button class="cell-chip '+(rkView===v?'active':'')+'" onclick="rkSetView(\''+v+'\')">'+l+' <b>'+n+'</b></button>';b.innerHTML=btn('active','Активные',active)+btn('archive','Архив',arch)+btn('all','Все',arr.length);}
 function rkGroups(arr){
@@ -2279,7 +2321,7 @@ function renderRK(){
       return '<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:9px 10px;margin-top:7px;">'+
         '<div style="display:flex;justify-content:space-between;gap:8px;"><div style="flex:1;min-width:0;">'+title+'</div><div style="display:flex;gap:6px;align-items:flex-start;"><button onclick="rkArchive('+x.id+')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:10px;padding:4px 7px;cursor:pointer;">'+(x.archived?'↩':'арх')+'</button><button onclick="rkDel('+x.id+')" style="background:none;border:none;color:var(--red-bright);font-size:14px;cursor:pointer;">✕</button></div></div>'+ 
         '<div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-top:7px;font-size:11px;text-align:center;color:var(--muted);"><div>Изл.<br><b style="color:var(--text);">'+(parseInt(x.surplus)||0)+'</b></div><div>Нед.<br><b style="color:var(--text);">'+(parseInt(x.shortage)||0)+'</b></div><div>Брак<br><b style="color:var(--text);">'+(parseInt(x.defect)||0)+'</b></div></div>'+ 
-        '<div style="font-size:11px;color:var(--muted);margin-top:7px;">'+escHtml(comm)+'</div></div>';
+        '<div style="font-size:11px;color:var(--muted);margin-top:7px;">'+escHtml(comm)+'</div>'+authorLine(x)+'</div>';
     }).join('');
     return '<div class="gen-box" style="border-left:3px solid var(--red);padding:11px;margin-bottom:10px;">'+
       '<div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;">'+
@@ -2326,14 +2368,14 @@ function problemAdd(){
   const needWms=(document.getElementById('problem-wms')||{}).checked?1:0;
   const comment=String((document.getElementById('problem-comment')||{}).value||'').trim();
   if(!problemPicked && !cell && !comment){alert('Укажи товар, ячейку или комментарий. Пустую проблему плодить не будем.');return;}
-  const row={id:Date.now()+Math.floor(Math.random()*1000),type:type,ut:problemPicked?problemPicked.ut:'',name:problemPicked?problemPicked.name:'',cell:cell,sys:sys,fact:fact,status:needWms?'нужно ВМС':status,needWms:needWms,comment:comment,archived:0,createdAt:new Date().toLocaleString('ru-RU'),updatedAt:new Date().toLocaleString('ru-RU')};
+  const row=createMeta({id:Date.now()+Math.floor(Math.random()*1000),type:type,ut:problemPicked?problemPicked.ut:'',name:problemPicked?problemPicked.name:'',cell:cell,sys:sys,fact:fact,status:needWms?'нужно ВМС':status,needWms:needWms,comment:comment,archived:0,createdAt:new Date().toLocaleString('ru-RU'),updatedAt:new Date().toLocaleString('ru-RU')});
   const arr=getProblems();arr.unshift(row);set('problems_log',arr);
   ['problem-cell','problem-sys','problem-fact','problem-comment','problem-search'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   const w=document.getElementById('problem-wms');if(w)w.checked=false;
   problemClearPicked();logAction('problem','Создана проблема: '+type+(row.ut?' · '+row.ut:'')+(cell?' · '+cell:''));renderProblems();
 }
-function problemUpdateStatus(id,status){const arr=getProblems();const r=arr.find(x=>x.id===id);if(!r)return;r.status=status;r.needWms=status==='нужно ВМС'?1:(r.needWms||0);r.updatedAt=new Date().toLocaleString('ru-RU');set('problems_log',arr);logAction('problem','Статус проблемы: '+status,{id:id});renderProblems();}
-function problemArchive(id){const arr=getProblems();const r=arr.find(x=>x.id===id);if(!r)return;r.archived=r.archived?0:1;r.updatedAt=new Date().toLocaleString('ru-RU');set('problems_log',arr);logAction('problem',(r.archived?'В архив: ':'Из архива: ')+(r.type||'проблема'),{id:id});renderProblems();}
+function problemUpdateStatus(id,status){const arr=getProblems();const r=arr.find(x=>x.id===id);if(!r)return;r.status=status;r.needWms=status==='нужно ВМС'?1:(r.needWms||0);r.updatedAt=new Date().toLocaleString('ru-RU');touchMeta(r);set('problems_log',arr);logAction('problem','Статус проблемы: '+status,{id:id});renderProblems();}
+function problemArchive(id){const arr=getProblems();const r=arr.find(x=>x.id===id);if(!r)return;r.archived=r.archived?0:1;r.updatedAt=new Date().toLocaleString('ru-RU');touchMeta(r);set('problems_log',arr);logAction('problem',(r.archived?'В архив: ':'Из архива: ')+(r.type||'проблема'),{id:id});renderProblems();}
 function problemDel(id){if(!confirm('Удалить проблему?'))return;set('problems_log',getProblems().filter(x=>x.id!==id));logAction('problem','Удалена проблема',{id:id});renderProblems();}
 function problemFiltered(arr){
   arr=arr||getProblems();
@@ -2362,7 +2404,7 @@ function renderProblems(){
       '<div style="font-family:\'Oswald\',sans-serif;font-size:11px;color:'+accent+';text-transform:uppercase;letter-spacing:1px;margin-bottom:5px;">'+escHtml(x.type||'проблема')+'</div>'+item+
       '<div style="font-size:11px;color:var(--muted);margin-top:6px;">'+(x.cell?'Ячейка: <b style="color:var(--text);">'+escHtml(x.cell)+'</b> · ':'')+'сист.: '+(parseInt(x.sys)||0)+' · факт: '+(parseInt(x.fact)||0)+'</div>'+ 
       (x.comment?'<div style="font-size:11px;color:var(--muted);margin-top:6px;line-height:1.35;">'+escHtml(x.comment)+'</div>':'')+
-      '<div style="font-size:10px;color:var(--muted);margin-top:6px;">'+escHtml(x.createdAt||'')+'</div></div>'+ 
+      '<div style="font-size:10px;color:var(--muted);margin-top:6px;">'+escHtml(x.createdAt||'')+'</div>'+authorLine(x)+'</div>'+ 
       '<button onclick="problemDel('+x.id+')" style="background:none;border:none;color:var(--red-bright);font-size:14px;cursor:pointer;">✕</button></div>'+ 
       '<div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;">'+
       ['новая','в работе','нужно ВМС','решено'].map(v=>'<button onclick="problemUpdateStatus('+x.id+',\''+v+'\')" class="exi-btn" style="flex:1;min-width:95px;border-color:'+(x.status===v?'var(--gold)':'var(--border)')+';color:'+(x.status===v?'var(--gold)':'var(--muted)')+';">'+v+'</button>').join('')+
@@ -2568,6 +2610,8 @@ function makeBackupData(){
     rk_log:getRK(),
     problems_log:getProblems(),
     action_log:getActionLog(),
+    audit_log:getAuditLog(),
+    user_profile:getUserProfileLocal(),
     localStorage_snapshot:localSnapshot,
     catalog_snapshot:CATALOG,
     backup_version:23,
@@ -2962,7 +3006,7 @@ async function pasteBackupFromClipboard(){
   }
 }
 const BACKUP_STATE_KEYS=[
-  'custom_items','custom_barcodes','product_edits','cells','cell_favorites','pack_sizes','notes','credentials','eo_codes','journal','report','search_history','inventory','favorites','eo_range_saved','eo_range_used','hh11_log','rk_log','problems_log','action_log'
+  'custom_items','custom_barcodes','product_edits','cells','cell_favorites','pack_sizes','notes','credentials','eo_codes','journal','report','search_history','inventory','favorites','eo_range_saved','eo_range_used','hh11_log','rk_log','problems_log','action_log','audit_log','user_profile'
 ];
 const BACKUP_MIRROR_KEYS=['credentials__mirror','cells__mirror','cell_favorites__mirror','credentials__saved_at','cells__saved_at','cell_favorites__saved_at'];
 function backupOwn(obj,key){return Object.prototype.hasOwnProperty.call(obj||{},key);}
@@ -3004,7 +3048,7 @@ function applyBackupData(data,opts){
   const mode=opts.mode||'replace';
 
   if(mode==='merge'){
-    const stats={mode:'merge',added:{custom_items:0,custom_barcodes:0,product_edits:0,cells:0,cell_favorites:0,pack_sizes:0,notes:0,credentials:0,eo_codes:0,journal:0,report:0,search_history:0,inventory:0,favorites:0,eo_range_saved:0,eo_range_used:0,hh11_log:0,rk_log:0,problems_log:0,action_log:0,unknown_keys:0},conflicts:[]};
+    const stats={mode:'merge',added:{custom_items:0,custom_barcodes:0,product_edits:0,cells:0,cell_favorites:0,pack_sizes:0,notes:0,credentials:0,eo_codes:0,journal:0,report:0,search_history:0,inventory:0,favorites:0,eo_range_saved:0,eo_range_used:0,hh11_log:0,rk_log:0,problems_log:0,action_log:0,audit_log:0,unknown_keys:0},conflicts:[]};
     const stamp=Date.now().toString(36);
     const same=(a,b)=>{try{return JSON.stringify(a)===JSON.stringify(b);}catch(e){return false;}};
     const uniqId=()=>Date.now()+Math.floor(Math.random()*1000000);
@@ -3271,6 +3315,8 @@ function applyBackupData(data,opts){
   set('hh11_log', backupArr(data.hh11_log));
   set('rk_log', backupArr(data.rk_log));
   set('problems_log', backupArr(data.problems_log));
+  if(data.audit_log)set('audit_log', backupArr(data.audit_log));
+  if(data.user_profile)set('user_profile', backupObj(data.user_profile));
   set('action_log', backupArr(data.action_log).slice(0,300));
 
   try{repairCredentialsStorage();repairCellsStorage();}catch(e){}
@@ -3737,13 +3783,13 @@ function countDeletedLocal(){try{const d=JSON.parse(localStorage.getItem('__lenf
 function renderDiagnostics(){
   const box=document.getElementById('sync-diagnostics');if(!box)return;
   const d=(typeof window.lenferSyncDiagnostics==='function')?window.lenferSyncDiagnostics():{};
-  const counts={products:getCustomItems().length,cells:getCells().length,hh:getHH11().length,rk:getRK().length,problems:getProblems().length,actions:getActionLog().length};
+  const counts={products:getCustomItems().length,cells:getCells().length,hh:getHH11().length,rk:getRK().length,problems:getProblems().length,actions:getActionLog().length,audit:getAuditLog().length};
   const del=d.deletedCounts||countDeletedLocal();
   const fmt=ts=>ts?new Date(Number(ts)).toLocaleString('ru-RU'):'—';
   box.innerHTML='<div class="diag-grid">'+
     '<div class="diag-cell"><span>Версия</span><b>'+escHtml(d.build||window.__APP_STABLE_BUILD__||'—')+'</b></div>'+ 
-    '<div class="diag-cell"><span>Аккаунт</span><b>'+escHtml(d.user||'—')+'</b></div>'+ 
-    '<div class="diag-cell"><span>Путь</span><b>'+escHtml(d.dbPath||'—')+'</b></div>'+ 
+    '<div class="diag-cell"><span>Аккаунт</span><b>'+escHtml(d.userName||d.user||'—')+'</b></div>'+ 
+    '<div class="diag-cell"><span>База</span><b>'+escHtml(d.workspaceId?('общая: '+d.workspaceId):'личная')+'</b></div>'+ '<div class="diag-cell"><span>Путь</span><b>'+escHtml(d.dbPath||'—')+'</b></div>'+ 
     '<div class="diag-cell"><span>Realtime</span><b>'+(d.realtime?'подключён':'—')+'</b></div>'+ 
     '<div class="diag-cell"><span>Очередь</span><b>'+(d.dirty?'есть':'0')+'</b></div>'+ 
     '<div class="diag-cell"><span>Последнее получение</span><b>'+escHtml(fmt(d.lastPullAt))+'</b></div>'+ 
@@ -3751,7 +3797,7 @@ function renderDiagnostics(){
     '<div class="diag-cell"><span>Ячейки</span><b>'+counts.cells+'</b></div>'+ 
     '<div class="diag-cell"><span>HH</span><b>'+counts.hh+'</b></div>'+ 
     '<div class="diag-cell"><span>РК</span><b>'+counts.rk+'</b></div>'+ 
-    '<div class="diag-cell"><span>Проблемы</span><b>'+counts.problems+'</b></div>'+ 
+    '<div class="diag-cell"><span>Проблемы</span><b>'+counts.problems+'</b></div>'+ '<div class="diag-cell"><span>Аудит</span><b>'+counts.audit+'</b></div>'+ 
     '<div class="diag-cell"><span>Удаления</span><b>товары '+(del.custom_items||0)+' · HH '+(del.hh11_log||0)+' · РК '+(del.rk_log||0)+' · пробл. '+(del.problems_log||0)+'</b></div>'+ 
     '</div>';
 }
@@ -3787,10 +3833,10 @@ function quickIntegrityCheck(){
   var SYNC_KEYS = [
     'custom_items','custom_barcodes','product_edits','pack_sizes',
     'cells','cell_favorites',
-    'hh11_log','rk_log','problems_log'
+    'hh11_log','rk_log','problems_log','audit_log'
   ];
-  var SYNC_ARRAY_KEYS = ['custom_items','cells','cell_favorites','hh11_log','rk_log','problems_log'];
-  var SYNC_KEYED_ARRAYS = ['custom_items','cells','hh11_log','rk_log','problems_log'];
+  var SYNC_ARRAY_KEYS = ['custom_items','cells','cell_favorites','hh11_log','rk_log','problems_log','audit_log'];
+  var SYNC_KEYED_ARRAYS = ['custom_items','cells','hh11_log','rk_log','problems_log','audit_log'];
   var SYNC_OBJECT_KEYS = ['custom_barcodes','product_edits','pack_sizes'];
   var SYNC_META_KEY = '__lenfer_sync_key_versions_v3';
   var SYNC_DELETED_KEY = '__lenfer_sync_deleted_ids_v3';
@@ -3804,6 +3850,9 @@ function quickIntegrityCheck(){
   var db = null;
   var auth = null;
   var currentUser = null;
+  var currentProfile = null;
+  var currentWorkspaceId = '';
+  var membersCache = {};
   var realtimeRef = null;
   var pulling = false, pushing = false;
   var dirtyTimer = null;
@@ -3893,7 +3942,7 @@ function quickIntegrityCheck(){
     if(item == null) return '';
     if(key === 'custom_items') return String(item.ut || item.baseUt || '').trim();
     if(key === 'cells') return String(item.id || item.addr || item.code || '').trim();
-    if(key === 'hh11_log' || key === 'rk_log' || key === 'problems_log') return String(item.id || '').trim();
+    if(key === 'hh11_log' || key === 'rk_log' || key === 'problems_log' || key === 'audit_log') return String(item.id || '').trim();
     return '';
   }
 
@@ -3992,7 +4041,7 @@ function quickIntegrityCheck(){
     });
     var arr = Object.keys(map).map(function(k){ return map[k]; });
     // Журналы удобнее видеть новыми сверху. Если id числовой/временной — сортируем мягко.
-    if(key === 'hh11_log' || key === 'rk_log' || key === 'problems_log'){
+    if(key === 'hh11_log' || key === 'rk_log' || key === 'problems_log' || key === 'audit_log'){
       arr.sort(function(a,b){ return Number(b.id || 0) - Number(a.id || 0); });
     }
     return arr;
@@ -4036,6 +4085,7 @@ function quickIntegrityCheck(){
       if(data.hh11 != null){ store.hh11_log = normalizeValueForKey('hh11_log', data.hh11); present.hh11_log = true; }
       if(data.rk   != null){ store.rk_log   = normalizeValueForKey('rk_log', data.rk); present.rk_log = true; }
       if(data.problems != null){ store.problems_log = normalizeValueForKey('problems_log', data.problems); present.problems_log = true; }
+      if(data.audit != null){ store.audit_log = normalizeValueForKey('audit_log', data.audit); present.audit_log = true; }
     }
 
     if(data.key_versions && typeof data.key_versions === 'object'){
@@ -4080,6 +4130,7 @@ function quickIntegrityCheck(){
       hh11: cleanStore.hh11_log || [],
       rk:   cleanStore.rk_log   || [],
       problems: cleanStore.problems_log || [],
+      audit: cleanStore.audit_log || [],
       updated_at: ts,
       updated_by: currentUser ? currentUser.uid : null,
       updated_by_session: FB_SESSION_ID
@@ -4143,6 +4194,54 @@ function quickIntegrityCheck(){
   }
 
   function userPath(user){ return USER_ROOT + '/' + user.uid + '/w21'; }
+  function cleanWorkspaceId(v){return String(v||'').trim().toLowerCase().replace(/[^a-z0-9_-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,48);}
+  function workspacePath(id){return 'workspaces/' + cleanWorkspaceId(id) + '/w21';}
+  function getStoredWorkspaceId(){try{return cleanWorkspaceId(localStorage.getItem('lenfer_workspace_id')||'');}catch(_){return '';}}
+  function activeDataPath(user){var ws=getStoredWorkspaceId(); currentWorkspaceId=ws; return ws ? workspacePath(ws) : userPath(user);}
+  function actorFromFirebaseUser(user){
+    user=user||currentUser||{};
+    var local=getUserProfileLocal()||{};
+    var name=String((currentProfile&&currentProfile.name)||local.name||user.displayName||user.email||user.uid||'Пользователь').trim();
+    return {uid:user.uid||'',email:user.email||'',name:name,displayName:name};
+  }
+  function setGlobalProfile(profile){
+    currentProfile=profile||actorFromFirebaseUser(currentUser);
+    window.lenferCurrentUserProfile=currentProfile;
+    try{localStorage.setItem('user_profile',JSON.stringify(currentProfile));}catch(_){ }
+  }
+  async function saveProfileRemote(profile){
+    if(!db || !currentUser || !profile)return;
+    var p={uid:currentUser.uid,email:currentUser.email||'',name:String(profile.name||'').trim()||currentUser.email||currentUser.uid,updatedAt:Date.now(),lastSeen:Date.now()};
+    try{await db.ref('profiles/'+currentUser.uid).update(p);}catch(e){console.warn('profile save failed',e);}
+    if(currentWorkspaceId){try{await db.ref('workspaces/'+currentWorkspaceId+'/members/'+currentUser.uid).update(p);}catch(e){console.warn('member save failed',e);}}
+  }
+  async function loadUserProfile(user){
+    var fallback=actorFromFirebaseUser(user);
+    var profile=fallback;
+    try{
+      var snap=await db.ref('profiles/'+user.uid).get();
+      if(snap && snap.exists && snap.exists()){profile={...fallback,...(snap.val()||{})};}
+      else await db.ref('profiles/'+user.uid).set({...fallback,createdAt:Date.now(),lastSeen:Date.now()});
+    }catch(e){console.warn('profile load failed',e);}
+    if(!profile.name)profile.name=fallback.name;
+    setGlobalProfile(profile);
+    try{if(user.updateProfile && profile.name && user.displayName!==profile.name)await user.updateProfile({displayName:profile.name});}catch(_){ }
+    await saveProfileRemote(profile);
+    renderCollabPanel();
+    return profile;
+  }
+  async function registerWorkspaceMember(){
+    if(!db || !currentUser || !currentWorkspaceId)return;
+    await saveProfileRemote(currentProfile||actorFromFirebaseUser(currentUser));
+    await loadWorkspaceMembers();
+  }
+  async function loadWorkspaceMembers(){
+    membersCache={};
+    if(!db || !currentUser || !currentWorkspaceId){renderCollabPanel();return membersCache;}
+    try{var snap=await db.ref('workspaces/'+currentWorkspaceId+'/members').get();membersCache=(snap&&snap.val&&snap.val())||{};}catch(e){console.warn('members load failed',e);}
+    renderCollabPanel();
+    return membersCache;
+  }
 
   function redirectToAuth(){
     try{
@@ -4161,7 +4260,7 @@ function quickIntegrityCheck(){
 
   function setUser(user){
     currentUser = user || null;
-    DB_PATH = user ? userPath(user) : null;
+    DB_PATH = user ? activeDataPath(user) : null;
     setAuthHint(!!user);
     updateAuthUI();
   }
@@ -4189,7 +4288,7 @@ function quickIntegrityCheck(){
     var deleted = readDeleted();
     var delCounts = {};
     try{Object.keys(deleted||{}).forEach(function(k){delCounts[k]=Object.keys(deleted[k]||{}).length;});}catch(_){ }
-    return {user: currentUser ? (currentUser.email || currentUser.uid) : '', uid: currentUser ? currentUser.uid : '', dbPath: DB_PATH || '', project: FB_CONFIG.projectId, databaseURL: FB_CONFIG.databaseURL, dirty: !!dirty, pulling: !!pulling, pushing: !!pushing, realtime: !!realtimeRef, lastPullAt: lastPullAt || 0, lastAppliedUpdatedAt: lastAppliedUpdatedAt || 0, session: FB_SESSION_ID, meta: meta, deletedCounts: delCounts, build: window.__APP_STABLE_BUILD__ || ''};
+    return {user: currentUser ? (currentUser.email || currentUser.uid) : '', userName: (currentProfile&&currentProfile.name)||'', uid: currentUser ? currentUser.uid : '', workspaceId: currentWorkspaceId || '', dbPath: DB_PATH || '', project: FB_CONFIG.projectId, databaseURL: FB_CONFIG.databaseURL, dirty: !!dirty, pulling: !!pulling, pushing: !!pushing, realtime: !!realtimeRef, lastPullAt: lastPullAt || 0, lastAppliedUpdatedAt: lastAppliedUpdatedAt || 0, session: FB_SESSION_ID, meta: meta, deletedCounts: delCounts, build: window.__APP_STABLE_BUILD__ || ''};
   };
 
   function authStatus(msg){ var el = byId('fb-auth-status'); if(el) el.textContent = msg; }
@@ -4205,7 +4304,7 @@ function quickIntegrityCheck(){
       var urlEl = byId('supa-url');
       if(urlEl) urlEl.value = FB_CONFIG.projectId + ' · ' + FB_CONFIG.databaseURL;
       if(currentUser){
-        if(userEl) userEl.textContent = 'Вошёл: ' + (currentUser.email || currentUser.uid);
+        if(userEl) userEl.textContent = 'Вошёл: ' + ((currentProfile&&currentProfile.name) || currentUser.displayName || currentUser.email || currentUser.uid);
         if(form) form.style.display = 'none';
         if(loginBtn) loginBtn.style.display = 'none';
         if(regBtn) regBtn.style.display = 'none';
@@ -4217,7 +4316,7 @@ function quickIntegrityCheck(){
         if(loginBtn) loginBtn.style.display = '';
         if(regBtn) regBtn.style.display = '';
         if(logoutBtn) logoutBtn.style.display = 'none';
-        if(pathEl) pathEl.value = 'users/<uid>/w21 — появится после входа';
+        if(pathEl) pathEl.value = 'users/<uid>/w21 или workspaces/<код>/w21 — появится после входа';
       }
     }catch(_){ }
   }
@@ -4264,6 +4363,59 @@ function quickIntegrityCheck(){
       redirectToAuth();
     }catch(e){ status('Firebase: ошибка выхода — ' + (e.message || e)); }
   };
+
+  function renderCollabPanel(){
+    try{
+      var nameEl=byId('profile-name-input'); if(nameEl && currentProfile) nameEl.value=currentProfile.name||'';
+      var wsEl=byId('workspace-id-input'); if(wsEl) wsEl.value=currentWorkspaceId||'';
+      var modeEl=byId('workspace-mode-label'); if(modeEl) modeEl.textContent=currentWorkspaceId?('Общая база: '+currentWorkspaceId):'Личная база';
+      var list=byId('workspace-members-list');
+      if(list){
+        var vals=Object.keys(membersCache||{}).map(function(uid){return membersCache[uid]||{};});
+        if(!currentWorkspaceId) list.innerHTML='<div class="no-results" style="padding:10px;">Сейчас личная база. Список пользователей появится после подключения общей базы.</div>';
+        else if(!vals.length) list.innerHTML='<div class="no-results" style="padding:10px;">Пока виден только текущий пользователь или нет доступа к members.</div>';
+        else list.innerHTML=vals.map(function(m){return '<div class="member-row"><b>'+escHtml(m.name||m.email||m.uid||'Пользователь')+'</b><span>'+escHtml(m.email||'')+'</span><small>был: '+(m.lastSeen?escHtml(new Date(Number(m.lastSeen)).toLocaleString('ru-RU')):'—')+'</small></div>';}).join('');
+      }
+    }catch(e){console.warn('collab render failed',e);}
+  }
+  window.saveUserProfileName=async function(){
+    if(!currentUser)return status('Сначала войди в аккаунт');
+    var el=byId('profile-name-input'); var name=String(el&&el.value||'').trim();
+    if(!name)return alert('Введи имя');
+    var p={...(currentProfile||actorFromFirebaseUser(currentUser)),name:name,email:currentUser.email||'',uid:currentUser.uid,updatedAt:Date.now(),lastSeen:Date.now()};
+    setGlobalProfile(p);
+    try{if(currentUser.updateProfile)await currentUser.updateProfile({displayName:name});}catch(_){ }
+    await saveProfileRemote(p);
+    updateAuthUI();renderCollabPanel();renderDiagnostics();
+    logAction('profile','Изменено имя пользователя: '+name,{uid:currentUser.uid});
+    status('Имя сохранено ✓',true);
+  };
+  window.workspaceUseShared=async function(){
+    if(!currentUser)return status('Сначала войди в аккаунт');
+    var el=byId('workspace-id-input'); var ws=cleanWorkspaceId(el&&el.value||'');
+    if(!ws)return alert('Введи код общей базы латиницей/цифрами, например main');
+    try{localStorage.setItem('lenfer_workspace_id',ws);}catch(_){ }
+    currentWorkspaceId=ws; DB_PATH=activeDataPath(currentUser);
+    await registerWorkspaceMember();
+    logAction('workspace','Подключена общая база: '+ws,{workspace:ws});
+    startAfterLogin();
+    status('Общая база подключена: '+ws+'. Нажми «Отправить сейчас», если хочешь залить текущие данные туда.',true);
+  };
+  window.workspaceUsePersonal=async function(){
+    if(!currentUser)return status('Сначала войди в аккаунт');
+    try{localStorage.removeItem('lenfer_workspace_id');}catch(_){ }
+    currentWorkspaceId=''; membersCache={}; DB_PATH=activeDataPath(currentUser);
+    logAction('workspace','Возврат в личную базу',{workspace:''});
+    startAfterLogin();
+    status('Личная база подключена.',true);
+  };
+  window.workspacePublishCurrent=async function(){
+    if(!currentUser)return status('Сначала войди в аккаунт');
+    if(!currentWorkspaceId)return alert('Сначала подключи общую базу.');
+    if(!confirm('Отправить текущие данные этого устройства в общую базу '+currentWorkspaceId+'? Перед отправкой будет автобэкап.'))return;
+    dirty=true; await pushAll(true); await registerWorkspaceMember();
+  };
+  window.refreshWorkspaceMembers=function(){return loadWorkspaceMembers();};
 
   function requireUser(actionName){
     if(!currentUser || !DB_PATH){
@@ -4510,9 +4662,9 @@ function quickIntegrityCheck(){
       if(on.indexOf('supaDownloadSQL') >= 0){ b.setAttribute('onclick','fbMigrateLegacyW21()'); b.textContent = '🧳 Забрать старую w21'; }
     });
     var warn = document.querySelector('.supa-warning');
-    if(warn) warn.innerHTML = 'Firebase Sync v3.1: добавлены автобэкапы, диагностика, проблемы смены и архив HH/РК. Старые ключи синхронизации сохранены.';
+    if(warn) warn.innerHTML = 'Firebase Sync v3.5: автобэкапы, диагностика, проблемы смены, общий workspace и аудит авторов. Старые ключи синхронизации сохранены.';
     var dbEl = document.querySelector('.supa-status');
-    if(dbEl) dbEl.textContent = 'База: warehouse-dbec9 (Firebase + Auth + sync v3.1)';
+    if(dbEl) dbEl.textContent = 'База: warehouse-dbec9 (Firebase + Auth + sync v3.5)';
     updateAuthUI();
   }
 
@@ -4528,7 +4680,7 @@ function quickIntegrityCheck(){
     startRealtime();
     startLoop();
     startPushLoop();
-    pullAll().then(function(){ status('Firebase: синхронизация аккаунта активна.', true); try{renderDiagnostics();renderAutoBackups();renderActionLogMini();}catch(_){ } });
+    pullAll().then(function(){ status('Firebase: синхронизация аккаунта активна.', true); try{registerWorkspaceMember();renderDiagnostics();renderAutoBackups();renderActionLogMini();renderCollabPanel();}catch(_){ } });
   }
 
   function boot(){
@@ -4539,10 +4691,17 @@ function quickIntegrityCheck(){
       auth.onAuthStateChanged(function(user){
         setUser(user);
         if(user){
-          startAfterLogin();
-          status('Firebase: вошёл как ' + (user.email || user.uid), true);
+          loadUserProfile(user).then(function(){
+            startAfterLogin();
+            status('Firebase: вошёл как ' + ((currentProfile&&currentProfile.name) || user.email || user.uid), true);
+          }).catch(function(){
+            startAfterLogin();
+            status('Firebase: вошёл как ' + (user.email || user.uid), true);
+          });
         }else{
           stopSync();
+          currentProfile=null; window.lenferCurrentUserProfile=null;
+          try{localStorage.removeItem('user_profile');}catch(_){ }
           updateAuthUI();
           status('Firebase: вход обязателен — открываю страницу регистрации');
           redirectToAuth();

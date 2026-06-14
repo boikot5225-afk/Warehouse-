@@ -9,6 +9,7 @@
   };
 
   var auth = null;
+  var db = null;
   var mode = 'register';
   var ready = false;
 
@@ -47,11 +48,13 @@
   }
 
   function getInput(){
+    var name = String(id('display-name').value || '').trim();
     var email = String(id('email').value || '').trim();
     var password = String(id('password').value || '');
+    if(mode === 'register' && !name) throw new Error('введи имя — потом в журнале будет понятно, кто что сделал');
     if(!email) throw new Error('введи email');
     if(!password || password.length < 6) throw new Error('пароль минимум 6 символов');
-    return {email: email, password: password};
+    return {name: name, email: email, password: password};
   }
 
   function humanError(e){
@@ -67,14 +70,27 @@
     return (e && e.message) ? e.message : String(e || 'неизвестная ошибка');
   }
 
+  async function saveProfile(user, name){
+    if(!user)return;
+    name=String(name||user.displayName||user.email||user.uid||'').trim();
+    try{if(user.updateProfile && name && user.displayName!==name)await user.updateProfile({displayName:name});}catch(_){ }
+    try{
+      var p={uid:user.uid,email:user.email||'',name:name,updatedAt:Date.now(),lastSeen:Date.now()};
+      localStorage.setItem('user_profile',JSON.stringify(p));
+      if(db)await db.ref('profiles/'+user.uid).update({...p,createdAt:firebase.database.ServerValue.TIMESTAMP});
+    }catch(e){console.warn('profile save failed',e);}
+  }
+
   async function submit(){
     if(!ready || !auth) return status('Firebase ещё грузится, секунду…');
     try{
       var v = getInput();
       id('submit-btn').disabled = true;
       status(mode === 'register' ? 'Создаю аккаунт…' : 'Вхожу…');
-      if(mode === 'register') await auth.createUserWithEmailAndPassword(v.email, v.password);
-      else await auth.signInWithEmailAndPassword(v.email, v.password);
+      var cred;
+      if(mode === 'register') cred = await auth.createUserWithEmailAndPassword(v.email, v.password);
+      else cred = await auth.signInWithEmailAndPassword(v.email, v.password);
+      await saveProfile(cred && cred.user ? cred.user : auth.currentUser, v.name);
       status('Готово. Открываю приложение…', 'ok');
       goApp();
     }catch(e){
@@ -98,6 +114,7 @@
       if(typeof firebase === 'undefined' || !firebase.auth) throw new Error('Firebase Auth SDK не загрузился');
       if(!firebase.apps.length) firebase.initializeApp(FB_CONFIG);
       auth = firebase.auth();
+      db = firebase.database();
       try{ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(_){ }
       ready = true;
       setMode('register');
@@ -105,7 +122,8 @@
         if(user){
           setAuthHint(true);
           id('logout-btn').classList.remove('hidden');
-          status('Уже вошёл как ' + (user.email || user.uid) + '. Открываю приложение…', 'ok');
+          try{var p=JSON.parse(localStorage.getItem('user_profile')||'{}'); if(p&&p.name) id('display-name').value=p.name;}catch(_){}
+          status('Уже вошёл как ' + (user.displayName || user.email || user.uid) + '. Открываю приложение…', 'ok');
           setTimeout(goApp, 550);
         }
       });
