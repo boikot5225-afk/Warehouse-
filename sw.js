@@ -1,6 +1,6 @@
-/* L'Enfer PWA service worker — v47 collaboration audit workspace
+/* L'Enfer PWA service worker — v48 wms import bridge
    Network-first worker: old cached index.html should not haunt the app. */
-const SW_VERSION = 'lenfer-v36-collab-audit-workspace-20260614';
+const SW_VERSION = 'lenfer-v37-wms-import-20260615';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
