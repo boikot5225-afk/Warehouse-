@@ -364,13 +364,14 @@ function drawBarcode(canvas,text){
 }
 
 // ── TABS ──
-const TABS=['catalog','cells','notes','eo','creds','calc','hh11','rk','problems','report','service'];
+const TABS=['catalog','cells','wms','notes','eo','creds','calc','hh11','rk','problems','report','service'];
 function switchTab(tab){
   document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
   TABS.forEach(t=>{const el=document.getElementById('tab-'+t);if(el)el.style.display=t===tab?'':'none';});
   document.getElementById('catalog-search-area').style.display = tab==='catalog'?'':'none';
   document.querySelector('.fab').style.display = (tab==='catalog' && !document.querySelector('.card.open'))?'flex':'none';
   if(tab==='cells')renderCells('');
+  if(tab==='wms')renderWms();
   if(tab==='notes')renderNotes();
   if(tab==='creds')renderCreds();
   if(tab==='eo'){renderEO();renderEORange();}
@@ -382,6 +383,261 @@ function switchTab(tab){
   window.scrollTo(0,0);
 }
 window.switchTab = switchTab;
+
+
+// ── WMS IMPORT / BRIDGE ──
+let wmsLastResult = null;
+const WMS_AUTO_UNAVAILABLE = 'Авто-поиск недоступен в этой среде. Нужен Android WebView-мост или браузерный bridge. Можно вставить JSON-ответ ВМС в импорт ниже.';
+
+function wmsSetStatus(text, kind){
+  const el=document.getElementById('wms-status');
+  if(!el)return;
+  el.textContent=String(text||'');
+  el.className='wms-status '+(kind?('wms-status-'+kind):'');
+}
+function wmsPrefixUt(){
+  const el=document.getElementById('wms-query');
+  if(!el)return;
+  const v=String(el.value||'').trim();
+  if(!v)el.value='УТ-';
+  else if(!/^УТ-/i.test(v))el.value='УТ-'+v.replace(/^ут-/i,'');
+  el.focus();
+}
+function wmsCleanCode(v){
+  v=String(v||'').trim();
+  if(!v)return '';
+  v=v.replace(/^ут-/i,'УТ-');
+  if(/^\d{5,}$/.test(v))return v;
+  if(/^\d+$/.test(v) && v.length<5)return 'УТ-'+v;
+  return v;
+}
+function wmsCopyFallback(text){
+  text=String(text||'');
+  if(navigator.clipboard&&navigator.clipboard.writeText){return navigator.clipboard.writeText(text).catch(()=>wmsCopyTextarea(text));}
+  return Promise.resolve(wmsCopyTextarea(text));
+}
+function wmsCopyTextarea(text){
+  const ta=document.createElement('textarea');ta.value=String(text||'');document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
+}
+function wmsClearResult(){
+  wmsLastResult=null;
+  const box=document.getElementById('wms-result');if(box)box.innerHTML='';
+  wmsSetStatus('Очищено. Введи УТ или вставь JSON-ответ из ВМС.','');
+}
+function wmsClearImportText(){const el=document.getElementById('wms-import-text');if(el)el.value='';}
+async function wmsPasteImportFromClipboard(){
+  try{
+    if(!(navigator.clipboard&&navigator.clipboard.readText))throw new Error('clipboard unavailable');
+    const text=await navigator.clipboard.readText();
+    const el=document.getElementById('wms-import-text'); if(el)el.value=text;
+    wmsSetStatus('Вставил из буфера. Жми «Разобрать импорт».','ok');
+  }catch(e){wmsSetStatus('Не смог прочитать буфер. Вставь вручную долгим тапом.','err');}
+}
+function wmsFindStockItems(obj, depth){
+  depth=depth||0;
+  if(!obj || depth>7)return null;
+  if(Array.isArray(obj)){
+    if(obj.some(x=>x&&typeof x==='object'&&(x.address||x.product||x.quantity!=null)))return obj;
+    for(const x of obj){const r=wmsFindStockItems(x,depth+1);if(r)return r;}
+    return null;
+  }
+  if(typeof obj==='object'){
+    if(obj.value&&Array.isArray(obj.value.items))return obj.value.items;
+    if(Array.isArray(obj.items))return obj.items;
+    if(obj.data&&Array.isArray(obj.data))return obj.data;
+    for(const k of Object.keys(obj)){
+      const r=wmsFindStockItems(obj[k],depth+1);if(r)return r;
+    }
+  }
+  return null;
+}
+function wmsLooseJsonParse(text){
+  text=String(text||'').trim();
+  if(!text)throw new Error('Пустое поле');
+  try{return JSON.parse(text);}catch(e){}
+  // DevTools Preview иногда копируется как JS-object: {value: {items: ...}}. Пробуем осторожно превратить в JSON без eval.
+  let s=text;
+  s=s.replace(/[\u2026…]/g,'null');
+  s=s.replace(/([,{]\s*)([A-Za-z_$][\w$]*)(\s*:)/g,'$1"$2"$3');
+  s=s.replace(/,\s*([}\]])/g,'$1');
+  try{return JSON.parse(s);}catch(e){throw new Error('Не смог разобрать. Скопируй именно raw Response JSON без троеточий.');}
+}
+function wmsMapStockItem(item){
+  item=item||{};
+  const p=item.product||{};
+  const a=item.address||{};
+  const loc=item.location||{};
+  const part=item.part||{};
+  const barcodes=Array.isArray(p.barcodes)?p.barcodes.filter(Boolean):[];
+  return {
+    cellAddress:String(a.cellAddress||a.address||item.cellAddress||item.cell||'').trim(),
+    handlingUnitBarcode:String(a.handlingUnitBarcode||item.handlingUnitBarcode||'').trim(),
+    zoneName:String(loc.zoneName||item.zoneName||'').trim(),
+    locationName:String(loc.locationName||item.locationName||'').trim(),
+    productionDate:String(part.productionDate||item.productionDate||'').trim(),
+    bestBeforeDate:String(part.bestBeforeDate||item.bestBeforeDate||'').trim(),
+    productId:String(p.productId||p.id||item.productId||'').trim(),
+    name:String(p.name||p.productName||item.productName||item.name||'').trim(),
+    nomenclatureCode:String(p.nomenclatureCode||item.nomenclatureCode||'').trim(),
+    barcodes:barcodes,
+    barcode:String(barcodes[0]||p.barcode||item.barcode||'').trim(),
+    imageUrl:String(p.imageUrl||item.imageUrl||'').trim(),
+    quantity:Number(item.quantity ?? item.totalQuantity ?? 0)||0,
+    status:String(item.status||'').trim(),
+    type:String(item.type||'').trim()
+  };
+}
+function wmsNormalizeResult(payload){
+  if(!payload)throw new Error('Пустой ответ');
+  if(payload.product && Array.isArray(payload.rows)){
+    const rows=payload.rows.map(r=>({
+      cellAddress:String(r.cellAddress||''), handlingUnitBarcode:String(r.handlingUnitBarcode||r.hu||''), zoneName:String(r.zoneName||''), locationName:String(r.locationName||''), productionDate:String(r.productionDate||''), bestBeforeDate:String(r.bestBeforeDate||''), quantity:Number(r.quantity||0)||0, status:String(r.status||''), type:String(r.type||''), name:String((payload.product||{}).name||''), nomenclatureCode:String((payload.product||{}).nomenclatureCode||''), barcode:String((payload.product||{}).barcode||''), barcodes:(payload.product||{}).barcodes||[]
+    }));
+    return {product:payload.product,rows,totalRows:rows.length,totalQuantity:rows.reduce((s,r)=>s+(Number(r.quantity)||0),0)};
+  }
+  const items=wmsFindStockItems(payload)||[];
+  if(!items.length)throw new Error('В ответе не нашёл value.items / items со строками остатков');
+  const rows=items.map(wmsMapStockItem).filter(r=>r.cellAddress||r.nomenclatureCode||r.name||r.quantity);
+  if(!rows.length)throw new Error('Строки есть, но нужных полей товара/ячейки не нашёл');
+  const first=rows.find(r=>r.name||r.nomenclatureCode||r.barcode)||rows[0]||{};
+  return {
+    product:{name:first.name||'', nomenclatureCode:first.nomenclatureCode||'', barcode:first.barcode||'', barcodes:first.barcodes||[], imageUrl:first.imageUrl||'', productId:first.productId||''},
+    rows:rows,
+    totalRows:rows.length,
+    totalQuantity:rows.reduce((s,r)=>s+(Number(r.quantity)||0),0)
+  };
+}
+function wmsFormatCells(result){
+  const rows=(result&&result.rows)||[];
+  return rows.map(r=>[
+    r.cellAddress||'—',
+    (Number(r.quantity)||0)+' шт',
+    r.bestBeforeDate?('до '+r.bestBeforeDate):'',
+    r.handlingUnitBarcode?('HU '+r.handlingUnitBarcode):'',
+    r.status||''
+  ].filter(Boolean).join(' — ')).join('\n');
+}
+function wmsRenderResult(result){
+  wmsLastResult=result;
+  const box=document.getElementById('wms-result'); if(!box)return;
+  const p=(result&&result.product)||{};
+  const rows=(result&&result.rows)||[];
+  const barcode=p.barcode || (Array.isArray(p.barcodes)?p.barcodes[0]:'') || '';
+  if(!rows.length){box.innerHTML='<div class="no-results">Нет строк остатков</div>';return;}
+  const rowsHtml=rows.map(r=>'<tr>'+[
+    '<td><b>'+escHtml(r.cellAddress||'—')+'</b></td>',
+    '<td class="num">'+escHtml(r.quantity)+'</td>',
+    '<td>'+escHtml(r.zoneName||'')+'</td>',
+    '<td>'+escHtml(r.locationName||'')+'</td>',
+    '<td>'+escHtml(r.bestBeforeDate||'')+'</td>',
+    '<td>'+escHtml(r.handlingUnitBarcode||'')+'</td>',
+    '<td>'+escHtml(r.status||'')+'</td>'
+  ].join('')+'</tr>').join('');
+  box.innerHTML=
+    '<div class="wms-card">'+
+      (p.imageUrl?'<img class="wms-img" src="'+escHtml(p.imageUrl)+'" loading="lazy" onerror="this.style.display=\'none\'">':'')+
+      '<div class="wms-card-body"><div class="wms-product-name">'+escHtml(p.name||rows[0].name||'Товар из ВМС')+'</div>'+
+      '<div class="wms-meta"><b>'+escHtml(p.nomenclatureCode||rows[0].nomenclatureCode||'')+'</b>'+(barcode?' · ШК: '+escHtml(barcode):'')+'</div>'+
+      '<div class="wms-meta">Строк: <b>'+escHtml(result.totalRows||rows.length)+'</b> · Остаток: <b>'+escHtml(result.totalQuantity||0)+'</b> шт</div></div>'+ 
+    '</div>'+ 
+    '<div class="wms-actions wms-result-actions">'+
+      '<button class="exi-btn primary" onclick="wmsCopyCells()">Скопировать ячейки</button>'+ 
+      '<button class="exi-btn" onclick="wmsCopyProduct()">УТ/ШК</button>'+ 
+      '<button class="exi-btn" onclick="wmsSaveAsProblem()">В проблемы</button>'+ 
+    '</div>'+ 
+    '<div class="wms-table-wrap"><table class="wms-table"><thead><tr><th>Ячейка</th><th>Кол-во</th><th>Зона</th><th>Локация</th><th>Срок</th><th>HU</th><th>Статус</th></tr></thead><tbody>'+rowsHtml+'</tbody></table></div>';
+}
+function wmsCopyCells(){
+  if(!wmsLastResult){alert('Нет результата ВМС');return;}
+  wmsCopyFallback(wmsFormatCells(wmsLastResult)).then(()=>wmsSetStatus('Ячейки скопированы.','ok'));
+}
+function wmsCopyProduct(){
+  if(!wmsLastResult){alert('Нет результата ВМС');return;}
+  const p=wmsLastResult.product||{};
+  const text=[p.nomenclatureCode||'',p.name||'',p.barcode?('ШК: '+p.barcode):''].filter(Boolean).join('\n');
+  wmsCopyFallback(text).then(()=>wmsSetStatus('УТ/ШК скопированы.','ok'));
+}
+function wmsSaveAsProblem(){
+  if(!wmsLastResult){alert('Нет результата ВМС');return;}
+  const p=wmsLastResult.product||{};
+  const first=(wmsLastResult.rows||[])[0]||{};
+  const row=createMeta({id:Date.now()+Math.floor(Math.random()*1000),type:'проверить ВМС',ut:p.nomenclatureCode||first.nomenclatureCode||'',name:p.name||first.name||'',cell:first.cellAddress||'',sys:Number(wmsLastResult.totalQuantity||0)||0,fact:0,status:'нужно ВМС',needWms:1,comment:'Импорт из ВМС: '+wmsFormatCells(wmsLastResult).slice(0,900),archived:0,createdAt:new Date().toLocaleString('ru-RU'),updatedAt:new Date().toLocaleString('ru-RU')});
+  const arr=getProblems();arr.unshift(row);set('problems_log',arr);logAction('problem','Создана проблема из ВМС: '+(row.ut||row.name||'товар'),{ut:row.ut});
+  wmsSetStatus('Добавлено в проблемы.','ok');
+}
+function wmsParseImport(){
+  const el=document.getElementById('wms-import-text');
+  const text=el?el.value:'';
+  try{
+    const parsed=wmsLooseJsonParse(text);
+    const result=wmsNormalizeResult(parsed);
+    wmsRenderResult(result);
+    wmsSetStatus('Импорт разобран: '+result.totalRows+' строк, '+result.totalQuantity+' шт.','ok');
+  }catch(e){
+    wmsSetStatus(e.message||'Не смог разобрать импорт.','err');
+  }
+}
+function wmsNativeLookup(code, timeoutMs){
+  timeoutMs=timeoutMs||25000;
+  return new Promise((resolve,reject)=>{
+    const id='wms_'+Date.now()+'_'+Math.floor(Math.random()*100000);
+    if(!window.__lenferWmsNativeCallbacks)window.__lenferWmsNativeCallbacks={};
+    window.__lenferWmsNativeCallbacks[id]={resolve,reject};
+    const timer=setTimeout(()=>{delete window.__lenferWmsNativeCallbacks[id];reject(new Error('Android WebView-мост не ответил'));},timeoutMs);
+    window.__lenferWmsNativeCallbacks[id].timer=timer;
+    try{
+      if(window.LenferAndroidWms && typeof window.LenferAndroidWms.lookupWmsByCode==='function'){
+        const ret=window.LenferAndroidWms.lookupWmsByCode(id,code);
+        if(ret){clearTimeout(timer);delete window.__lenferWmsNativeCallbacks[id];resolve(wmsLooseJsonParse(ret));}
+      }else reject(new Error(WMS_AUTO_UNAVAILABLE));
+    }catch(e){clearTimeout(timer);delete window.__lenferWmsNativeCallbacks[id];reject(e);}
+  });
+}
+function lenferWmsNativeResolve(id, payloadJson){
+  const cb=window.__lenferWmsNativeCallbacks&&window.__lenferWmsNativeCallbacks[id];
+  if(!cb)return;
+  clearTimeout(cb.timer);delete window.__lenferWmsNativeCallbacks[id];
+  try{cb.resolve(wmsLooseJsonParse(payloadJson));}catch(e){cb.reject(e);}
+}
+function lenferWmsNativeReject(id, message){
+  const cb=window.__lenferWmsNativeCallbacks&&window.__lenferWmsNativeCallbacks[id];
+  if(!cb)return;
+  clearTimeout(cb.timer);delete window.__lenferWmsNativeCallbacks[id];cb.reject(new Error(message||'Ошибка Android WebView-моста'));
+}
+async function wmsLookupFromApp(){
+  const inp=document.getElementById('wms-query');
+  const code=wmsCleanCode(inp?inp.value:'');
+  if(!code){wmsSetStatus('Введи УТ-код.','err');return;}
+  if(inp)inp.value=code;
+  wmsSetStatus('Ищу в ВМС: '+code+'…','wait');
+  try{
+    let raw;
+    if(typeof window.lookupWmsByCode==='function') raw=await window.lookupWmsByCode(code);
+    else raw=await wmsNativeLookup(code);
+    const result=wmsNormalizeResult(raw);
+    wmsRenderResult(result);
+    wmsSetStatus('Готово: '+result.totalRows+' строк, '+result.totalQuantity+' шт.','ok');
+  }catch(e){
+    wmsSetStatus((e&&e.message)||WMS_AUTO_UNAVAILABLE,'err');
+  }
+}
+function renderWms(){
+  const box=document.getElementById('wms-result');
+  if(box && !wmsLastResult && !box.innerHTML){
+    box.innerHTML='<div class="hint" style="padding:34px 12px;"><span class="mark">✶</span><span class="txt">Введи УТ или вставь ответ ВМС</span></div>';
+  }
+}
+window.wmsLookupFromApp=wmsLookupFromApp;
+window.wmsParseImport=wmsParseImport;
+window.wmsClearResult=wmsClearResult;
+window.wmsPrefixUt=wmsPrefixUt;
+window.wmsCopyCells=wmsCopyCells;
+window.wmsCopyProduct=wmsCopyProduct;
+window.wmsSaveAsProblem=wmsSaveAsProblem;
+window.wmsPasteImportFromClipboard=wmsPasteImportFromClipboard;
+window.wmsClearImportText=wmsClearImportText;
+window.lenferWmsNativeResolve=lenferWmsNativeResolve;
+window.lenferWmsNativeReject=lenferWmsNativeReject;
 
 // ── SEARCH ──
 let query='',page=0,filtered=[],exactMode=false;
@@ -3785,7 +4041,7 @@ function startAppStable(){
   safeStartPart('отчёт', typeof renderReport==='function' ? renderReport : null);
 }
 startAppStable();
-window.__APP_STABLE_BUILD__='2026-06-14-v35-safety-diagnostics-problems';
+window.__APP_STABLE_BUILD__='2026-06-15-v37-wms-import-bridge';
 
 function hideProductDropdownsOnOutsideClick(e){
   try{
