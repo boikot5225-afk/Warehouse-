@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#2a0a0a">
+<title>Регистрация · L'Enfer</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<style>
+:root{
+  --bg:#120b08;
+  --card:#efe1bd;
+  --ink:#2a1b13;
+  --muted:#856b43;
+  --red:#b1261d;
+  --red2:#8f1d17;
+  --gold:#a57528;
+  --line:rgba(96,64,24,.22);
+}
+*{box-sizing:border-box;}
+html,body{margin:0;min-height:100%;}
+body{
+  min-height:100vh;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:18px;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(177,38,29,.28), transparent 34%),
+    radial-gradient(circle at 100% 100%, rgba(216,166,74,.18), transparent 30%),
+    var(--bg);
+  color:var(--ink);
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+.auth-card{
+  width:min(460px,100%);
+  border:1px solid rgba(216,166,74,.35);
+  border-radius:24px;
+  padding:22px;
+  background:var(--card);
+  box-shadow:0 24px 80px rgba(0,0,0,.38);
+}
+.logo-row{display:flex;align-items:center;gap:12px;margin-bottom:14px;}
+.logo-fire{font-size:32px;line-height:1;}
+h1{font-size:24px;line-height:1.08;margin:0;color:#2a1b13;}
+.subtitle{margin:8px 0 18px;color:var(--muted);font-size:14px;line-height:1.4;}
+.mode-row{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px;}
+.mode-btn{
+  border:1px solid var(--line);
+  border-radius:14px;
+  padding:10px;
+  background:rgba(255,255,255,.28);
+  color:var(--ink);
+  font-weight:800;
+  cursor:pointer;
+}
+.mode-btn.active{background:var(--red);color:#fff;border-color:var(--red);}
+label{display:block;font-size:12px;font-weight:800;color:var(--gold);margin:12px 0 6px;}
+input{
+  width:100%;
+  border:2px solid rgba(177,38,29,.55);
+  border-radius:16px;
+  padding:15px 14px;
+  background:#fff8e8;
+  color:var(--ink);
+  font-size:18px;
+  outline:none;
+}
+input:focus{border-color:var(--red);box-shadow:0 0 0 3px rgba(177,38,29,.12);}
+.main-btn{
+  width:100%;
+  margin-top:16px;
+  border:0;
+  border-radius:16px;
+  padding:15px;
+  background:linear-gradient(180deg,var(--red),var(--red2));
+  color:#fff;
+  font-size:16px;
+  font-weight:900;
+  cursor:pointer;
+}
+.secondary-btn{
+  width:100%;
+  margin-top:10px;
+  border:1px solid var(--line);
+  border-radius:16px;
+  padding:13px;
+  background:rgba(255,255,255,.3);
+  color:var(--ink);
+  font-size:15px;
+  font-weight:850;
+  cursor:pointer;
+}
+.status{
+  min-height:20px;
+  margin-top:12px;
+  color:var(--muted);
+  font-size:13px;
+  line-height:1.35;
+  word-break:break-word;
+}
+.status.err{color:#9b1c16;font-weight:800;}
+.status.ok{color:#27632d;font-weight:800;}
+.small-note{
+  margin-top:16px;
+  padding:12px;
+  border:1px dashed var(--line);
+  border-radius:14px;
+  color:var(--muted);
+  font-size:12px;
+  line-height:1.4;
+}
+.hidden{display:none!important;}
+</style>
+</head>
+<body>
+<main class="auth-card">
+  <div class="logo-row">
+    <div class="logo-fire">🔥</div>
+    <div>
+      <h1 id="title">Регистрация</h1>
+      <div class="subtitle" id="subtitle">Создай аккаунт, и только после этого откроется приложение.</div>
+    </div>
+  </div>
+
+  <div class="mode-row">
+    <button class="mode-btn active" id="mode-register" type="button">Регистрация</button>
+    <button class="mode-btn" id="mode-login" type="button">Вход</button>
+  </div>
+
+  <form id="auth-form" autocomplete="on">
+    <label for="email">Email</label>
+    <input id="email" type="email" placeholder="you@example.com" autocomplete="email" autocorrect="off" autocapitalize="off" spellcheck="false" required>
+
+    <label for="password">Пароль</label>
+    <input id="password" type="password" placeholder="минимум 6 символов" autocomplete="current-password" required minlength="6">
+
+    <button class="main-btn" id="submit-btn" type="submit">Зарегистрироваться и открыть</button>
+    <button class="secondary-btn hidden" id="logout-btn" type="button">Выйти из текущего аккаунта</button>
+  </form>
+
+  <div id="status" class="status">Проверяю вход…</div>
+
+  <div class="small-note">
+    Без входа приложение не откроется: index.html перекидывает сюда. Реальная защита данных — в правилах Firebase: каждый аккаунт видит только свой путь <b>users/&lt;uid&gt;/w21</b>.
+  </div>
+</main>
+
+<script>
+(function(){
+  'use strict';
+
+  var FB_CONFIG = {
+    apiKey:      "AIzaSyDabpQ_yMVS_P_s5JyPgxvCiTVGF5-Nu5Q",
+    databaseURL: "https://warehouse-dbec9-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId:   "warehouse-dbec9",
+    appId:       "1:771368960199:web:2491631935a0df2d13fee2"
+  };
+
+  var auth = null;
+  var mode = 'register';
+  var ready = false;
+
+  function id(x){ return document.getElementById(x); }
+  function status(msg, cls){
+    var el = id('status');
+    if(!el) return;
+    el.className = 'status' + (cls ? ' ' + cls : '');
+    el.textContent = msg;
+  }
+  function nextUrl(){
+    var p = new URLSearchParams(location.search);
+    var n = p.get('next') || 'index.html';
+    if(/^https?:\/\//i.test(n)) return './index.html';
+    if(n.indexOf('register.html') >= 0) return './index.html';
+    return n;
+  }
+  function goApp(){ location.replace(nextUrl()); }
+
+  function setMode(next){
+    mode = next === 'login' ? 'login' : 'register';
+    id('mode-register').classList.toggle('active', mode === 'register');
+    id('mode-login').classList.toggle('active', mode === 'login');
+    id('title').textContent = mode === 'register' ? 'Регистрация' : 'Вход';
+    id('subtitle').textContent = mode === 'register'
+      ? 'Создай аккаунт, и только после этого откроется приложение.'
+      : 'Войди в уже созданный аккаунт.';
+    id('submit-btn').textContent = mode === 'register' ? 'Зарегистрироваться и открыть' : 'Войти и открыть';
+    status(mode === 'register' ? 'Введи email и пароль минимум 6 символов.' : 'Введи email и пароль от аккаунта.');
+  }
+
+  function getInput(){
+    var email = String(id('email').value || '').trim();
+    var password = String(id('password').value || '');
+    if(!email) throw new Error('введи email');
+    if(!password || password.length < 6) throw new Error('пароль минимум 6 символов');
+    return {email: email, password: password};
+  }
+
+  function humanError(e){
+    var code = e && e.code ? String(e.code) : '';
+    if(code.indexOf('email-already-in-use') >= 0) return 'такой email уже зарегистрирован — переключись на «Вход»';
+    if(code.indexOf('invalid-email') >= 0) return 'email выглядит криво';
+    if(code.indexOf('weak-password') >= 0) return 'пароль слишком слабый, минимум 6 символов';
+    if(code.indexOf('wrong-password') >= 0) return 'неверный пароль';
+    if(code.indexOf('user-not-found') >= 0 || code.indexOf('invalid-credential') >= 0) return 'аккаунт не найден или пароль неверный';
+    if(code.indexOf('unauthorized-domain') >= 0) return 'домен сайта не добавлен в Firebase Authorized domains';
+    if(code.indexOf('operation-not-allowed') >= 0) return 'в Firebase не включён Email/Password';
+    if(code.indexOf('too-many-requests') >= 0) return 'слишком много попыток, Firebase временно тормознул вход';
+    return (e && e.message) ? e.message : String(e || 'неизвестная ошибка');
+  }
+
+  async function submit(){
+    if(!ready || !auth) return status('Firebase ещё грузится, секунду…');
+    try{
+      var v = getInput();
+      id('submit-btn').disabled = true;
+      status(mode === 'register' ? 'Создаю аккаунт…' : 'Вхожу…');
+      if(mode === 'register') await auth.createUserWithEmailAndPassword(v.email, v.password);
+      else await auth.signInWithEmailAndPassword(v.email, v.password);
+      status('Готово. Открываю приложение…', 'ok');
+      goApp();
+    }catch(e){
+      status(humanError(e), 'err');
+    }finally{
+      id('submit-btn').disabled = false;
+    }
+  }
+
+  async function logout(){
+    try{
+      if(auth) await auth.signOut();
+      id('logout-btn').classList.add('hidden');
+      status('Вышел. Теперь можно создать другой аккаунт или войти заново.');
+    }catch(e){ status(humanError(e), 'err'); }
+  }
+
+  function boot(){
+    try{
+      if(typeof firebase === 'undefined' || !firebase.auth) throw new Error('Firebase Auth SDK не загрузился');
+      if(!firebase.apps.length) firebase.initializeApp(FB_CONFIG);
+      auth = firebase.auth();
+      try{ auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL); }catch(_){ }
+      ready = true;
+      setMode('register');
+      auth.onAuthStateChanged(function(user){
+        if(user){
+          id('logout-btn').classList.remove('hidden');
+          status('Уже вошёл как ' + (user.email || user.uid) + '. Открываю приложение…', 'ok');
+          setTimeout(goApp, 550);
+        }
+      });
+    }catch(e){
+      status('Ошибка Firebase: ' + humanError(e), 'err');
+    }
+  }
+
+  id('mode-register').addEventListener('click', function(){ setMode('register'); });
+  id('mode-login').addEventListener('click', function(){ setMode('login'); });
+  id('auth-form').addEventListener('submit', function(e){ e.preventDefault(); submit(); });
+  id('logout-btn').addEventListener('click', logout);
+
+  boot();
+})();
+</script>
+</body>
+</html>
