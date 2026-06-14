@@ -12,19 +12,19 @@
 <meta content="L'Enfer" name="apple-mobile-web-app-title"/>
 <link href="./icons/icon-192.png" rel="apple-touch-icon"/>
 <title>L'Enfer</title>
-<!-- build: pwa-json-barcodes-v46-safety-diagnostics-problems -->
-<script src="./assets/js/vendor/zxing.min.js?v=20260614-sync-v3"></script>
+<!-- build: pwa-json-barcodes-v47-collab-audit -->
+<script src="./assets/js/vendor/zxing.min.js?v=20260614-sync-v35-collab"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script id="auth-gate-v43" src="./assets/js/auth-gate.js?v=20260614-sync-v3"></script>
-<link href="./assets/css/app.css?v=20260614-sync-v3" rel="stylesheet"/>
-<meta content="modular-files-sync-v3" name="lenfer-build"/></head>
+<script id="auth-gate-v43" src="./assets/js/auth-gate.js?v=20260614-sync-v35-collab"></script>
+<link href="./assets/css/app.css?v=20260614-sync-v35-collab" rel="stylesheet"/>
+<meta content="modular-files-sync-v35-collab" name="lenfer-build"/></head>
 <body>
 <div class="app-error-banner" id="app-error-banner"></div>
-<script src="./assets/js/error-banner.js?v=20260614-sync-v3"></script>
-<script src="./assets/js/pwa-and-search-boot.js?v=20260614-sync-v3"></script>
+<script src="./assets/js/error-banner.js?v=20260614-sync-v35-collab"></script>
+<script src="./assets/js/pwa-and-search-boot.js?v=20260614-sync-v35-collab"></script>
 <header>
 <div class="header-top">
 <div class="brand">
@@ -112,7 +112,7 @@
 <details class="backup-extra-fold" id="supa-fold" open="">
 <summary>☁ Firebase / единая база</summary>
 <div class="supa-panel">
-<div class="supa-warning">Режим v42: вход вынесен на отдельную страницу register.html. Без аккаунта приложение не открывается; данные хранятся в личном пути users/&lt;uid&gt;/w21. Встроенный каталог целиком не заливается. Доступы/пароли приложения не синхронизируются.</div>
+<div class="supa-warning">Режим v3.5: вход вынесен на register.html. По умолчанию данные остаются в личном пути users/&lt;uid&gt;/w21. Для нескольких пользователей можно подключить общую базу workspaces/&lt;код&gt;/w21. Встроенный каталог целиком не заливается. Доступы/пароли приложения не синхронизируются.</div>
 <div class="fb-auth-box">
 <div class="fb-auth-title">Аккаунт Firebase</div>
 <div class="fb-auth-user" id="fb-auth-user">Проверяю вход…</div>
@@ -123,6 +123,25 @@
 <div class="fb-auth-status" id="fb-auth-status">Вход/регистрация вынесены на отдельную страницу. В приложении остался только статус аккаунта.</div>
 </div>
 <div class="supa-status" style="margin-bottom:8px;">База: <b>warehouse-dbec9 (Firebase)</b></div>
+
+<details class="backup-extra-fold" open="">
+<summary>👥 Пользователи и общая база</summary>
+<div class="backup-body collab-panel">
+<div class="supa-warning" style="margin-bottom:10px;">База по умолчанию остаётся личной. Чтобы несколько аккаунтов видели одни данные, введите одинаковый код общей базы и подключитесь. Старые данные не переносятся сами — это специально, чтобы ничего не затереть.</div>
+<label class="modal-lbl">Твоё имя в журнале</label>
+<div class="collab-row"><input class="calc-inp" id="profile-name-input" autocomplete="name" placeholder="Например: Булат" type="text"/><button class="exi-btn" onclick="saveUserProfileName()">Сохранить имя</button></div>
+<label class="modal-lbl">Код общей базы</label>
+<div class="collab-row"><input class="calc-inp" id="workspace-id-input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="например main или smena-2" type="text"/><button class="exi-btn primary" onclick="workspaceUseShared()">Подключить</button></div>
+<div class="collab-mode" id="workspace-mode-label">Личная база</div>
+<div class="supa-grid" style="margin-top:8px;">
+<button class="exi-btn" onclick="workspaceUsePersonal()">Личная база</button>
+<button class="exi-btn" onclick="workspacePublishCurrent()">⬆ Залить текущие данные в общую</button>
+<button class="exi-btn" onclick="refreshWorkspaceMembers()">↻ Пользователи</button>
+</div>
+<div id="workspace-members-list" class="members-list"></div>
+</div>
+</details>
+
 <details class="backup-extra-fold">
 <summary>Технические настройки</summary>
 <label class="modal-lbl">Firebase project / database</label>
@@ -834,6 +853,6 @@
 </div>
 </div>
 </div>
-<script src="./assets/data/static-data.js?v=20260614-sync-v3"></script><script src="./assets/js/app.js?v=20260614-sync-v3"></script>
+<script src="./assets/data/static-data.js?v=20260614-sync-v35-collab"></script><script src="./assets/js/app.js?v=20260614-sync-v35-collab"></script>
 </body>
 </html>

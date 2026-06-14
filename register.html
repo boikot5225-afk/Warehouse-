@@ -8,8 +8,9 @@
 <title>Регистрация · L'Enfer</title>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<link href="./assets/css/register.css?v=20260614-sync-v3" rel="stylesheet"/>
-<meta content="modular-files-sync-v3" name="lenfer-build"/></head>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+<link href="./assets/css/register.css?v=20260614-sync-v35-collab" rel="stylesheet"/>
+<meta content="modular-files-sync-v35-collab" name="lenfer-build"/></head>
 <body>
 <main class="auth-card">
 <div class="logo-row">
@@ -24,6 +25,8 @@
 <button class="mode-btn" id="mode-login" type="button">Вход</button>
 </div>
 <form autocomplete="on" id="auth-form">
+<label for="display-name">Имя</label>
+<input autocapitalize="words" autocomplete="name" autocorrect="off" id="display-name" placeholder="Например: Булат" spellcheck="false" type="text"/>
 <label for="email">Email</label>
 <input autocapitalize="off" autocomplete="email" autocorrect="off" id="email" placeholder="you@example.com" required="" spellcheck="false" type="email"/>
 <label for="password">Пароль</label>
@@ -33,9 +36,9 @@
 </form>
 <div class="status" id="status">Проверяю вход…</div>
 <div class="small-note">
-    Без входа приложение не откроется: index.html перекидывает сюда. Реальная защита данных — в правилах Firebase: каждый аккаунт видит только свой путь <b>users/&lt;uid&gt;/w21</b>.
+    Без входа приложение не откроется: index.html перекидывает сюда. Реальная защита данных — в правилах Firebase: каждый аккаунт имеет личный путь <b>users/&lt;uid&gt;/w21</b>, а общая база подключается внутри приложения через workspace.
   </div>
 </main>
-<script src="./assets/js/register.js?v=20260614-sync-v3"></script>
+<script src="./assets/js/register.js?v=20260614-sync-v35-collab"></script>
 </body>
 </html>

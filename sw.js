@@ -1,6 +1,6 @@
-/* L'Enfer PWA service worker — v46 safety diagnostics problems
+/* L'Enfer PWA service worker — v47 collaboration audit workspace
    Network-first worker: old cached index.html should not haunt the app. */
-const SW_VERSION = 'lenfer-v35-safety-diagnostics-problems-20260614';
+const SW_VERSION = 'lenfer-v36-collab-audit-workspace-20260614';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
