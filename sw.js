@@ -1,6 +1,6 @@
-/* L'Enfer PWA service worker — v48 wms import bridge
+/* L'Enfer PWA service worker — v49 android wms wrapper
    Network-first worker: old cached index.html should not haunt the app. */
-const SW_VERSION = 'lenfer-v37-wms-import-20260615';
+const SW_VERSION = 'lenfer-v38-android-wms-20260615';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

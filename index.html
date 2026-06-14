@@ -12,19 +12,19 @@
 <meta content="L'Enfer" name="apple-mobile-web-app-title"/>
 <link href="./icons/icon-192.png" rel="apple-touch-icon"/>
 <title>L'Enfer</title>
-<!-- build: pwa-json-barcodes-v48-wms-import -->
-<script src="./assets/js/vendor/zxing.min.js?v=20260615-v37-wms-import"></script>
+<!-- build: pwa-json-barcodes-v48-android-wms -->
+<script src="./assets/js/vendor/zxing.min.js?v=20260615-v38-android-wms"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script id="auth-gate-v43" src="./assets/js/auth-gate.js?v=20260615-v37-wms-import"></script>
-<link href="./assets/css/app.css?v=20260615-v37-wms-import" rel="stylesheet"/>
-<meta content="modular-files-sync-v37-wms-import" name="lenfer-build"/></head>
+<script id="auth-gate-v43" src="./assets/js/auth-gate.js?v=20260615-v38-android-wms"></script>
+<link href="./assets/css/app.css?v=20260615-v38-android-wms" rel="stylesheet"/>
+<meta content="modular-files-sync-v38-android-wms" name="lenfer-build"/></head>
 <body>
 <div class="app-error-banner" id="app-error-banner"></div>
-<script src="./assets/js/error-banner.js?v=20260615-v37-wms-import"></script>
-<script src="./assets/js/pwa-and-search-boot.js?v=20260615-v37-wms-import"></script>
+<script src="./assets/js/error-banner.js?v=20260615-v38-android-wms"></script>
+<script src="./assets/js/pwa-and-search-boot.js?v=20260615-v38-android-wms"></script>
 <header>
 <div class="header-top">
 <div class="brand">
@@ -84,41 +84,36 @@
 </div>
 <div id="cells-list"></div>
 </div>
-
-<!-- WMS IMPORT / BRIDGE -->
+<!-- WMS LOOKUP -->
 <div id="tab-wms" style="display:none">
 <div class="section-head">
-<div class="section-title">ВМС: поиск товара</div>
-<button class="add-btn" onclick="wmsClearResult()">Очистить</button>
+<div class="section-title">Поиск в ВМС</div>
 </div>
 <div class="wms-panel">
-<div class="wms-warning"><b>Авто-поиск</b> сработает только если приложение открыто в Android WebView-обёртке или браузере с мостом/расширением. Если моста нет — используй импорт ответа ВМС ниже. Старые разделы приложения не трогаются.</div>
+<div class="wms-warning"><b>Рабочий режим:</b> Android-обёртка. Сначала сверху открой «ВМС вход» и залогинься, потом здесь вводи УТ и жми «Найти». Ручной импорт спрятан ниже только для диагностики, не для смены.</div>
 <label class="modal-lbl">УТ-код</label>
 <div class="wms-search-row">
-<input autocapitalize="characters" autocomplete="off" autocorrect="off" class="calc-inp" id="wms-query" inputmode="text" placeholder="УТ-10547087" spellcheck="false" type="text"/>
+<input class="calc-inp" id="wms-query" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="УТ-10547087" style="margin-bottom:0;" type="text"/>
 <button class="exi-btn primary" onclick="wmsLookupFromApp()">Найти</button>
 </div>
 <div class="wms-actions">
 <button class="exi-btn" onclick="wmsPrefixUt()">УТ-</button>
-<button class="exi-btn" onclick="wmsPasteImportFromClipboard()">📥 Вставить</button>
-<button class="exi-btn" onclick="wmsParseImport()">Разобрать импорт</button>
+<button class="exi-btn" onclick="wmsClearResult()">Очистить</button>
 </div>
-<div class="wms-status" id="wms-status">Готов. Введи УТ или вставь JSON-ответ из ВМС.</div>
-</div>
-<details class="backup-fold wms-import-fold">
-<summary>📋 Импорт ответа ВМС / запасной режим</summary>
-<div class="backup-body">
-<div class="backup-hint">Лучше всего копировать именно raw JSON из вкладки <b>Response</b>. Нужен ответ с <code>value.items</code> от <code>stocks/details</code>. Preview с троеточиями браузера может не разобраться — он выглядит красиво, но ест кактусы.</div>
-<textarea class="modal-inp" id="wms-import-text" rows="9" spellcheck="false" placeholder='Вставь JSON: {"value":{"items":[...]}}' style="resize:vertical;font-size:12px;line-height:1.35;white-space:pre;font-family:'JetBrains Mono',monospace;"></textarea>
-<div class="modal-btns">
-<button class="modal-save" onclick="wmsParseImport()">Разобрать</button>
-<button class="modal-cancel" onclick="wmsClearImportText()">Очистить поле</button>
-</div>
+<div class="wms-status" id="wms-status">Готов. Открой «ВМС вход», залогинься и возвращайся сюда.</div>
+<details class="wms-import-fold">
+<summary>Диагностика / ручной импорт JSON</summary>
+<div class="wms-warning" style="margin-top:10px;">Это аварийный режим для проверки парсера. В нормальной работе им пользоваться не надо.</div>
+<textarea class="calc-inp" id="wms-import-text" placeholder="Сюда можно вставить raw JSON ответа stocks/details для диагностики" style="min-height:130px;resize:vertical;font-family:'JetBrains Mono',monospace;font-size:11px;"></textarea>
+<div class="wms-actions">
+<button class="exi-btn" onclick="wmsPasteImportFromClipboard()">Вставить из буфера</button>
+<button class="exi-btn primary" onclick="wmsParseImport()">Разобрать</button>
+<button class="exi-btn" onclick="wmsClearImportText()">Очистить поле</button>
 </div>
 </details>
-<div id="wms-result" class="wms-result"></div>
 </div>
-
+<div class="wms-result" id="wms-result"></div>
+</div>
 <!-- SERVICE -->
 <div id="tab-service" style="display:none">
 <div class="section-head">
@@ -889,6 +884,6 @@
 </div>
 </div>
 </div>
-<script src="./assets/data/static-data.js?v=20260615-v37-wms-import"></script><script src="./assets/js/app.js?v=20260615-v37-wms-import"></script>
+<script src="./assets/data/static-data.js?v=20260615-v38-android-wms"></script><script src="./assets/js/app.js?v=20260615-v38-android-wms"></script>
 </body>
 </html>
