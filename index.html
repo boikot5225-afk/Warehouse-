@@ -703,7 +703,7 @@ window.installPWA = async function(){
       <details class="backup-extra-fold" id="supa-fold" open>
         <summary>☁ Supabase / единая база</summary>
         <div class="supa-panel">
-          <div class="supa-warning">Режим v30: Supabase — главный источник данных. ТСД и Android работают с одной базой: добавления, изменения и удаления уходят на сервер и подтягиваются обратно. localStorage — только кэш. JSON — аварийный бэкап. Доступы/пароли не синхронизируются.</div>
+          <div class="supa-warning">Режим v31: Supabase — главный источник данных. ТСД и Android работают с одной базой: добавления, изменения и удаления уходят на сервер и подтягиваются обратно. localStorage — только кэш. JSON — аварийный бэкап. Доступы/пароли не синхронизируются.</div>
           <div class="supa-status" style="margin-bottom:8px;">База: <b>icudtjvnnoeibzxyyxfz.supabase.co</b></div>
           <details class="backup-extra-fold">
             <summary>Технические настройки</summary>
@@ -4103,10 +4103,7 @@ function exportCellsTSV(){
   const favs=new Set(getCellFavs());
   const rows=[['Адрес','Название','Код','Избранное','ID']];
   data.cells.forEach(c=>rows.push([c.addr||'',c.name||'',c.code||'',favs.has(c.addr)?'1':'',c.id||'']));
-  const text=rows.map(r=>r.map(v=>String(v??'').replace(/	/g,' ').replace(/
-?
-/g,' ')).join('	')).join('
-');
+  const text=rows.map(r=>r.map(v=>String(v??'').replace(/\t/g,' ').replace(/\r?\n/g,' ')).join('\t')).join('\n');
   downloadTextAsFile(text,cellsFileName('tsv'),'text/tab-separated-values;charset=utf-8');
 }
 function openBackupPlainPage(){
@@ -4981,7 +4978,7 @@ function startAppStable(){
   safeStartPart('отчёт', typeof renderReport==='function' ? renderReport : null);
 }
 startAppStable();
-window.__APP_STABLE_BUILD__='2026-06-14-v30-reliable-initial-sync';
+window.__APP_STABLE_BUILD__='2026-06-14-v31-regex-start-fix';
 
 function hideProductDropdownsOnOutsideClick(e){
   try{
@@ -4999,7 +4996,7 @@ const W21_SUPABASE_EMBEDDED = true;
 
 // ── SUPABASE SERVER-FIRST SYNC v25 ──
 // Supabase = главный источник данных; localStorage = кэш. Поддерживаются soft-delete, быстрый push, realtime + fallback polling.
-const W21_SUPA_AUTOSYNC_VERSION='v30';
+const W21_SUPA_AUTOSYNC_VERSION='v31';
 const W21_SUPA_PRODUCT_KEYS=new Set(['custom_items','custom_barcodes','product_edits','pack_sizes']);
 const W21_SUPA_CELL_KEYS=new Set(['cells','cells__mirror','cell_favorites','cell_favorites__mirror']);
 const W21_SUPA_HH_KEYS=new Set(['hh11_log']);
@@ -5217,8 +5214,8 @@ function supaSetAutoUI(){
   b.textContent=supaAutoEnabled()?'Авто: ВКЛ':'Авто: ВЫКЛ';
 }
 function supaDownloadSQL(){
-  downloadTextAsFile(W21_SUPA_SCHEMA_SQL,'warehouse21_supabase_schema_v30.sql','text/plain;charset=utf-8');
-  supaStatus('SQL схема v30 скачана. Выполни её в Supabase SQL Editor.',true);
+  downloadTextAsFile(W21_SUPA_SCHEMA_SQL,'warehouse21_supabase_schema_v31.sql','text/plain;charset=utf-8');
+  supaStatus('SQL схема v31 скачана. Выполни её в Supabase SQL Editor.',true);
 }
 function supaGetLastPull(){try{return localStorage.getItem('w21_supa_last_pull_at')||'';}catch(_){return '';}}
 function supaSetLastPull(ts){if(!ts)return;try{localStorage.setItem('w21_supa_last_pull_at',ts);}catch(_){ }__w21SupaLastPull=Date.now();}
@@ -5594,7 +5591,7 @@ document.addEventListener('DOMContentLoaded',()=>{supaFillConfigInputs();supaSet
 // Проблема v27: добавленные товары умели прилетать с сервера, но удаление товара
 // могло остаться локальным на другом устройстве. Здесь добавлен soft-delete для
 // custom_items и защита от повторного оживления старой копией с ТСД.
-window.__APP_STABLE_BUILD__='2026-06-14-v30-reliable-initial-sync';
+window.__APP_STABLE_BUILD__='2026-06-14-v31-regex-start-fix';
 
 function supaProductTombstones(){
   try{return JSON.parse(localStorage.getItem('w21_deleted_product_uts')||'{}')||{};}catch(_){return {};}
@@ -5804,14 +5801,14 @@ async function supaPushAll(silent){
 const __w21OrigSupaConnectAndStart_v28=supaConnectAndStart;
 async function supaConnectAndStart(){
   await __w21OrigSupaConnectAndStart_v28();
-  supaStatus('База подключена. v30: серверная синхронизация включена.',true);
+  supaStatus('База подключена. v31: серверная синхронизация включена.',true);
 }
 
 // Более понятная ручная диагностика, можно вызвать из консоли: w21SyncDebug()
 window.w21SyncDebug=function(){
   const tomb=supaProductTombstones();
   return {
-    version:'v30-reliable-initial-sync',
+    version:'v31-regex-start-fix',
     device_id:supaDeviceId(),
     pending_deletes:supaPendingDeletes().length,
     deleted_products:Object.keys(tomb).length,
@@ -5823,12 +5820,12 @@ window.w21SyncDebug=function(){
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// v30: reliable first load from Supabase
+// v31: reliable first load from Supabase + regex startup fix
 // Причина пропусков v29: устройство могло иметь старый курсор updated_at и поэтому
 // тянуло только новые изменения, хотя локальный кэш был неполный. Теперь при запуске
 // делается полный rebuild локального кэша с сервера, а дальше — быстрые инкременты.
-window.__APP_STABLE_BUILD__='2026-06-14-v30-reliable-initial-sync';
-const W21_SUPA_FULL_BOOT_KEY='w21_supa_full_boot_done__v30';
+window.__APP_STABLE_BUILD__='2026-06-14-v31-regex-start-fix';
+const W21_SUPA_FULL_BOOT_KEY='w21_supa_full_boot_done__v31';
 
 async function supaFullRefreshNow(reason){
   try{
