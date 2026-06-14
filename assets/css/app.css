@@ -611,3 +611,24 @@ html.auth-gate-error::before{
   text-align:center;
   z-index:2147483647;
 }
+
+/* v35 diagnostics */
+.diag-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;}
+.diag-cell{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:9px 10px;min-width:0;}
+.diag-cell span{display:block;font-family:'Oswald',sans-serif;font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;color:var(--muted);margin-bottom:4px;}
+.diag-cell b{display:block;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text);line-height:1.35;word-break:break-word;}
+@media (max-width:430px){.diag-grid{grid-template-columns:1fr;}}
+
+
+/* Collaboration / author audit */
+.meta-author{font-size:10px;color:var(--faint);margin-top:6px;line-height:1.35;}
+.meta-author b{color:var(--muted);font-weight:700;}
+.collab-panel .collab-row{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;margin-bottom:8px;}
+.collab-panel .collab-row .calc-inp{margin-bottom:0;}
+.collab-mode{font-size:11px;color:var(--gold);font-family:'Oswald',sans-serif;text-transform:uppercase;letter-spacing:.8px;margin:6px 0 8px;}
+.members-list{margin-top:10px;border-top:1px solid var(--border);}
+.member-row{padding:8px 0;border-bottom:1px solid var(--border);display:grid;grid-template-columns:1fr;gap:2px;font-size:11px;line-height:1.35;}
+.member-row b{color:var(--gold);font-size:12px;}
+.member-row span{color:var(--muted);}
+.member-row small{color:var(--faint);}
+@media(max-width:520px){.collab-panel .collab-row{grid-template-columns:1fr}.collab-panel .collab-row .exi-btn{width:100%;}}
