@@ -387,6 +387,7 @@ window.switchTab = switchTab;
 
 // ── WMS IMPORT / BRIDGE ──
 let wmsLastResult = null;
+let wmsLastChoices = null;
 const WMS_AUTO_UNAVAILABLE = 'Авто-поиск доступен только в Android-обёртке с ВМС-входом. Обычная PWA в браузере не может сама ходить в ВМС.';
 
 function wmsSetStatus(text, kind){
@@ -406,10 +407,16 @@ function wmsPrefixUt(){
 function wmsCleanCode(v){
   v=String(v||'').trim();
   if(!v)return '';
-  v=v.replace(/^ут-/i,'УТ-');
-  if(/^\d{5,}$/.test(v))return v;
-  if(/^\d+$/.test(v) && v.length<5)return 'УТ-'+v;
+  v=v.replace(/^ut-/i,'УТ-').replace(/^ут-/i,'УТ-');
   return v;
+}
+function wmsDetectMode(v){
+  const q=String(v||'').trim();
+  const up=q.toUpperCase();
+  if(/^УТ-?\d+/.test(up))return 'УТ';
+  if(!/\s/.test(up) && up.includes('-') && !up.startsWith('УТ-'))return 'Ячейка';
+  if(/^\d{8,14}$/.test(q))return 'ШК/название';
+  return 'Название';
 }
 function wmsCopyFallback(text){
   text=String(text||'');
@@ -420,9 +427,9 @@ function wmsCopyTextarea(text){
   const ta=document.createElement('textarea');ta.value=String(text||'');document.body.appendChild(ta);ta.select();document.execCommand('copy');document.body.removeChild(ta);
 }
 function wmsClearResult(){
-  wmsLastResult=null;
+  wmsLastResult=null;wmsLastChoices=null;
   const box=document.getElementById('wms-result');if(box)box.innerHTML='';
-  wmsSetStatus('Очищено. Введи УТ и жми «Найти».','');
+  wmsSetStatus('Очищено. Введи УТ, ШК, название или ячейку.','');
 }
 function wmsClearImportText(){const el=document.getElementById('wms-import-text');if(el)el.value='';}
 async function wmsPasteImportFromClipboard(){
@@ -455,7 +462,6 @@ function wmsLooseJsonParse(text){
   text=String(text||'').trim();
   if(!text)throw new Error('Пустое поле');
   try{return JSON.parse(text);}catch(e){}
-  // DevTools Preview иногда копируется как JS-object: {value: {items: ...}}. Пробуем осторожно превратить в JSON без eval.
   let s=text;
   s=s.replace(/[\u2026…]/g,'null');
   s=s.replace(/([,{]\s*)([A-Za-z_$][\w$]*)(\s*:)/g,'$1"$2"$3');
@@ -489,19 +495,24 @@ function wmsMapStockItem(item){
 }
 function wmsNormalizeResult(payload){
   if(!payload)throw new Error('Пустой ответ');
+  if(payload._kind==='productChoices'||payload._kind==='cellChoices')return payload;
+  const mode=payload._mode || '';
   if(payload.product && Array.isArray(payload.rows)){
     const rows=payload.rows.map(r=>({
       cellAddress:String(r.cellAddress||''), handlingUnitBarcode:String(r.handlingUnitBarcode||r.hu||''), zoneName:String(r.zoneName||''), locationName:String(r.locationName||''), productionDate:String(r.productionDate||''), bestBeforeDate:String(r.bestBeforeDate||''), quantity:Number(r.quantity||0)||0, status:String(r.status||''), type:String(r.type||''), name:String((payload.product||{}).name||''), nomenclatureCode:String((payload.product||{}).nomenclatureCode||''), barcode:String((payload.product||{}).barcode||''), barcodes:(payload.product||{}).barcodes||[]
     }));
-    return {product:payload.product,rows,totalRows:rows.length,totalQuantity:rows.reduce((s,r)=>s+(Number(r.quantity)||0),0)};
+    return {mode:mode||'product',product:payload.product,rows,totalRows:rows.length,totalQuantity:rows.reduce((s,r)=>s+(Number(r.quantity)||0),0)};
   }
   const items=wmsFindStockItems(payload)||[];
   if(!items.length)throw new Error('В ответе не нашёл value.items / items со строками остатков');
   const rows=items.map(wmsMapStockItem).filter(r=>r.cellAddress||r.nomenclatureCode||r.name||r.quantity);
   if(!rows.length)throw new Error('Строки есть, но нужных полей товара/ячейки не нашёл');
   const first=rows.find(r=>r.name||r.nomenclatureCode||r.barcode)||rows[0]||{};
+  const cellAddress=payload._cellAddress||first.cellAddress||'';
   return {
-    product:{name:first.name||'', nomenclatureCode:first.nomenclatureCode||'', barcode:first.barcode||'', barcodes:first.barcodes||[], imageUrl:first.imageUrl||'', productId:first.productId||''},
+    mode:mode||'product',
+    cellAddress:cellAddress,
+    product: mode==='cell' ? {name:'Содержимое ячейки '+cellAddress, nomenclatureCode:'', barcode:'', barcodes:[], imageUrl:'', productId:''} : {name:first.name||'', nomenclatureCode:first.nomenclatureCode||'', barcode:first.barcode||'', barcodes:first.barcodes||[], imageUrl:first.imageUrl||'', productId:first.productId||''},
     rows:rows,
     totalRows:rows.length,
     totalQuantity:rows.reduce((s,r)=>s+(Number(r.quantity)||0),0)
@@ -509,6 +520,16 @@ function wmsNormalizeResult(payload){
 }
 function wmsFormatCells(result){
   const rows=(result&&result.rows)||[];
+  if((result&&result.mode)==='cell'){
+    return rows.map(r=>[
+      r.nomenclatureCode||'—',
+      r.name||'Товар',
+      (Number(r.quantity)||0)+' шт',
+      r.bestBeforeDate?('до '+r.bestBeforeDate):'',
+      r.handlingUnitBarcode?('HU '+r.handlingUnitBarcode):'',
+      r.status||''
+    ].filter(Boolean).join(' — ')).join('\n');
+  }
   return rows.map(r=>[
     r.cellAddress||'—',
     (Number(r.quantity)||0)+' шт',
@@ -517,52 +538,91 @@ function wmsFormatCells(result){
     r.status||''
   ].filter(Boolean).join(' — ')).join('\n');
 }
+function wmsRenderChoices(payload){
+  wmsLastChoices=payload;
+  wmsLastResult=null;
+  const box=document.getElementById('wms-result'); if(!box)return;
+  if(payload._kind==='productChoices'){
+    const products=payload.products||[];
+    const html=products.map((p,i)=>{
+      const safeId=escHtml(p.productId||'');
+      return '<button class="wms-choice" onclick="wmsLookupProductId(\''+safeId+'\')">'+
+        (p.imageUrl?'<img class="wms-choice-img" src="'+escHtml(p.imageUrl)+'" loading="lazy" onerror="this.style.display=\'none\'">':'')+
+        '<span><b>'+escHtml(p.name||'Товар')+'</b><small>'+escHtml(p.nomenclatureCode||'')+'</small></span></button>';
+    }).join('');
+    box.innerHTML='<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">Найдено товаров: '+escHtml(payload.total||products.length)+'</div><div class="wms-meta">Выбери нужный товар, потом подтяну ячейки.</div></div></div><div class="wms-choices">'+html+'</div>';
+    return;
+  }
+  if(payload._kind==='cellChoices'){
+    const cells=payload.cells||[];
+    const html=cells.map(c=>'<button class="wms-choice" onclick="wmsLookupCellId(\''+escHtml(c.cellId||'')+'\',\''+escHtml(c.fullAddress||'')+'\')"><span><b>'+escHtml(c.fullAddress||'Ячейка')+'</b><small>'+escHtml(c.cellId||'')+'</small></span></button>').join('');
+    box.innerHTML='<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">Найдено ячеек: '+escHtml(cells.length)+'</div><div class="wms-meta">Выбери ячейку, потом подтяну содержимое.</div></div></div><div class="wms-choices">'+html+'</div>';
+  }
+}
 function wmsRenderResult(result){
-  wmsLastResult=result;
+  wmsLastResult=result;wmsLastChoices=null;
   const box=document.getElementById('wms-result'); if(!box)return;
   const p=(result&&result.product)||{};
   const rows=(result&&result.rows)||[];
   const barcode=p.barcode || (Array.isArray(p.barcodes)?p.barcodes[0]:'') || '';
   if(!rows.length){box.innerHTML='<div class="no-results">Нет строк остатков</div>';return;}
-  const rowsHtml=rows.map(r=>'<tr>'+[
-    '<td><b>'+escHtml(r.cellAddress||'—')+'</b></td>',
-    '<td class="num">'+escHtml(r.quantity)+'</td>',
-    '<td>'+escHtml(r.zoneName||'')+'</td>',
-    '<td>'+escHtml(r.locationName||'')+'</td>',
-    '<td>'+escHtml(r.bestBeforeDate||'')+'</td>',
-    '<td>'+escHtml(r.handlingUnitBarcode||'')+'</td>',
-    '<td>'+escHtml(r.status||'')+'</td>'
-  ].join('')+'</tr>').join('');
+  let tableHead, rowsHtml, title, meta;
+  if(result.mode==='cell'){
+    title=p.name||('Содержимое ячейки '+(result.cellAddress||''));
+    meta='Ячейка: <b>'+escHtml(result.cellAddress||rows[0].cellAddress||'')+'</b> · Строк: <b>'+escHtml(result.totalRows||rows.length)+'</b> · Остаток: <b>'+escHtml(result.totalQuantity||0)+'</b> шт';
+    tableHead='<tr><th>Товар</th><th>УТ</th><th>ШК</th><th>Кол-во</th><th>Срок</th><th>HU</th><th>Статус</th></tr>';
+    rowsHtml=rows.map(r=>'<tr>'+[
+      '<td><b>'+escHtml(r.name||'—')+'</b></td>',
+      '<td>'+escHtml(r.nomenclatureCode||'')+'</td>',
+      '<td>'+escHtml(r.barcode||'')+'</td>',
+      '<td class="num">'+escHtml(r.quantity)+'</td>',
+      '<td>'+escHtml(r.bestBeforeDate||'')+'</td>',
+      '<td>'+escHtml(r.handlingUnitBarcode||'')+'</td>',
+      '<td>'+escHtml(r.status||'')+'</td>'
+    ].join('')+'</tr>').join('');
+  }else{
+    title=p.name||rows[0].name||'Товар из ВМС';
+    meta='<b>'+escHtml(p.nomenclatureCode||rows[0].nomenclatureCode||'')+'</b>'+(barcode?' · ШК: '+escHtml(barcode):'')+'<br>Строк: <b>'+escHtml(result.totalRows||rows.length)+'</b> · Остаток: <b>'+escHtml(result.totalQuantity||0)+'</b> шт';
+    tableHead='<tr><th>Ячейка</th><th>Кол-во</th><th>Зона</th><th>Локация</th><th>Срок</th><th>HU</th><th>Статус</th></tr>';
+    rowsHtml=rows.map(r=>'<tr>'+[
+      '<td><b>'+escHtml(r.cellAddress||'—')+'</b></td>',
+      '<td class="num">'+escHtml(r.quantity)+'</td>',
+      '<td>'+escHtml(r.zoneName||'')+'</td>',
+      '<td>'+escHtml(r.locationName||'')+'</td>',
+      '<td>'+escHtml(r.bestBeforeDate||'')+'</td>',
+      '<td>'+escHtml(r.handlingUnitBarcode||'')+'</td>',
+      '<td>'+escHtml(r.status||'')+'</td>'
+    ].join('')+'</tr>').join('');
+  }
   box.innerHTML=
     '<div class="wms-card">'+
       (p.imageUrl?'<img class="wms-img" src="'+escHtml(p.imageUrl)+'" loading="lazy" onerror="this.style.display=\'none\'">':'')+
-      '<div class="wms-card-body"><div class="wms-product-name">'+escHtml(p.name||rows[0].name||'Товар из ВМС')+'</div>'+
-      '<div class="wms-meta"><b>'+escHtml(p.nomenclatureCode||rows[0].nomenclatureCode||'')+'</b>'+(barcode?' · ШК: '+escHtml(barcode):'')+'</div>'+
-      '<div class="wms-meta">Строк: <b>'+escHtml(result.totalRows||rows.length)+'</b> · Остаток: <b>'+escHtml(result.totalQuantity||0)+'</b> шт</div></div>'+ 
+      '<div class="wms-card-body"><div class="wms-product-name">'+escHtml(title)+'</div>'+ 
+      '<div class="wms-meta">'+meta+'</div></div>'+ 
     '</div>'+ 
     '<div class="wms-actions wms-result-actions">'+
-      '<button class="exi-btn primary" onclick="wmsCopyCells()">Скопировать ячейки</button>'+ 
+      '<button class="exi-btn primary" onclick="wmsCopyCells()">Скопировать</button>'+ 
       '<button class="exi-btn" onclick="wmsCopyProduct()">УТ/ШК</button>'+ 
       '<button class="exi-btn" onclick="wmsSaveAsProblem()">В проблемы</button>'+ 
     '</div>'+ 
-    '<div class="wms-table-wrap"><table class="wms-table"><thead><tr><th>Ячейка</th><th>Кол-во</th><th>Зона</th><th>Локация</th><th>Срок</th><th>HU</th><th>Статус</th></tr></thead><tbody>'+rowsHtml+'</tbody></table></div>';
+    '<div class="wms-table-wrap"><table class="wms-table"><thead>'+tableHead+'</thead><tbody>'+rowsHtml+'</tbody></table></div>';
 }
 function wmsCopyCells(){
   if(!wmsLastResult){alert('Нет результата ВМС');return;}
-  wmsCopyFallback(wmsFormatCells(wmsLastResult)).then(()=>wmsSetStatus('Ячейки скопированы.','ok'));
+  wmsCopyFallback(wmsFormatCells(wmsLastResult)).then(()=>wmsSetStatus('Скопировано.','ok'));
 }
 function wmsCopyProduct(){
   if(!wmsLastResult){alert('Нет результата ВМС');return;}
   const p=wmsLastResult.product||{};
-  const text=[p.nomenclatureCode||'',p.name||'',p.barcode?('ШК: '+p.barcode):''].filter(Boolean).join('\n');
+  const text=[p.nomenclatureCode||'',p.name||'',p.barcode?('ШК: '+p.barcode):'',wmsLastResult.cellAddress?('Ячейка: '+wmsLastResult.cellAddress):''].filter(Boolean).join('\n');
   wmsCopyFallback(text).then(()=>wmsSetStatus('УТ/ШК скопированы.','ok'));
 }
 function wmsSaveAsProblem(){
   if(!wmsLastResult){alert('Нет результата ВМС');return;}
   const p=wmsLastResult.product||{};
   const first=(wmsLastResult.rows||[])[0]||{};
-  const row=createMeta({id:Date.now()+Math.floor(Math.random()*1000),type:'проверить ВМС',ut:p.nomenclatureCode||first.nomenclatureCode||'',name:p.name||first.name||'',cell:first.cellAddress||'',sys:Number(wmsLastResult.totalQuantity||0)||0,fact:0,status:'нужно ВМС',needWms:1,comment:'Импорт из ВМС: '+wmsFormatCells(wmsLastResult).slice(0,900),archived:0,createdAt:new Date().toLocaleString('ru-RU'),updatedAt:new Date().toLocaleString('ru-RU')});
-  const arr=getProblems();arr.unshift(row);set('problems_log',arr);logAction('problem','Создана проблема из ВМС: '+(row.ut||row.name||'товар'),{ut:row.ut});
+  const row=createMeta({id:Date.now()+Math.floor(Math.random()*1000),type:'проверить ВМС',ut:p.nomenclatureCode||first.nomenclatureCode||'',name:p.name||first.name||'',cell:first.cellAddress||wmsLastResult.cellAddress||'',sys:Number(wmsLastResult.totalQuantity||0)||0,fact:0,status:'нужно ВМС',needWms:1,comment:'Импорт из ВМС: '+wmsFormatCells(wmsLastResult).slice(0,900),archived:0,createdAt:new Date().toLocaleString('ru-RU'),updatedAt:new Date().toLocaleString('ru-RU')});
+  const arr=getProblems();arr.unshift(row);set('problems_log',arr);logAction('problem','Создана проблема из ВМС: '+(row.ut||row.name||row.cell||'ВМС'),{ut:row.ut,cell:row.cell});
   wmsSetStatus('Добавлено в проблемы.','ok');
 }
 function wmsParseImport(){
@@ -571,14 +631,14 @@ function wmsParseImport(){
   try{
     const parsed=wmsLooseJsonParse(text);
     const result=wmsNormalizeResult(parsed);
-    wmsRenderResult(result);
-    wmsSetStatus('Импорт разобран: '+result.totalRows+' строк, '+result.totalQuantity+' шт.','ok');
+    if(result._kind)wmsRenderChoices(result); else wmsRenderResult(result);
+    wmsSetStatus(result._kind?'Найдено несколько вариантов. Выбери нужный.':'Импорт разобран: '+result.totalRows+' строк, '+result.totalQuantity+' шт.','ok');
   }catch(e){
     wmsSetStatus(e.message||'Не смог разобрать импорт.','err');
   }
 }
-function wmsNativeLookup(code, timeoutMs){
-  timeoutMs=timeoutMs||25000;
+function wmsCallNative(method,args,timeoutMs){
+  timeoutMs=timeoutMs||30000;
   return new Promise((resolve,reject)=>{
     const id='wms_'+Date.now()+'_'+Math.floor(Math.random()*100000);
     if(!window.__lenferWmsNativeCallbacks)window.__lenferWmsNativeCallbacks={};
@@ -586,13 +646,13 @@ function wmsNativeLookup(code, timeoutMs){
     const timer=setTimeout(()=>{delete window.__lenferWmsNativeCallbacks[id];reject(new Error('Android WebView-мост не ответил'));},timeoutMs);
     window.__lenferWmsNativeCallbacks[id].timer=timer;
     try{
-      if(window.LenferAndroidWms && typeof window.LenferAndroidWms.lookupWmsByCode==='function'){
-        const ret=window.LenferAndroidWms.lookupWmsByCode(id,code);
-        if(ret){clearTimeout(timer);delete window.__lenferWmsNativeCallbacks[id];resolve(wmsLooseJsonParse(ret));}
-      }else reject(new Error(WMS_AUTO_UNAVAILABLE));
+      if(!(window.LenferAndroidWms && typeof window.LenferAndroidWms[method]==='function'))throw new Error(WMS_AUTO_UNAVAILABLE);
+      const ret=window.LenferAndroidWms[method](id,...args);
+      if(ret){clearTimeout(timer);delete window.__lenferWmsNativeCallbacks[id];resolve(wmsLooseJsonParse(ret));}
     }catch(e){clearTimeout(timer);delete window.__lenferWmsNativeCallbacks[id];reject(e);}
   });
 }
+function wmsNativeLookup(code){return wmsCallNative('lookupWmsByCode',[code],30000);}
 function lenferWmsNativeResolve(id, payloadJson){
   const cb=window.__lenferWmsNativeCallbacks&&window.__lenferWmsNativeCallbacks[id];
   if(!cb)return;
@@ -604,30 +664,57 @@ function lenferWmsNativeReject(id, message){
   if(!cb)return;
   clearTimeout(cb.timer);delete window.__lenferWmsNativeCallbacks[id];cb.reject(new Error(message||'Ошибка Android WebView-моста'));
 }
+async function wmsLookupProductId(productId){
+  if(!productId){wmsSetStatus('Нет productId','err');return;}
+  wmsSetStatus('Тяну ячейки выбранного товара…','wait');
+  try{
+    const raw=await wmsCallNative('lookupWmsByProductId',[productId],30000);
+    const result=wmsNormalizeResult(raw);
+    wmsRenderResult(result);
+    wmsSetStatus('Готово: '+result.totalRows+' строк, '+result.totalQuantity+' шт.','ok');
+  }catch(e){wmsSetStatus((e&&e.message)||WMS_AUTO_UNAVAILABLE,'err');}
+}
+async function wmsLookupCellId(cellId, address){
+  if(!cellId){wmsSetStatus('Нет cellId','err');return;}
+  wmsSetStatus('Тяну содержимое ячейки '+(address||'')+'…','wait');
+  try{
+    const raw=await wmsCallNative('lookupWmsByCellId',[cellId,address||''],30000);
+    const result=wmsNormalizeResult(raw);
+    wmsRenderResult(result);
+    wmsSetStatus('Готово: '+result.totalRows+' строк, '+result.totalQuantity+' шт.','ok');
+  }catch(e){wmsSetStatus((e&&e.message)||WMS_AUTO_UNAVAILABLE,'err');}
+}
 async function wmsLookupFromApp(){
   const inp=document.getElementById('wms-query');
   const code=wmsCleanCode(inp?inp.value:'');
-  if(!code){wmsSetStatus('Введи УТ-код.','err');return;}
+  if(!code){wmsSetStatus('Введи УТ, ШК, название или ячейку.','err');return;}
   if(inp)inp.value=code;
-  wmsSetStatus('Ищу в ВМС: '+code+'…','wait');
+  wmsSetStatus('Ищу в ВМС: '+code+' · режим: '+wmsDetectMode(code)+'…','wait');
   try{
     let raw;
     if(typeof window.lookupWmsByCode==='function') raw=await window.lookupWmsByCode(code);
     else raw=await wmsNativeLookup(code);
-    const result=wmsNormalizeResult(raw);
-    wmsRenderResult(result);
-    wmsSetStatus('Готово: '+result.totalRows+' строк, '+result.totalQuantity+' шт.','ok');
+    const normalized=wmsNormalizeResult(raw);
+    if(normalized._kind){
+      wmsRenderChoices(normalized);
+      wmsSetStatus('Найдено несколько вариантов. Выбери нужный.','ok');
+      return;
+    }
+    wmsRenderResult(normalized);
+    wmsSetStatus('Готово: '+normalized.totalRows+' строк, '+normalized.totalQuantity+' шт.','ok');
   }catch(e){
     wmsSetStatus((e&&e.message)||WMS_AUTO_UNAVAILABLE,'err');
   }
 }
 function renderWms(){
   const box=document.getElementById('wms-result');
-  if(box && !wmsLastResult && !box.innerHTML){
-    box.innerHTML='<div class="hint" style="padding:34px 12px;"><span class="mark">✶</span><span class="txt">Введи УТ и жми «Найти»</span></div>';
+  if(box && !wmsLastResult && !wmsLastChoices && !box.innerHTML){
+    box.innerHTML='<div class="hint" style="padding:34px 12px;"><span class="mark">✶</span><span class="txt">Введи УТ, ШК, название или ячейку и жми «Найти»</span></div>';
   }
 }
 window.wmsLookupFromApp=wmsLookupFromApp;
+window.wmsLookupProductId=wmsLookupProductId;
+window.wmsLookupCellId=wmsLookupCellId;
 window.wmsParseImport=wmsParseImport;
 window.wmsClearResult=wmsClearResult;
 window.wmsPrefixUt=wmsPrefixUt;
