@@ -90,17 +90,17 @@
 <div class="section-title">Поиск в ВМС</div>
 </div>
 <div class="wms-panel">
-<div class="wms-warning"><b>Рабочий режим:</b> Android-обёртка. Сначала сверху открой «ВМС вход» и залогинься, потом здесь вводи УТ и жми «Найти». Ручной импорт спрятан ниже только для диагностики, не для смены.</div>
-<label class="modal-lbl">УТ-код</label>
+<div class="wms-warning"><b>Рабочий режим:</b> Android-обёртка. Сначала сверху открой «ВМС вход» и залогинься. Потом здесь можно искать по УТ, ШК, названию или ячейке. Ручной импорт ниже — только диагностика.</div>
+<label class="modal-lbl">УТ / ШК / название / ячейка</label>
 <div class="wms-search-row">
-<input class="calc-inp" id="wms-query" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="УТ-10547087" style="margin-bottom:0;" type="text"/>
+<input class="calc-inp" id="wms-query" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="УТ-10547087 / святой источник / SH-11-62-2-1" style="margin-bottom:0;" type="text"/>
 <button class="exi-btn primary" onclick="wmsLookupFromApp()">Найти</button>
 </div>
 <div class="wms-actions">
 <button class="exi-btn" onclick="wmsPrefixUt()">УТ-</button>
 <button class="exi-btn" onclick="wmsClearResult()">Очистить</button>
 </div>
-<div class="wms-status" id="wms-status">Готов. Открой «ВМС вход», залогинься и возвращайся сюда.</div>
+<div class="wms-status" id="wms-status">Готов. Открой «ВМС вход», залогинься и возвращайся сюда. Ищи УТ, ШК, название или ячейку.</div>
 <details class="wms-import-fold">
 <summary>Диагностика / ручной импорт JSON</summary>
 <div class="wms-warning" style="margin-top:10px;">Это аварийный режим для проверки парсера. В нормальной работе им пользоваться не надо.</div>
@@ -755,7 +755,7 @@
 <div class="modal-title">Новый товар</div>
 <label class="modal-lbl">Наименование *</label>
 <input class="modal-inp" id="item-name" placeholder="Название товара" type="text"/>
-<label class="modal-lbl">УТ-код</label>
+<label class="modal-lbl">УТ / ШК / название / ячейка</label>
 <input class="modal-inp" id="item-ut" placeholder="УТ-XXXXXXXX" type="text"/>
 <label class="modal-lbl">Штрихкод</label>
 <input class="modal-inp" id="item-bc" inputmode="numeric" placeholder="Введите ШК" type="text"/>
