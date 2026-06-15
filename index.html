@@ -12,19 +12,19 @@
 <meta content="L'Enfer" name="apple-mobile-web-app-title"/>
 <link href="./icons/icon-192.png" rel="apple-touch-icon"/>
 <title>L'Enfer</title>
-<!-- build: pwa-json-barcodes-v48-android-wms -->
-<script src="./assets/js/vendor/zxing.min.js?v=20260615-v38-android-wms"></script>
+<!-- build: pwa-json-barcodes-v56-ui-v46 -->
+<script src="./assets/js/vendor/zxing.min.js?v=20260615-v46-android-ui"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script id="auth-gate-v43" src="./assets/js/auth-gate.js?v=20260615-v38-android-wms"></script>
-<link href="./assets/css/app.css?v=20260615-v38-android-wms" rel="stylesheet"/>
-<meta content="modular-files-sync-v38-android-wms" name="lenfer-build"/></head>
+<script id="auth-gate-v43" src="./assets/js/auth-gate.js?v=20260615-v46-android-ui"></script>
+<link href="./assets/css/app.css?v=20260615-v46-android-ui" rel="stylesheet"/>
+<meta content="modular-files-sync-v46-android-ui" name="lenfer-build"/></head>
 <body>
 <div class="app-error-banner" id="app-error-banner"></div>
-<script src="./assets/js/error-banner.js?v=20260615-v38-android-wms"></script>
-<script src="./assets/js/pwa-and-search-boot.js?v=20260615-v38-android-wms"></script>
+<script src="./assets/js/error-banner.js?v=20260615-v46-android-ui"></script>
+<script src="./assets/js/pwa-and-search-boot.js?v=20260615-v46-android-ui"></script>
 <header>
 <div class="header-top">
 <div class="brand">
@@ -38,7 +38,7 @@
 <button class="hbtn" onclick="location.reload()">↻</button>
 </div>
 </div>
-<div aria-label="Быстрый доступ WMS" class="wms-quick">
+<div aria-label="Быстрый доступ WMS" class="wms-quick wms-quick-global">
 <a class="wms-qbtn main" href="https://wwh.samokat.ru/#/recounting-tasks?status=AWAITING_CONFIRMATION&amp;sortCompletedDate=DESC&amp;pageNumber=1" rel="noopener noreferrer" target="_blank" title="Подтвердить пересчёт">Пересчёт</a>
 <a class="wms-qbtn" href="https://wwh.samokat.ru/#/stocks/details?pageNumber=1" rel="noopener noreferrer" target="_blank" title="Детализация остатков">Остатки</a>
 <a class="wms-qbtn" href="https://wwh.samokat.ru/#/stocks/changes" rel="noopener noreferrer" target="_blank" title="Изменение остатка">Изменения</a>
@@ -90,17 +90,23 @@
 <div class="section-title">Поиск в ВМС</div>
 </div>
 <div class="wms-panel">
-<div class="wms-warning"><b>Рабочий режим:</b> Android-обёртка. Сначала сверху открой «ВМС вход» и залогинься. Потом здесь можно искать по УТ, ШК, названию или ячейке. Ручной импорт ниже — только диагностика.</div>
-<label class="modal-lbl">УТ / ШК / название / ячейка</label>
+<div class="wms-warning"><b>Рабочий режим:</b> Android-обёртка. Сначала сверху открой «ВМС вход» и залогинься. Потом здесь можно искать по УТ, ШК, названию, ячейке или ЕО. Выгружает все страницы результата. В изменениях результат показывается карточками, есть фильтр «Хранение HH/SH». Ручной импорт ниже — только диагностика.</div>
+<label class="modal-lbl">УТ / ШК / название / ячейка / ЕО</label>
+<div class="wms-hub-tabs" style="margin-top:0;margin-bottom:10px;">
+<button class="exi-btn primary" id="wms-mode-stocks" onclick="wmsSetLookupKind('stocks')">Остатки</button>
+<button class="exi-btn" id="wms-mode-changes" onclick="wmsSetLookupKind('changes')">Изменения</button>
+<button class="exi-btn" onclick="wmsOpenRecounting()">Пересчёт</button>
+<button class="exi-btn" onclick="wmsOpenLabels()">Этикетки</button>
+</div>
 <div class="wms-search-row">
-<input class="calc-inp" id="wms-query" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="УТ-10547087 / святой источник / SH-11-62-2-1" style="margin-bottom:0;" type="text"/>
+<input class="calc-inp" id="wms-query" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="УТ-10547087 / святой источник / SH-11-62-2-1 / 022200231322" style="margin-bottom:0;" type="text"/>
 <button class="exi-btn primary" onclick="wmsLookupFromApp()">Найти</button>
 </div>
 <div class="wms-actions">
 <button class="exi-btn" onclick="wmsPrefixUt()">УТ-</button>
 <button class="exi-btn" onclick="wmsClearResult()">Очистить</button>
 </div>
-<div class="wms-status" id="wms-status">Готов. Открой «ВМС вход», залогинься и возвращайся сюда. Ищи УТ, ШК, название или ячейку.</div>
+<div class="wms-status" id="wms-status">Готов. Выбери «Остатки» или «Изменение остатка», затем введи УТ, ШК, название, ячейку или ЕО.</div>
 <details class="wms-import-fold">
 <summary>Диагностика / ручной импорт JSON</summary>
 <div class="wms-warning" style="margin-top:10px;">Это аварийный режим для проверки парсера. В нормальной работе им пользоваться не надо.</div>
@@ -736,26 +742,35 @@
 </main>
 <button class="fab" onclick="openModal('item-modal')">+</button>
 <nav class="bottomnav">
-<button class="navbtn active" data-tab="catalog" onclick="switchTab('catalog')"><span class="ico">📦</span><span class="lbl">Товары</span></button>
-<button class="navbtn" data-tab="cells" onclick="switchTab('cells')"><span class="ico">📍</span><span class="lbl">Ячейки</span></button>
-<button class="navbtn" data-tab="wms" onclick="switchTab('wms')"><span class="ico">🛰️</span><span class="lbl">ВМС</span></button>
-<button class="navbtn" data-tab="calc" onclick="switchTab('calc')"><span class="ico">🧮</span><span class="lbl">Счёт</span></button>
-<button class="navbtn" data-tab="hh11" onclick="switchTab('hh11')"><span class="ico">🧾</span><span class="lbl">HH 1-1</span></button>
-<button class="navbtn" data-tab="rk" onclick="switchTab('rk')"><span class="ico">🔎</span><span class="lbl">РК</span></button>
+<button class="navbtn active" data-tab="cells" onclick="switchTab('cells')"><span class="ico">📍</span><span class="lbl">Ячейки</span></button>
+<button class="navbtn" data-tab="wms" onclick="switchTab('wms')"><span class="ico">🐈‍⬛</span><span class="lbl">ВМС</span></button>
 <button class="navbtn" data-tab="problems" onclick="switchTab('problems')"><span class="ico">⚠️</span><span class="lbl">Проблемы</span></button>
-<button class="navbtn" data-tab="eo" onclick="switchTab('eo')"><span class="ico">🏷️</span><span class="lbl">ЕО</span></button>
-<button class="navbtn" data-tab="notes" onclick="switchTab('notes')"><span class="ico">📝</span><span class="lbl">Заметки</span></button>
-<button class="navbtn" data-tab="creds" onclick="switchTab('creds')"><span class="ico">🔑</span><span class="lbl">Доступы</span></button>
-<button class="navbtn" data-tab="service" onclick="switchTab('service')"><span class="ico">⚙️</span><span class="lbl">Сервис</span></button>
 <button class="navbtn" data-tab="report" onclick="switchTab('report')"><span class="ico">📋</span><span class="lbl">Отчёт</span></button>
+<button class="navbtn" data-tab="more" onclick="openMoreMenu()"><span class="ico">☰</span><span class="lbl">Ещё</span></button>
 </nav>
+<div class="more-sheet-overlay" id="more-sheet" onclick="if(event.target===this)closeMoreMenu()" style="display:none">
+  <div class="more-sheet" role="dialog" aria-modal="true" aria-label="Ещё">
+    <div class="more-sheet-handle"></div>
+    <div class="more-sheet-title">Ещё</div>
+    <div class="more-grid">
+      <button onclick="moreGo('catalog')"><span>📦</span><b>Товары</b><small>Каталог и ШК</small></button>
+      <button onclick="moreGo('calc')"><span>🧮</span><b>Счёт</b><small>Пересчёт ряда</small></button>
+      <button onclick="moreGo('hh11')"><span>🧾</span><b>HH 1-1</b><small>Проверка HH</small></button>
+      <button onclick="moreGo('rk')"><span>🔎</span><b>РК</b><small>Проверка РК</small></button>
+      <button onclick="moreGo('eo')"><span>🏷️</span><b>ЕО</b><small>Коды и печать</small></button>
+      <button onclick="moreGo('notes')"><span>📝</span><b>Заметки</b><small>Быстрые записи</small></button>
+      <button onclick="moreGo('creds')"><span>🔑</span><b>Доступы</b><small>Локально</small></button>
+      <button onclick="moreGo('service')"><span>⚙️</span><b>Сервис</b><small>Бэкап и база</small></button>
+    </div>
+  </div>
+</div>
 <!-- ITEM MODAL -->
 <div class="overlay" id="item-modal" onclick="if(event.target===this)closeModal('item-modal')" style="display:none">
 <div class="modal">
 <div class="modal-title">Новый товар</div>
 <label class="modal-lbl">Наименование *</label>
 <input class="modal-inp" id="item-name" placeholder="Название товара" type="text"/>
-<label class="modal-lbl">УТ / ШК / название / ячейка</label>
+<label class="modal-lbl">УТ / ШК / название / ячейка / ЕО</label>
 <input class="modal-inp" id="item-ut" placeholder="УТ-XXXXXXXX" type="text"/>
 <label class="modal-lbl">Штрихкод</label>
 <input class="modal-inp" id="item-bc" inputmode="numeric" placeholder="Введите ШК" type="text"/>
@@ -884,6 +899,6 @@
 </div>
 </div>
 </div>
-<script src="./assets/data/static-data.js?v=20260615-v38-android-wms"></script><script src="./assets/js/app.js?v=20260615-v38-android-wms"></script>
+<script src="./assets/data/static-data.js?v=20260615-v46-android-ui"></script><script src="./assets/js/app.js?v=20260615-v46-android-ui"></script>
 </body>
 </html>

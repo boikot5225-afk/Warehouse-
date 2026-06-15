@@ -1,6 +1,6 @@
-/* L'Enfer PWA service worker — v50 universal android wms wrapper
+/* L'Enfer PWA service worker — v56 android ui compact nav
    Network-first worker: old cached index.html should not haunt the app. */
-const SW_VERSION = 'lenfer-v39-universal-wms-20260615';
+const SW_VERSION = 'lenfer-v46-android-ui-20260615';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

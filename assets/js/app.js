@@ -365,8 +365,14 @@ function drawBarcode(canvas,text){
 
 // ── TABS ──
 const TABS=['catalog','cells','wms','notes','eo','creds','calc','hh11','rk','problems','report','service'];
+const MAIN_NAV_TABS=['cells','wms','problems','report'];
+function openMoreMenu(){const el=document.getElementById('more-sheet');if(el)el.style.display='flex';}
+function closeMoreMenu(){const el=document.getElementById('more-sheet');if(el)el.style.display='none';}
+function moreGo(tab){closeMoreMenu();switchTab(tab);}
+window.openMoreMenu=openMoreMenu;window.closeMoreMenu=closeMoreMenu;window.moreGo=moreGo;
 function switchTab(tab){
-  document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active', b.dataset.tab===tab));
+  const navTab=MAIN_NAV_TABS.includes(tab)?tab:'more';
+  document.querySelectorAll('.navbtn').forEach(b=>b.classList.toggle('active', b.dataset.tab===navTab));
   TABS.forEach(t=>{const el=document.getElementById('tab-'+t);if(el)el.style.display=t===tab?'':'none';});
   document.getElementById('catalog-search-area').style.display = tab==='catalog'?'':'none';
   document.querySelector('.fab').style.display = (tab==='catalog' && !document.querySelector('.card.open'))?'flex':'none';
@@ -388,7 +394,34 @@ window.switchTab = switchTab;
 // ── WMS IMPORT / BRIDGE ──
 let wmsLastResult = null;
 let wmsLastChoices = null;
+let wmsLookupKind = 'stocks';
+let wmsChangeFilter = 'all';
+let wmsChangeDirectionFilter = 'all';
+let wmsChangeOperationFilter = 'all';
+let wmsStorageOnly = false;
 const WMS_AUTO_UNAVAILABLE = 'Авто-поиск доступен только в Android-обёртке с ВМС-входом. Обычная PWA в браузере не может сама ходить в ВМС.';
+
+
+function wmsIsStorageCellAddress(addr){
+  const s=String(addr||'').trim().toUpperCase();
+  // Основные ячейки хранения. Ворота/G/A/напольные зоны сюда не попадают.
+  return /^(HH|SH)-/.test(s);
+}
+function wmsRowHasStorageCell(r){
+  return wmsIsStorageCellAddress(r&&r.cellAddress) || wmsIsStorageCellAddress(r&&r.sourceCellAddress) || wmsIsStorageCellAddress(r&&r.targetCellAddress);
+}
+function wmsApplyStorageFilter(rows){
+  rows=rows||[];
+  return wmsStorageOnly ? rows.filter(wmsRowHasStorageCell) : rows;
+}
+function wmsToggleStorageOnly(){
+  wmsStorageOnly=!wmsStorageOnly;
+  if(wmsLastResult)wmsRenderResult(wmsLastResult);
+  wmsSetStatus(wmsStorageOnly?'Фильтр: только ячейки хранения HH/SH.':'Фильтр хранения выключен.','');
+}
+function wmsStorageToggleButton(){
+  return '<button class="exi-btn '+(wmsStorageOnly?'primary':'')+'" onclick="wmsToggleStorageOnly()">Хранение HH/SH</button>';
+}
 
 function wmsSetStatus(text, kind){
   const el=document.getElementById('wms-status');
@@ -405,19 +438,47 @@ function wmsPrefixUt(){
   el.focus();
 }
 function wmsCleanCode(v){
-  v=String(v||'').trim();
+  v=String(v||'').trim().replace(/ /g,' ').replace(/\s+/g,' ');
   if(!v)return '';
-  v=v.replace(/^ut-/i,'УТ-').replace(/^ут-/i,'УТ-');
+  v=v.replace(/^ut[-\s]?/i,'УТ-').replace(/^ут[-\s]?/i,'УТ-');
+  // Быстрый ввод УТ без префикса: 10433877 → УТ-10433877.
+  // Длинные 12/13/14-значные коды не трогаем: это ЕО/HU или ШК.
+  if(/^\d{5,8}$/.test(v))v='УТ-'+v;
   return v;
 }
 function wmsDetectMode(v){
   const q=String(v||'').trim();
   const up=q.toUpperCase();
   if(/^УТ-?\d+/.test(up))return 'УТ';
-  if(!/\s/.test(up) && up.includes('-') && !up.startsWith('УТ-'))return 'Ячейка';
-  if(/^\d{8,14}$/.test(q))return 'ШК/название';
+  if(/^0\d{11}$/.test(q))return 'ЕО/HU';
+  if(!/\s/.test(up) && !/^\d+$/.test(up) && (up.includes('-') || /^(HH|SH)/.test(up) || /^[A-ZА-Я]{1,4}\d{1,4}[A-ZА-Я]?$/.test(up) || /^\d{2,4}[A-ZА-Я]{1,3}$/.test(up)))return 'Ячейка';
+  if(/^\d{9,14}$/.test(q))return 'ШК/название';
   return 'Название';
 }
+function wmsSetLookupKind(kind){
+  wmsLookupKind = kind==='changes' ? 'changes' : 'stocks';
+  wmsRefreshModeButtons();
+  wmsSetStatus(wmsLookupKind==='changes' ? 'Режим: изменение остатка. Введи УТ, ШК, название, ячейку или ЕО.' : 'Режим: текущие остатки. Введи УТ, ШК, название, ячейку или ЕО.', '');
+}
+function wmsRefreshModeButtons(){
+  const s=document.getElementById('wms-mode-stocks');
+  const c=document.getElementById('wms-mode-changes');
+  if(s){s.classList.toggle('primary', wmsLookupKind==='stocks');}
+  if(c){c.classList.toggle('primary', wmsLookupKind==='changes');}
+}
+function wmsOpenUrl(url){
+  try{
+    window.open(url,'_blank','noopener,noreferrer');
+    wmsSetStatus('Открыл ВМС-раздел. Если Android-обёртка не переключилась — нажми сверху «ВМС вход».','ok');
+  }catch(e){ location.href=url; }
+}
+function wmsOpenRecounting(){
+  wmsOpenUrl('https://wwh.samokat.ru/#/recounting-tasks?status=AWAITING_CONFIRMATION&sortCompletedDate=DESC&pageNumber=1');
+}
+function wmsOpenLabels(){
+  wmsOpenUrl('https://wwh.samokat.ru/#/handing-units/print');
+}
+window.wmsOpenRecounting=wmsOpenRecounting;window.wmsOpenLabels=wmsOpenLabels;
 function wmsCopyFallback(text){
   text=String(text||'');
   if(navigator.clipboard&&navigator.clipboard.writeText){return navigator.clipboard.writeText(text).catch(()=>wmsCopyTextarea(text));}
@@ -429,7 +490,8 @@ function wmsCopyTextarea(text){
 function wmsClearResult(){
   wmsLastResult=null;wmsLastChoices=null;
   const box=document.getElementById('wms-result');if(box)box.innerHTML='';
-  wmsSetStatus('Очищено. Введи УТ, ШК, название или ячейку.','');
+  wmsSetStatus('Очищено. Введи УТ, ШК, название, ячейку или ЕО.','');
+  wmsRefreshModeButtons();
 }
 function wmsClearImportText(){const el=document.getElementById('wms-import-text');if(el)el.value='';}
 async function wmsPasteImportFromClipboard(){
@@ -468,6 +530,88 @@ function wmsLooseJsonParse(text){
   s=s.replace(/,\s*([}\]])/g,'$1');
   try{return JSON.parse(s);}catch(e){throw new Error('Не смог разобрать. Скопируй именно raw Response JSON без троеточий.');}
 }
+function wmsFullName(u){
+  u=u||{};
+  return [u.lastName,u.firstName,u.middleName].filter(Boolean).join(' ').trim();
+}
+function wmsQtyPairText(q){
+  q=q||{};
+  const oldQ = q.oldQuantity;
+  const newQ = q.newQuantity;
+  if(oldQ==null && newQ==null)return '';
+  return String(oldQ??'')+' → '+String(newQ??'');
+}
+function wmsMapChangeItem(item){
+  item=item||{};
+  const p=item.product||{};
+  const part=item.part||{};
+  const src=item.sourceAddress||item.source||{};
+  const tgt=item.targetAddress||item.target||{};
+  const user=item.responsibleUser||item.executor||{};
+  const barcodes=Array.isArray(p.barcodes)?p.barcodes.filter(Boolean):[];
+  const sq=item.sourceQuantity||{};
+  const tq=item.targetQuantity||{};
+  let sourceDelta='';
+  let targetDelta='';
+  if(sq.oldQuantity!=null || sq.newQuantity!=null){sourceDelta=(Number(sq.newQuantity||0)-Number(sq.oldQuantity||0));}
+  if(tq.oldQuantity!=null || tq.newQuantity!=null){targetDelta=(Number(tq.newQuantity||0)-Number(tq.oldQuantity||0));}
+  return {
+    operationType:String(item.operationType||item.operation||'').trim(),
+    operationStartedAt:String(item.operationStartedAt||item.createdAt||item.startedAt||'').trim(),
+    operationCompletedAt:String(item.operationCompletedAt||item.completedAt||'').trim(),
+    userName:wmsFullName(user),
+    productId:String(p.productId||p.id||item.productId||'').trim(),
+    name:String(p.name||p.productName||item.productName||item.name||'').trim(),
+    nomenclatureCode:String(p.nomenclatureCode||item.nomenclatureCode||'').trim(),
+    barcodes:barcodes,
+    barcode:String(barcodes[0]||p.barcode||item.barcode||'').trim(),
+    imageUrl:String(p.imageUrl||item.imageUrl||'').trim(),
+    productionDate:String(part.productionDate||item.productionDate||'').trim(),
+    bestBeforeDate:String(part.bestBeforeDate||item.bestBeforeDate||'').trim(),
+    sourceCellAddress:String(src.cellAddress||src.fullAddress||src.address||item.sourceCellAddress||'').trim(),
+    sourceHandlingUnitBarcode:String(src.handlingUnitBarcode||item.sourceHandlingUnitBarcode||'').trim(),
+    targetCellAddress:String(tgt.cellAddress||tgt.fullAddress||tgt.address||item.targetCellAddress||'').trim(),
+    targetHandlingUnitBarcode:String(tgt.handlingUnitBarcode||item.targetHandlingUnitBarcode||'').trim(),
+    sourceQuantityText:wmsQtyPairText(sq),
+    targetQuantityText:wmsQtyPairText(tq),
+    sourceDelta:sourceDelta,
+    targetDelta:targetDelta,
+    type:String(item.type||'').trim(),
+    status:String(item.status||'').trim()
+  };
+}
+function wmsFindChangeItems(obj, depth){
+  depth=depth||0;
+  if(!obj || depth>7)return null;
+  if(Array.isArray(obj)){
+    if(obj.some(x=>x&&typeof x==='object'&&(x.operationType||x.sourceAddress||x.targetAddress||x.sourceQuantity||x.targetQuantity)))return obj;
+    for(const x of obj){const r=wmsFindChangeItems(x,depth+1);if(r)return r;}
+    return null;
+  }
+  if(typeof obj==='object'){
+    if(obj.value&&Array.isArray(obj.value.items)&&obj.value.items.some(x=>x&&(x.operationType||x.sourceAddress||x.targetAddress)))return obj.value.items;
+    if(Array.isArray(obj.items)&&obj.items.some(x=>x&&(x.operationType||x.sourceAddress||x.targetAddress)))return obj.items;
+    for(const k of Object.keys(obj)){const r=wmsFindChangeItems(obj[k],depth+1);if(r)return r;}
+  }
+  return null;
+}
+function wmsNormalizeChangesResult(payload){
+  const items=wmsFindChangeItems(payload)||[];
+  if(!items.length)throw new Error('В ответе не нашёл строки изменения остатка');
+  const rows=items.map(wmsMapChangeItem).filter(r=>r.operationType||r.name||r.nomenclatureCode||r.sourceCellAddress||r.targetCellAddress);
+  if(!rows.length)throw new Error('Строки изменений есть, но нужных полей не нашёл');
+  const first=rows.find(r=>r.name||r.nomenclatureCode)||rows[0]||{};
+  return {
+    mode:payload._mode||'changes',
+    query:payload._query||'',
+    cellAddress:payload._cellAddress||'',
+    product:{name:first.name||'Изменение остатка', nomenclatureCode:first.nomenclatureCode||'', barcode:first.barcode||'', barcodes:first.barcodes||[], imageUrl:first.imageUrl||'', productId:first.productId||''},
+    rows:rows,
+    totalRows:rows.length,
+    totalQuantity:0,
+    total: (payload.value&&payload.value.total)||payload.total||rows.length
+  };
+}
 function wmsMapStockItem(item){
   item=item||{};
   const p=item.product||{};
@@ -496,6 +640,7 @@ function wmsMapStockItem(item){
 function wmsNormalizeResult(payload){
   if(!payload)throw new Error('Пустой ответ');
   if(payload._kind==='productChoices'||payload._kind==='cellChoices')return payload;
+  if((payload._mode&&String(payload._mode).indexOf('changes')===0) || wmsFindChangeItems(payload))return wmsNormalizeChangesResult(payload);
   const mode=payload._mode || '';
   if(payload.product && Array.isArray(payload.rows)){
     const rows=payload.rows.map(r=>({
@@ -519,8 +664,22 @@ function wmsNormalizeResult(payload){
   };
 }
 function wmsFormatCells(result){
-  const rows=(result&&result.rows)||[];
-  if((result&&result.mode)==='cell'){
+  const rows=wmsApplyStorageFilter((result&&result.rows)||[]);
+  if((result&&String(result.mode||'').indexOf('changes')===0)){
+    return rows.map(r=>[
+      wmsDateShort(r.operationStartedAt),
+      r.operationType||'Операция',
+      r.nomenclatureCode||'',
+      r.name||'',
+      r.sourceCellAddress?('из '+r.sourceCellAddress):'',
+      r.targetCellAddress?('в '+r.targetCellAddress):'',
+      r.sourceQuantityText?('источник '+r.sourceQuantityText):'',
+      r.targetQuantityText?('цель '+r.targetQuantityText):'',
+      r.sourceHandlingUnitBarcode?('HU '+r.sourceHandlingUnitBarcode):'',
+      r.userName||''
+    ].filter(Boolean).join(' — ')).join('\n');
+  }
+  if((result&&result.mode)==='cell' || (result&&result.mode)==='hu'){
     return rows.map(r=>[
       r.nomenclatureCode||'—',
       r.name||'Товар',
@@ -546,18 +705,24 @@ function wmsRenderChoices(payload){
     const products=payload.products||[];
     const html=products.map((p,i)=>{
       const safeId=escHtml(p.productId||'');
-      return '<button class="wms-choice" onclick="wmsLookupProductId(\''+safeId+'\')">'+
+      const score=p.matchScore!=null?(' · совпадение '+p.matchScore):'';
+      const variant=p.matchVariant?(' · искал: '+p.matchVariant):'';
+      return '<button class="wms-choice" onclick="wmsLookupChosenProductId(\''+safeId+'\')">'+
         (p.imageUrl?'<img class="wms-choice-img" src="'+escHtml(p.imageUrl)+'" loading="lazy" onerror="this.style.display=\'none\'">':'')+
-        '<span><b>'+escHtml(p.name||'Товар')+'</b><small>'+escHtml(p.nomenclatureCode||'')+'</small></span></button>';
+        '<span><b>'+escHtml(p.name||'Товар')+'</b><small>'+escHtml((p.nomenclatureCode||'')+score+variant)+'</small></span></button>';
     }).join('');
-    box.innerHTML='<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">Найдено товаров: '+escHtml(payload.total||products.length)+'</div><div class="wms-meta">Выбери нужный товар, потом подтяну ячейки.</div></div></div><div class="wms-choices">'+html+'</div>';
+    box.innerHTML='<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">Найдено товаров: '+escHtml(payload.total||products.length)+'</div><div class="wms-meta">Лучшие совпадения сверху. Можно вводить криво: «сыр гол 150», «10433877», ШК, ячейку или ЕО.</div></div></div><div class="wms-choices">'+html+'</div>';
     return;
   }
   if(payload._kind==='cellChoices'){
     const cells=payload.cells||[];
-    const html=cells.map(c=>'<button class="wms-choice" onclick="wmsLookupCellId(\''+escHtml(c.cellId||'')+'\',\''+escHtml(c.fullAddress||'')+'\')"><span><b>'+escHtml(c.fullAddress||'Ячейка')+'</b><small>'+escHtml(c.cellId||'')+'</small></span></button>').join('');
+    const html=cells.map(c=>'<button class="wms-choice" onclick="wmsLookupChosenCellId(\''+escHtml(c.cellId||'')+'\',\''+escHtml(c.fullAddress||'')+'\')"><span><b>'+escHtml(c.fullAddress||'Ячейка')+'</b><small>'+escHtml(c.cellId||'')+'</small></span></button>').join('');
     box.innerHTML='<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">Найдено ячеек: '+escHtml(cells.length)+'</div><div class="wms-meta">Выбери ячейку, потом подтяну содержимое.</div></div></div><div class="wms-choices">'+html+'</div>';
   }
+}
+function wmsDateShort(s){
+  if(!s)return '';
+  try{return new Date(s).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}catch(e){return String(s);}
 }
 function wmsRenderResult(result){
   wmsLastResult=result;wmsLastChoices=null;
@@ -567,9 +732,26 @@ function wmsRenderResult(result){
   const barcode=p.barcode || (Array.isArray(p.barcodes)?p.barcodes[0]:'') || '';
   if(!rows.length){box.innerHTML='<div class="no-results">Нет строк остатков</div>';return;}
   let tableHead, rowsHtml, title, meta;
-  if(result.mode==='cell'){
-    title=p.name||('Содержимое ячейки '+(result.cellAddress||''));
-    meta='Ячейка: <b>'+escHtml(result.cellAddress||rows[0].cellAddress||'')+'</b> · Строк: <b>'+escHtml(result.totalRows||rows.length)+'</b> · Остаток: <b>'+escHtml(result.totalQuantity||0)+'</b> шт';
+  if(String(result.mode||'').indexOf('changes')===0){
+    title='Изменение остатка'+(result.query?': '+result.query:'');
+    meta='Строк: <b>'+escHtml(result.total||result.totalRows||rows.length)+'</b>'+(p.nomenclatureCode?(' · <b>'+escHtml(p.nomenclatureCode)+'</b>'):'')+(p.name&&p.name!=='Изменение остатка'?('<br>'+escHtml(p.name)):'');
+    tableHead='<tr><th>Дата</th><th>Операция</th><th>Товар</th><th>УТ</th><th>Откуда</th><th>Куда</th><th>Источник</th><th>Цель</th><th>HU</th><th>Исполнитель</th></tr>';
+    rowsHtml=rows.map(r=>'<tr>'+[
+      '<td>'+escHtml(wmsDateShort(r.operationStartedAt))+'</td>',
+      '<td><b>'+escHtml(r.operationType||'')+'</b></td>',
+      '<td><b>'+escHtml(r.name||'—')+'</b><br><small>'+escHtml(r.bestBeforeDate?('до '+r.bestBeforeDate):'')+'</small></td>',
+      '<td>'+escHtml(r.nomenclatureCode||'')+'</td>',
+      '<td>'+escHtml(r.sourceCellAddress||'')+'</td>',
+      '<td>'+escHtml(r.targetCellAddress||'')+'</td>',
+      '<td>'+escHtml(r.sourceQuantityText||'')+'</td>',
+      '<td>'+escHtml(r.targetQuantityText||'')+'</td>',
+      '<td>'+escHtml(r.sourceHandlingUnitBarcode||r.targetHandlingUnitBarcode||'')+'</td>',
+      '<td>'+escHtml(r.userName||'')+'</td>'
+    ].join('')+'</tr>').join('');
+  }else if(result.mode==='cell' || result.mode==='hu'){
+    const isHu=result.mode==='hu';
+    title=p.name||(isHu?('Содержимое ЕО '+(result.query||'')):('Содержимое ячейки '+(result.cellAddress||'')));
+    meta=(isHu?('ЕО/HU: <b>'+escHtml(result.query||rows[0].handlingUnitBarcode||'')+'</b>'):('Ячейка: <b>'+escHtml(result.cellAddress||rows[0].cellAddress||'')+'</b>'))+' · Строк: <b>'+escHtml(result.totalRows||rows.length)+'</b> · Остаток: <b>'+escHtml(result.totalQuantity||0)+'</b> шт';
     tableHead='<tr><th>Товар</th><th>УТ</th><th>ШК</th><th>Кол-во</th><th>Срок</th><th>HU</th><th>Статус</th></tr>';
     rowsHtml=rows.map(r=>'<tr>'+[
       '<td><b>'+escHtml(r.name||'—')+'</b></td>',
@@ -601,6 +783,7 @@ function wmsRenderResult(result){
       '<div class="wms-meta">'+meta+'</div></div>'+ 
     '</div>'+ 
     '<div class="wms-actions wms-result-actions">'+
+      wmsStorageToggleButton()+
       '<button class="exi-btn primary" onclick="wmsCopyCells()">Скопировать</button>'+ 
       '<button class="exi-btn" onclick="wmsCopyProduct()">УТ/ШК</button>'+ 
       '<button class="exi-btn" onclick="wmsSaveAsProblem()">В проблемы</button>'+ 
@@ -625,6 +808,420 @@ function wmsSaveAsProblem(){
   const arr=getProblems();arr.unshift(row);set('problems_log',arr);logAction('problem','Создана проблема из ВМС: '+(row.ut||row.name||row.cell||'ВМС'),{ut:row.ut,cell:row.cell});
   wmsSetStatus('Добавлено в проблемы.','ok');
 }
+
+
+// ── WMS MOBILE CHANGE CARDS v41 ──
+function wmsOperationCategory(code){
+  const c=String(code||'').trim().toUpperCase();
+  if(!c)return 'other';
+  if(/RECOUNTING|UNEXPECTED_STOCK_DISCREPANCY_CONFIRMATION|NOT_FOUND_STOCK_DISCREPANCY_CONFIRMATION|INVENT|RECOUNT|COUNT|STOCK_TAKE|STOCKTAKE|AUDIT/.test(c))return 'inventory';
+  if(/FREE_MOVEMENT|MOVE_TO_READY_ORDERS_ZONE|PALLET_SELECTION_MOVE_TO_PICK_BY_LINE|RELOC|MOVE|MOVEMENT|TRANSFER|TRANSPORT/.test(c))return 'move';
+  if(/STORAGE_PLACEMENT|PUT.?AWAY|PLACEMENT|PLACE|STORAGE|STORE/.test(c))return 'placement';
+  if(/PIECE_SELECTION_PICKING_REPLENISHMENT|REPLENISH|REFILL/.test(c))return 'replenishment';
+  if(/PICK_BY_LINE|PIECE_SELECTION_PICKING|PIECE_SELECTION_PICKING_COMPLETE|PIECE_SELECTION_HANDLING_UNIT_DESCENT/.test(c))return 'picking';
+  if(/HANDLING_UNIT_CONSOLIDATION|SHIPMENT_HANDLING_UNIT_CONSOLIDATION|CONSOLIDATION_BY_PRODUCT/.test(c))return 'consolidation';
+  if(/MOVE_TO_SHIPMENT_ZONE|SHIPMENT_TASK|SHIPMENT_ROUTE|SHIPMENT|ROUTE|ORDER/.test(c))return 'shipment';
+  if(/LOAD|LOADING|TC|TRUCK|VEHICLE/.test(c))return 'load';
+  if(/SMART_IMPORT_RECEIVING|RECEIVING|ACCEPT|RECEIPT|RECEIVE|ARRIVAL|INBOUND/.test(c))return 'acceptance';
+  if(/DEFECTIVE_STOCK|WRITE.?OFF|DISPOS|DAMAGE|LOSS|DEFECT|SCRAP|WASTE/.test(c))return 'writeoff';
+  if(/RESERVE|RESERVATION/.test(c))return 'reserve';
+  if(/RETURN/.test(c))return 'return';
+  if(/CANCEL|CANCELLATION|ROLLBACK/.test(c))return 'cancel';
+  return 'other';
+}
+function wmsOperationLabel(code){
+  const c=String(code||'').trim();
+  const up=c.toUpperCase();
+  const map={
+    SHIPMENT_ROUTE:'Отгрузка по маршруту',
+    SHIPMENT_TASK:'Задача отгрузки',
+    MOVE_TO_SHIPMENT_ZONE:'Перемещение в зону отгрузки',
+    SHIPMENT_HANDLING_UNIT_CONSOLIDATION:'Консолидация ЕО отгрузки',
+    SHIPMENT:'Отгрузка',
+    LOADING_TO_TC:'Загрузка в ТС',
+    LOAD_TO_TC:'Загрузка в ТС',
+    TC_LOADING:'Загрузка в ТС',
+    FREE_MOVEMENT:'Свободное перемещение',
+    MOVE_TO_READY_ORDERS_ZONE:'В зону готовых заказов',
+    PALLET_SELECTION_MOVE_TO_PICK_BY_LINE:'Паллету в отбор по линии',
+    MOVEMENT:'Перемещение',
+    RELOCATION:'Перемещение',
+    MOVE:'Перемещение',
+    RECEIVING:'Приёмка',
+    SMART_IMPORT_RECEIVING:'Smart Import приёмка',
+    ACCEPTANCE:'Приёмка',
+    RECEIPT:'Приёмка',
+    RECOUNTING:'Пересчёт',
+    UNEXPECTED_STOCK_DISCREPANCY_CONFIRMATION:'Подтверждение излишка',
+    NOT_FOUND_STOCK_DISCREPANCY_CONFIRMATION:'Подтверждение недостачи',
+    INVENTORY:'Инвентаризация',
+    INVENTORY_CORRECTION:'Корректировка инвентаризации',
+    DEFECTIVE_STOCK_PICKING:'Отбор брака',
+    DEFECTIVE_STOCK_INSPECTION:'Проверка брака',
+    DEFECTIVE_STOCK_WRITE_OFF:'Списание брака',
+    WRITE_OFF:'Списание',
+    CANCELLATION:'Отмена',
+    RETURN:'Возврат',
+    RESERVE:'Резерв',
+    UNRESERVE:'Снятие резерва',
+    PICK_BY_LINE:'Отбор по линии',
+    PIECE_SELECTION_PICKING:'Поштучный отбор',
+    PIECE_SELECTION_PICKING_COMPLETE:'Завершение отбора',
+    PIECE_SELECTION_HANDLING_UNIT_DESCENT:'Спуск ЕО для отбора',
+    PIECE_SELECTION_PICKING_REPLENISHMENT:'Пополнение отбора',
+    HANDLING_UNIT_CONSOLIDATION:'Консолидация ЕО',
+    CONSOLIDATION_BY_PRODUCT:'Консолидация по товару',
+    STORAGE_PLACEMENT:'Размещение на хранение',
+    UNKNOWN:'Неизвестная операция'
+  };
+  if(map[up])return map[up];
+  const cat=wmsOperationCategory(up);
+  const labels={
+    inventory:'Инвентаризация',
+    move:'Перемещение',
+    placement:'Размещение',
+    replenishment:'Пополнение',
+    picking:'Отбор',
+    consolidation:'Консолидация',
+    shipment:'Отгрузка',
+    load:'Загрузка в ТС',
+    acceptance:'Приёмка',
+    writeoff:'Списание/брак',
+    reserve:'Резерв',
+    return:'Возврат',
+    cancel:'Отмена',
+    other:c||'Операция'
+  };
+  return labels[cat] || c || 'Операция';
+}
+function wmsDeltaClass(delta){
+  const n=Number(delta||0);
+  if(n>0)return 'pos';
+  if(n<0)return 'neg';
+  return 'zero';
+}
+function wmsDeltaText(delta){
+  if(delta===''||delta==null)return '';
+  const n=Number(delta||0);
+  return (n>0?'+':'')+String(n);
+}
+function wmsChangeMainDelta(r){
+  if(r.targetDelta!=='' && Number(r.targetDelta)!==0)return Number(r.targetDelta);
+  if(r.sourceDelta!=='' && Number(r.sourceDelta)!==0)return Number(r.sourceDelta);
+  if(r.targetDelta!=='')return Number(r.targetDelta||0);
+  if(r.sourceDelta!=='')return Number(r.sourceDelta||0);
+  return 0;
+}
+function wmsChangeDirectionText(r){
+  const src=r.sourceCellAddress||'';
+  const tgt=r.targetCellAddress||'';
+  if(src && tgt)return src+' → '+tgt;
+  if(src)return src;
+  if(tgt)return '→ '+tgt;
+  return 'Ячейка не указана';
+}
+function wmsChangeHuText(r){
+  const src=r.sourceHandlingUnitBarcode||'';
+  const tgt=r.targetHandlingUnitBarcode||'';
+  if(src && tgt && src!==tgt)return src+' → '+tgt;
+  return src||tgt||'';
+}
+function wmsIsOutgoing(r){
+  return Number(r.sourceDelta||0)<0 || /SHIPMENT|WRITE_OFF|OUT|LOAD/i.test(String(r.operationType||''));
+}
+function wmsIsIncoming(r){
+  return Number(r.targetDelta||0)>0 || /ACCEPT|RECEIPT|IN/i.test(String(r.operationType||''));
+}
+function wmsChangeDirectionFilterRows(rows, filter){
+  rows=rows||[];
+  const f=filter||'all';
+  if(f==='out')return rows.filter(wmsIsOutgoing);
+  if(f==='in')return rows.filter(wmsIsIncoming);
+  if(f==='zero')return rows.filter(r=>Number(wmsChangeMainDelta(r)||0)===0);
+  return rows;
+}
+function wmsChangeQuickFilterRows(rows, filter){
+  rows=rows||[];
+  const f=filter||'all';
+  if(f==='out')return rows.filter(wmsIsOutgoing);
+  if(f==='in')return rows.filter(wmsIsIncoming);
+  if(f==='shipment')return rows.filter(r=>wmsOperationCategory(r.operationType)==='shipment');
+  if(f==='load')return rows.filter(r=>wmsOperationCategory(r.operationType)==='load');
+  if(f==='inventory')return rows.filter(r=>wmsOperationCategory(r.operationType)==='inventory');
+  if(f==='move')return rows.filter(r=>wmsOperationCategory(r.operationType)==='move');
+  if(f==='placement')return rows.filter(r=>wmsOperationCategory(r.operationType)==='placement');
+  if(f==='replenishment')return rows.filter(r=>wmsOperationCategory(r.operationType)==='replenishment');
+  if(f==='acceptance')return rows.filter(r=>wmsOperationCategory(r.operationType)==='acceptance');
+  if(f==='writeoff')return rows.filter(r=>wmsOperationCategory(r.operationType)==='writeoff');
+  if(f==='picking')return rows.filter(r=>wmsOperationCategory(r.operationType)==='picking');
+  if(f==='consolidation')return rows.filter(r=>wmsOperationCategory(r.operationType)==='consolidation');
+  if(f==='other')return rows.filter(r=>wmsOperationCategory(r.operationType)==='other');
+  if(f==='zero')return rows.filter(r=>Number(wmsChangeMainDelta(r)||0)===0);
+  return rows;
+}
+function wmsFilteredChangeRows(rows){
+  rows=wmsApplyStorageFilter(rows||[]);
+  rows=wmsChangeDirectionFilterRows(rows,wmsChangeDirectionFilter||'all');
+  rows=wmsChangeQuickFilterRows(rows,wmsChangeFilter||'all');
+  const op=String(wmsChangeOperationFilter||'all');
+  if(op && op!=='all')rows=rows.filter(r=>String(r.operationType||'')===op);
+  return rows;
+}
+function wmsRefreshChangesIfNeeded(){
+  if(wmsLastResult && String(wmsLastResult.mode||'').indexOf('changes')===0){
+    wmsRenderResult(wmsLastResult);
+  }
+}
+function wmsSetChangeFilter(filter){
+  wmsChangeFilter=filter||'all';
+  if(wmsChangeFilter!=='all')wmsChangeOperationFilter='all';
+  wmsRefreshChangesIfNeeded();
+}
+function wmsSetChangeDirectionFilter(filter){
+  wmsChangeDirectionFilter=filter||'all';
+  wmsRefreshChangesIfNeeded();
+}
+function wmsSetChangeOperationFilter(code){
+  wmsChangeOperationFilter=code||'all';
+  if(wmsChangeOperationFilter!=='all')wmsChangeFilter='all';
+  wmsRefreshChangesIfNeeded();
+}
+function wmsSetChangeOperationSelect(value){
+  const v=String(value||'all');
+  if(v==='all'){wmsChangeFilter='all';wmsChangeOperationFilter='all';}
+  else if(v.indexOf('cat:')===0){wmsChangeFilter=v.slice(4)||'all';wmsChangeOperationFilter='all';}
+  else if(v.indexOf('op:')===0){wmsChangeFilter='all';wmsChangeOperationFilter=v.slice(3)||'all';}
+  else {wmsChangeFilter=v;wmsChangeOperationFilter='all';}
+  wmsRefreshChangesIfNeeded();
+}
+function wmsChangeFilterButton(key,label,count){
+  const active=(wmsChangeFilter||'all')===key && (wmsChangeOperationFilter||'all')==='all';
+  return '<button class="wms-filter-chip '+(active?'active':'')+'" onclick="wmsSetChangeFilter(\''+key+'\')">'+escHtml(label)+(count!=null?' <b>'+escHtml(count)+'</b>':'')+'</button>';
+}
+function wmsChangeOperationButton(code,count){
+  const c=String(code||'');
+  const active=(wmsChangeOperationFilter||'all')===c;
+  const label=wmsOperationLabel(c);
+  const shortCode=(label!==c && c)?' <small>'+escHtml(c)+'</small>':'';
+  return '<button class="wms-filter-chip '+(active?'active':'')+'" onclick="wmsSetChangeOperationFilter(decodeURIComponent(\''+encodeURIComponent(c)+'\'))">'+escHtml(label)+shortCode+(count!=null?' <b>'+escHtml(count)+'</b>':'')+'</button>';
+}
+function wmsChangeOperationCounts(rows){
+  const counts={};
+  (rows||[]).forEach(r=>{const code=String(r.operationType||'').trim(); if(code)counts[code]=(counts[code]||0)+1;});
+  return counts;
+}
+function wmsChangeOperationChips(rows){
+  rows=rows||[];
+  const counts=wmsChangeOperationCounts(rows);
+  const codes=Object.keys(counts).sort((a,b)=>counts[b]-counts[a] || a.localeCompare(b,'ru'));
+  if(!codes.length)return '';
+  return '<div class="wms-filter-title">Операции из ВМС</div><div class="wms-change-filters wms-operation-filters">'+
+    '<button class="wms-filter-chip '+((wmsChangeOperationFilter||'all')==='all'?'active':'')+'" onclick="wmsSetChangeOperationFilter(\'all\')">Любая операция <b>'+escHtml(rows.length)+'</b></button>'+
+    codes.map(c=>wmsChangeOperationButton(c,counts[c])).join('')+
+  '</div>';
+}
+function wmsSelectOption(value,label,selected){
+  return '<option value="'+escHtml(value)+'" '+(selected?'selected':'')+'>'+escHtml(label)+'</option>';
+}
+function wmsChangeCompactFiltersHtml(base){
+  base=base||[];
+  const outCount=base.filter(wmsIsOutgoing).length;
+  const inCount=base.filter(wmsIsIncoming).length;
+  const zeroCount=base.filter(r=>Number(wmsChangeMainDelta(r)||0)===0).length;
+  const countCat=(cat)=>base.filter(r=>wmsOperationCategory(r.operationType)===cat).length;
+  const catOptions=[
+    ['shipment','Отгрузка'],['load','Загрузка'],['inventory','Инвентаризация'],['move','Перемещение'],
+    ['placement','Размещение'],['replenishment','Пополнение'],['acceptance','Приёмка'],['writeoff','Списание/брак'],
+    ['picking','Отбор'],['consolidation','Консолидация'],['other','Другое']
+  ];
+  const opCounts=wmsChangeOperationCounts(base);
+  const opCodes=Object.keys(opCounts).sort((a,b)=>opCounts[b]-opCounts[a] || a.localeCompare(b,'ru'));
+  const selectedOp=(wmsChangeOperationFilter&&wmsChangeOperationFilter!=='all')?'op:'+wmsChangeOperationFilter:((wmsChangeFilter&&wmsChangeFilter!=='all')?'cat:'+wmsChangeFilter:'all');
+  let opOptions=wmsSelectOption('all','Все операции · '+base.length,selectedOp==='all');
+  opOptions += '<option disabled>──── группы ────</option>';
+  catOptions.forEach(([key,label])=>{const n=countCat(key); if(n>0)opOptions += wmsSelectOption('cat:'+key,label+' · '+n,selectedOp==='cat:'+key);});
+  if(opCodes.length){
+    opOptions += '<option disabled>──── коды ВМС ────</option>';
+    opCodes.forEach(code=>{opOptions += wmsSelectOption('op:'+code,wmsOperationLabel(code)+' / '+code+' · '+opCounts[code],selectedOp==='op:'+code);});
+  }
+  const dir=wmsChangeDirectionFilter||'all';
+  let dirOptions='';
+  dirOptions += wmsSelectOption('all','Все изменения · '+base.length,dir==='all');
+  dirOptions += wmsSelectOption('out','Убыло · '+outCount,dir==='out');
+  dirOptions += wmsSelectOption('in','Пришло · '+inCount,dir==='in');
+  dirOptions += wmsSelectOption('zero','Без изменения · '+zeroCount,dir==='zero');
+  return '<div class="wms-filter-title">Фильтры</div>'+
+    '<div class="wms-compact-filters">'+
+      '<label><span>Операция</span><select class="wms-select" onchange="wmsSetChangeOperationSelect(this.value)">'+opOptions+'</select></label>'+
+      '<label><span>Изменение</span><select class="wms-select" onchange="wmsSetChangeDirectionFilter(this.value)">'+dirOptions+'</select></label>'+
+      '<button class="wms-storage-compact '+(wmsStorageOnly?'active':'')+'" onclick="wmsToggleStorageOnly()">HH/SH</button>'+
+    '</div>';
+}
+function wmsChangeCardsHtml(rows){
+  if(!rows.length)return '<div class="no-results">По этому фильтру строк нет</div>';
+  return '<div class="wms-change-list">'+rows.map((r,idx)=>{
+    const delta=wmsChangeMainDelta(r);
+    const deltaCls=wmsDeltaClass(delta);
+    const op=wmsOperationLabel(r.operationType);
+    const opCode=(r.operationType && op!==r.operationType)?r.operationType:'';
+    const hu=wmsChangeHuText(r);
+    const part=[r.productionDate,r.bestBeforeDate].filter(Boolean).join(' — ');
+    const suspect=(Number(delta)<0 && !r.targetCellAddress) || (/SHIPMENT/i.test(String(r.operationType||'')) && Number(delta)<0);
+    const qtyLine=[r.sourceQuantityText?('Источник: '+r.sourceQuantityText):'',r.targetQuantityText?('Цель: '+r.targetQuantityText):''].filter(Boolean).join(' · ');
+    return '<div class="wms-change-card '+deltaCls+(suspect?' suspect':'')+'">'+
+      '<div class="wms-change-top">'+
+        '<div class="wms-change-cell">'+escHtml(wmsChangeDirectionText(r))+'</div>'+ 
+        '<div class="wms-delta '+deltaCls+'">'+escHtml(wmsDeltaText(delta))+'</div>'+ 
+      '</div>'+ 
+      '<div class="wms-change-op"><b>'+escHtml(op)+'</b>'+(opCode?' <small>'+escHtml(opCode)+'</small>':'')+(hu?' · ЕО '+escHtml(hu):'')+'</div>'+ 
+      '<div class="wms-change-name">'+escHtml(r.name||'Товар')+'</div>'+ 
+      '<div class="wms-change-meta">'+[r.nomenclatureCode||'',part?('Партия: '+part):'',qtyLine,r.userName?('Исполнитель: '+r.userName):'',r.operationStartedAt?('Время: '+wmsDateShort(r.operationStartedAt)):''].filter(Boolean).map(escHtml).join('<br>')+'</div>'+ 
+      '<div class="wms-card-mini-actions">'+
+        '<button class="exi-btn" onclick="wmsCopyChangeRow('+idx+')">Строку</button>'+ 
+        '<button class="exi-btn" onclick="wmsSaveChangeAsProblem('+idx+')">В проблему</button>'+ 
+        (hu?'<button class="exi-btn" onclick="wmsSearchHuChanges(\''+escHtml(hu.split(' → ')[0])+'\')">История ЕО</button>':'')+
+      '</div>'+ 
+    '</div>';
+  }).join('')+'</div>';
+}
+function wmsChangeTableHtml(rows){
+  const tableHead='<tr><th>Дата</th><th>Операция</th><th>Товар</th><th>УТ</th><th>Откуда</th><th>Куда</th><th>Источник</th><th>Цель</th><th>HU</th><th>Исполнитель</th></tr>';
+  const rowsHtml=rows.map(r=>'<tr>'+[
+    '<td>'+escHtml(wmsDateShort(r.operationStartedAt))+'</td>',
+    '<td><b>'+escHtml(wmsOperationLabel(r.operationType))+'</b><br><small>'+escHtml(r.operationType||'')+'</small></td>',
+    '<td><b>'+escHtml(r.name||'—')+'</b><br><small>'+escHtml(r.bestBeforeDate?('до '+r.bestBeforeDate):'')+'</small></td>',
+    '<td>'+escHtml(r.nomenclatureCode||'')+'</td>',
+    '<td>'+escHtml(r.sourceCellAddress||'')+'</td>',
+    '<td>'+escHtml(r.targetCellAddress||'')+'</td>',
+    '<td>'+escHtml(r.sourceQuantityText||'')+'</td>',
+    '<td>'+escHtml(r.targetQuantityText||'')+'</td>',
+    '<td>'+escHtml(wmsChangeHuText(r))+'</td>',
+    '<td>'+escHtml(r.userName||'')+'</td>'
+  ].join('')+'</tr>').join('');
+  return '<details class="wms-table-details"><summary>Таблица как в ВМС</summary><div class="wms-table-wrap"><table class="wms-table"><thead>'+tableHead+'</thead><tbody>'+rowsHtml+'</tbody></table></div></details>';
+}
+function wmsRenderChangesResult(result,p,rows){
+  const all=rows||[];
+  const base=wmsApplyStorageFilter(all);
+  const visible=wmsFilteredChangeRows(all);
+  const outCount=base.filter(wmsIsOutgoing).length;
+  const inCount=base.filter(wmsIsIncoming).length;
+  const countCat=(cat)=>base.filter(r=>wmsOperationCategory(r.operationType)===cat).length;
+  const invCount=countCat('inventory');
+  const moveCount=countCat('move');
+  const placeCount=countCat('placement');
+  const replCount=countCat('replenishment');
+  const shipCount=countCat('shipment');
+  const loadCount=countCat('load');
+  const accCount=countCat('acceptance');
+  const writeCount=countCat('writeoff');
+  const net=visible.reduce((s,r)=>s+Number(wmsChangeMainDelta(r)||0),0);
+  const totalShown=visible.length;
+  const title='Изменение остатка'+(result.query?': '+result.query:'');
+  const meta='Строк: <b>'+escHtml(result.total||result.totalRows||all.length)+'</b> · после хранения: <b>'+escHtml(base.length)+'</b> · показано: <b>'+escHtml(totalShown)+'</b> · итог: <b class="wms-inline-delta '+wmsDeltaClass(net)+'">'+escHtml(wmsDeltaText(net))+'</b>'+(p.nomenclatureCode?(' · <b>'+escHtml(p.nomenclatureCode)+'</b>'):'')+(p.name&&p.name!=='Изменение остатка'?('<br>'+escHtml(p.name)):'');
+  return '<div class="wms-card">'+
+      (p.imageUrl?'<img class="wms-img" src="'+escHtml(p.imageUrl)+'" loading="lazy" onerror="this.style.display=\'none\'">':'')+
+      '<div class="wms-card-body"><div class="wms-product-name">'+escHtml(title)+'</div><div class="wms-meta">'+meta+'</div></div>'+ 
+    '</div>'+ 
+    wmsChangeCompactFiltersHtml(base)+
+    '<div class="wms-actions wms-result-actions">'+
+      '<button class="exi-btn primary" onclick="wmsCopyCells()">Скопировать</button>'+ 
+      '<button class="exi-btn" onclick="wmsCopyProduct()">УТ/ШК</button>'+ 
+      '<button class="exi-btn" onclick="wmsSaveAsProblem()">В проблемы</button>'+ 
+    '</div>'+ 
+    wmsChangeCardsHtml(visible)+
+    wmsChangeTableHtml(visible);
+}
+function wmsRenderResult(result){
+  wmsLastResult=result;wmsLastChoices=null;
+  const box=document.getElementById('wms-result'); if(!box)return;
+  const p=(result&&result.product)||{};
+  const sourceRows=(result&&result.rows)||[];
+  const rows=wmsApplyStorageFilter(sourceRows);
+  const barcode=p.barcode || (Array.isArray(p.barcodes)?p.barcodes[0]:'') || '';
+  if(!sourceRows.length){box.innerHTML='<div class="no-results">Нет строк</div>';return;}
+  if(String(result.mode||'').indexOf('changes')===0){box.innerHTML=wmsRenderChangesResult(result,p,sourceRows);return;}
+  if(!rows.length){box.innerHTML='<div class="no-results">По фильтру хранения строк нет. <button class="exi-btn" onclick="wmsToggleStorageOnly()">Показать всё</button></div>';return;}
+  let tableHead, rowsHtml, title, meta;
+  if(result.mode==='cell' || result.mode==='hu'){
+    const isHu=result.mode==='hu';
+    title=p.name||(isHu?('Содержимое ЕО '+(result.query||'')):('Содержимое ячейки '+(result.cellAddress||'')));
+    meta=(isHu?('ЕО/HU: <b>'+escHtml(result.query||rows[0].handlingUnitBarcode||'')+'</b>'):('Ячейка: <b>'+escHtml(result.cellAddress||rows[0].cellAddress||'')+'</b>'))+' · Строк: <b>'+escHtml(result.totalRows||rows.length)+'</b> · Остаток: <b>'+escHtml(result.totalQuantity||0)+'</b> шт';
+    tableHead='<tr><th>Товар</th><th>УТ</th><th>ШК</th><th>Кол-во</th><th>Срок</th><th>HU</th><th>Статус</th></tr>';
+    rowsHtml=rows.map(r=>'<tr>'+[
+      '<td><b>'+escHtml(r.name||'—')+'</b></td>','<td>'+escHtml(r.nomenclatureCode||'')+'</td>','<td>'+escHtml(r.barcode||'')+'</td>','<td class="num">'+escHtml(r.quantity)+'</td>','<td>'+escHtml(r.bestBeforeDate||'')+'</td>','<td>'+escHtml(r.handlingUnitBarcode||'')+'</td>','<td>'+escHtml(r.status||'')+'</td>'
+    ].join('')+'</tr>').join('');
+  }else{
+    title=p.name||rows[0].name||'Товар из ВМС';
+    meta='<b>'+escHtml(p.nomenclatureCode||rows[0].nomenclatureCode||'')+'</b>'+(barcode?' · ШК: '+escHtml(barcode):'')+'<br>Строк: <b>'+escHtml(result.totalRows||rows.length)+'</b> · Остаток: <b>'+escHtml(result.totalQuantity||0)+'</b> шт';
+    tableHead='<tr><th>Ячейка</th><th>Кол-во</th><th>Зона</th><th>Локация</th><th>Срок</th><th>HU</th><th>Статус</th></tr>';
+    rowsHtml=rows.map(r=>'<tr>'+[
+      '<td><b>'+escHtml(r.cellAddress||'—')+'</b></td>','<td class="num">'+escHtml(r.quantity)+'</td>','<td>'+escHtml(r.zoneName||'')+'</td>','<td>'+escHtml(r.locationName||'')+'</td>','<td>'+escHtml(r.bestBeforeDate||'')+'</td>','<td>'+escHtml(r.handlingUnitBarcode||'')+'</td>','<td>'+escHtml(r.status||'')+'</td>'
+    ].join('')+'</tr>').join('');
+  }
+  box.innerHTML='<div class="wms-card">'+(p.imageUrl?'<img class="wms-img" src="'+escHtml(p.imageUrl)+'" loading="lazy" onerror="this.style.display=\'none\'">':'')+'<div class="wms-card-body"><div class="wms-product-name">'+escHtml(title)+'</div><div class="wms-meta">'+meta+'</div></div></div><div class="wms-actions wms-result-actions">'+wmsStorageToggleButton()+'<button class="exi-btn primary" onclick="wmsCopyCells()">Скопировать</button><button class="exi-btn" onclick="wmsCopyProduct()">УТ/ШК</button><button class="exi-btn" onclick="wmsSaveAsProblem()">В проблемы</button></div><div class="wms-table-wrap"><table class="wms-table"><thead>'+tableHead+'</thead><tbody>'+rowsHtml+'</tbody></table></div>';
+}
+function wmsChangeRowText(r){
+  return [
+    wmsDateShort(r.operationStartedAt),
+    wmsOperationLabel(r.operationType),
+    r.nomenclatureCode||'',
+    r.name||'',
+    wmsChangeDirectionText(r),
+    r.sourceQuantityText?('источник '+r.sourceQuantityText):'',
+    r.targetQuantityText?('цель '+r.targetQuantityText):'',
+    wmsChangeHuText(r)?('ЕО '+wmsChangeHuText(r)):'',
+    r.userName||''
+  ].filter(Boolean).join(' — ');
+}
+function wmsCopyChangeRow(idx){
+  const rows=wmsFilteredChangeRows((wmsLastResult&&wmsLastResult.rows)||[]);
+  const r=rows[idx]; if(!r)return;
+  wmsCopyFallback(wmsChangeRowText(r)).then(()=>wmsSetStatus('Строка скопирована.','ok'));
+}
+function wmsSaveChangeAsProblem(idx){
+  const rows=wmsFilteredChangeRows((wmsLastResult&&wmsLastResult.rows)||[]);
+  const r=rows[idx]; if(!r)return;
+  const row=createMeta({id:Date.now()+Math.floor(Math.random()*1000),type:'изменение остатка',ut:r.nomenclatureCode||'',name:r.name||'',cell:r.sourceCellAddress||r.targetCellAddress||'',sys:Number((r.sourceDelta!==''?r.sourceDelta:r.targetDelta)||0)||0,fact:0,status:'нужно ВМС',needWms:1,comment:'Изменение ВМС: '+wmsChangeRowText(r).slice(0,900),archived:0,createdAt:new Date().toLocaleString('ru-RU'),updatedAt:new Date().toLocaleString('ru-RU')});
+  const arr=getProblems();arr.unshift(row);set('problems_log',arr);logAction('problem','Создана проблема из изменения ВМС: '+(row.ut||row.name||row.cell||'ВМС'),{ut:row.ut,cell:row.cell});
+  wmsSetStatus('Строка добавлена в проблемы.','ok');
+}
+function wmsSearchHuChanges(hu){
+  const el=document.getElementById('wms-query'); if(el)el.value=hu;
+  wmsSetLookupKind('changes');
+  wmsLookupFromApp();
+}
+function wmsFormatCells(result){
+  const rows=wmsApplyStorageFilter((result&&result.rows)||[]);
+  if((result&&String(result.mode||'').indexOf('changes')===0)){
+    return wmsFilteredChangeRows(rows).map(wmsChangeRowText).join('\n');
+  }
+  if((result&&result.mode)==='cell' || (result&&result.mode)==='hu'){
+    return rows.map(r=>[r.nomenclatureCode||'—',r.name||'Товар',(Number(r.quantity)||0)+' шт',r.bestBeforeDate?('до '+r.bestBeforeDate):'',r.handlingUnitBarcode?('HU '+r.handlingUnitBarcode):'',r.status||''].filter(Boolean).join(' — ')).join('\n');
+  }
+  return rows.map(r=>[r.cellAddress||'—',(Number(r.quantity)||0)+' шт',r.bestBeforeDate?('до '+r.bestBeforeDate):'',r.handlingUnitBarcode?('HU '+r.handlingUnitBarcode):'',r.status||''].filter(Boolean).join(' — ')).join('\n');
+}
+function wmsSaveAsProblem(){
+  if(!wmsLastResult){alert('Нет результата ВМС');return;}
+  if(String(wmsLastResult.mode||'').indexOf('changes')===0){
+    const first=wmsFilteredChangeRows(wmsLastResult.rows||[])[0] || (wmsLastResult.rows||[])[0] || {};
+    const row=createMeta({id:Date.now()+Math.floor(Math.random()*1000),type:'изменение остатка',ut:first.nomenclatureCode||'',name:first.name||'',cell:first.sourceCellAddress||first.targetCellAddress||wmsLastResult.cellAddress||'',sys:Number(wmsLastResult.totalRows||0)||0,fact:0,status:'нужно ВМС',needWms:1,comment:'Изменения ВМС:\n'+wmsFormatCells(wmsLastResult).slice(0,900),archived:0,createdAt:new Date().toLocaleString('ru-RU'),updatedAt:new Date().toLocaleString('ru-RU')});
+    const arr=getProblems();arr.unshift(row);set('problems_log',arr);logAction('problem','Создана проблема из изменений ВМС: '+(row.ut||row.name||row.cell||'ВМС'),{ut:row.ut,cell:row.cell});
+    wmsSetStatus('Добавлено в проблемы.','ok');
+    return;
+  }
+  const p=wmsLastResult.product||{};
+  const first=(wmsLastResult.rows||[])[0]||{};
+  const row=createMeta({id:Date.now()+Math.floor(Math.random()*1000),type:'проверить ВМС',ut:p.nomenclatureCode||first.nomenclatureCode||'',name:p.name||first.name||'',cell:first.cellAddress||wmsLastResult.cellAddress||'',sys:Number(wmsLastResult.totalQuantity||0)||0,fact:0,status:'нужно ВМС',needWms:1,comment:'Импорт из ВМС: '+wmsFormatCells(wmsLastResult).slice(0,900),archived:0,createdAt:new Date().toLocaleString('ru-RU'),updatedAt:new Date().toLocaleString('ru-RU')});
+  const arr=getProblems();arr.unshift(row);set('problems_log',arr);logAction('problem','Создана проблема из ВМС: '+(row.ut||row.name||row.cell||'ВМС'),{ut:row.ut,cell:row.cell});
+  wmsSetStatus('Добавлено в проблемы.','ok');
+}
+window.wmsSetChangeFilter=wmsSetChangeFilter;
+window.wmsSetChangeOperationFilter=wmsSetChangeOperationFilter;
+window.wmsCopyChangeRow=wmsCopyChangeRow;
+window.wmsSaveChangeAsProblem=wmsSaveChangeAsProblem;
+window.wmsSearchHuChanges=wmsSearchHuChanges;
+
 function wmsParseImport(){
   const el=document.getElementById('wms-import-text');
   const text=el?el.value:'';
@@ -653,6 +1250,7 @@ function wmsCallNative(method,args,timeoutMs){
   });
 }
 function wmsNativeLookup(code){return wmsCallNative('lookupWmsByCode',[code],30000);}
+function wmsNativeLookupChanges(code){return wmsCallNative('lookupWmsChangesByCode',[code],30000);}
 function lenferWmsNativeResolve(id, payloadJson){
   const cb=window.__lenferWmsNativeCallbacks&&window.__lenferWmsNativeCallbacks[id];
   if(!cb)return;
@@ -684,15 +1282,43 @@ async function wmsLookupCellId(cellId, address){
     wmsSetStatus('Готово: '+result.totalRows+' строк, '+result.totalQuantity+' шт.','ok');
   }catch(e){wmsSetStatus((e&&e.message)||WMS_AUTO_UNAVAILABLE,'err');}
 }
+async function wmsLookupProductChangesId(productId){
+  if(!productId){wmsSetStatus('Нет productId','err');return;}
+  wmsSetStatus('Тяну изменения выбранного товара…','wait');
+  try{
+    const raw=await wmsCallNative('lookupWmsChangesByProductId',[productId],30000);
+    const result=wmsNormalizeResult(raw);
+    wmsRenderResult(result);
+    wmsSetStatus('Изменения: '+result.totalRows+' строк.','ok');
+  }catch(e){wmsSetStatus((e&&e.message)||WMS_AUTO_UNAVAILABLE,'err');}
+}
+async function wmsLookupCellChangesId(cellId, address){
+  if(!cellId){wmsSetStatus('Нет cellId','err');return;}
+  wmsSetStatus('Тяну изменения ячейки '+(address||'')+'…','wait');
+  try{
+    const raw=await wmsCallNative('lookupWmsChangesByCellId',[cellId,address||''],30000);
+    const result=wmsNormalizeResult(raw);
+    wmsRenderResult(result);
+    wmsSetStatus('Изменения: '+result.totalRows+' строк.','ok');
+  }catch(e){wmsSetStatus((e&&e.message)||WMS_AUTO_UNAVAILABLE,'err');}
+}
+function wmsLookupChosenProductId(productId){
+  return wmsLookupKind==='changes' ? wmsLookupProductChangesId(productId) : wmsLookupProductId(productId);
+}
+function wmsLookupChosenCellId(cellId,address){
+  return wmsLookupKind==='changes' ? wmsLookupCellChangesId(cellId,address) : wmsLookupCellId(cellId,address);
+}
 async function wmsLookupFromApp(){
   const inp=document.getElementById('wms-query');
   const code=wmsCleanCode(inp?inp.value:'');
-  if(!code){wmsSetStatus('Введи УТ, ШК, название или ячейку.','err');return;}
+  if(!code){wmsSetStatus('Введи УТ, ШК, название, ячейку или ЕО.','err');return;}
   if(inp)inp.value=code;
-  wmsSetStatus('Ищу в ВМС: '+code+' · режим: '+wmsDetectMode(code)+'…','wait');
+  wmsSetStatus((wmsLookupKind==='changes'?'Ищу изменения: ':'Ищу остатки: ')+code+' · режим: '+wmsDetectMode(code)+'…','wait');
   try{
     let raw;
-    if(typeof window.lookupWmsByCode==='function') raw=await window.lookupWmsByCode(code);
+    if(wmsLookupKind==='changes'){
+      raw=await wmsNativeLookupChanges(code);
+    }else if(typeof window.lookupWmsByCode==='function') raw=await window.lookupWmsByCode(code);
     else raw=await wmsNativeLookup(code);
     const normalized=wmsNormalizeResult(raw);
     if(normalized._kind){
@@ -701,20 +1327,26 @@ async function wmsLookupFromApp(){
       return;
     }
     wmsRenderResult(normalized);
-    wmsSetStatus('Готово: '+normalized.totalRows+' строк, '+normalized.totalQuantity+' шт.','ok');
+    wmsSetStatus(wmsLookupKind==='changes' ? ('Изменения: '+normalized.totalRows+' строк.') : ('Готово: '+normalized.totalRows+' строк, '+normalized.totalQuantity+' шт.'),'ok');
   }catch(e){
     wmsSetStatus((e&&e.message)||WMS_AUTO_UNAVAILABLE,'err');
   }
 }
 function renderWms(){
+  wmsRefreshModeButtons();
   const box=document.getElementById('wms-result');
   if(box && !wmsLastResult && !wmsLastChoices && !box.innerHTML){
-    box.innerHTML='<div class="hint" style="padding:34px 12px;"><span class="mark">✶</span><span class="txt">Введи УТ, ШК, название или ячейку и жми «Найти»</span></div>';
+    box.innerHTML='<div class="hint" style="padding:34px 12px;"><span class="mark">✶</span><span class="txt">Введи УТ, ШК, название, ячейку или ЕО и жми «Найти»</span></div>';
   }
 }
 window.wmsLookupFromApp=wmsLookupFromApp;
 window.wmsLookupProductId=wmsLookupProductId;
 window.wmsLookupCellId=wmsLookupCellId;
+window.wmsLookupChosenProductId=wmsLookupChosenProductId;
+window.wmsLookupChosenCellId=wmsLookupChosenCellId;
+window.wmsLookupProductChangesId=wmsLookupProductChangesId;
+window.wmsLookupCellChangesId=wmsLookupCellChangesId;
+window.wmsSetLookupKind=wmsSetLookupKind;
 window.wmsParseImport=wmsParseImport;
 window.wmsClearResult=wmsClearResult;
 window.wmsPrefixUt=wmsPrefixUt;
@@ -4128,7 +4760,7 @@ function startAppStable(){
   safeStartPart('отчёт', typeof renderReport==='function' ? renderReport : null);
 }
 startAppStable();
-window.__APP_STABLE_BUILD__='2026-06-15-v38-android-wms-wrapper-ready';
+window.__APP_STABLE_BUILD__='2026-06-15-v45-smart-wms-search';
 
 function hideProductDropdownsOnOutsideClick(e){
   try{
