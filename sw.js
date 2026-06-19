@@ -1,6 +1,6 @@
-/* L'Enfer PWA service worker — v56 android ui compact nav
+/* L'Enfer PWA service worker — v62 upper rows and large losses
    Network-first worker: old cached index.html should not haunt the app. */
-const SW_VERSION = 'lenfer-v46-android-ui-20260615';
+const SW_VERSION = 'lenfer-v63-upper-losses';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

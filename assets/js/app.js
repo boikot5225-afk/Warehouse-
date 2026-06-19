@@ -395,11 +395,22 @@ window.switchTab = switchTab;
 let wmsLastResult = null;
 let wmsLastChoices = null;
 let wmsLookupKind = 'stocks';
+let wmsUpperCells = [];
+let wmsUpperOccupancy = {};
+let wmsLargeLosses = null;
+let wmsUpperMarks = JSON.parse(localStorage.getItem('lenfer_wms_upper_marks')||'{}');
+let wmsLastRecountingRaw = null;
 let wmsChangeFilter = 'all';
 let wmsChangeDirectionFilter = 'all';
 let wmsChangeOperationFilter = 'all';
 let wmsStorageOnly = false;
 const WMS_AUTO_UNAVAILABLE = 'Авто-поиск доступен только в Android-обёртке с ВМС-входом. Обычная PWA в браузере не может сама ходить в ВМС.';
+
+
+// ── AI proxy (Yandex Cloud Function) ──
+// Ключ DeepSeek остаётся только в Yandex Cloud, в APK его нет.
+const WAREHOUSE_AI_URL = 'https://functions.yandexcloud.net/d4eouqic8u5nntn17at2';
+let wmsAiBusy = false;
 
 
 function wmsIsStorageCellAddress(addr){
@@ -429,6 +440,48 @@ function wmsSetStatus(text, kind){
   el.textContent=String(text||'');
   el.className='wms-status '+(kind?('wms-status-'+kind):'');
 }
+
+function wmsNativeMethodExists(name){
+  return !!(window.LenferAndroidWms && typeof window.LenferAndroidWms[name]==='function');
+}
+function wmsOpenNativeLogin(){
+  try{
+    if(wmsNativeMethodExists('openWmsLogin')){
+      window.LenferAndroidWms.openWmsLogin();
+      wmsSetStatus('Открыл WMS. Войди в аккаунт и вернись в приложение.','wait');
+    }else{
+      wmsSetStatus('Android-обёртка не найдена. В обычном браузере автоматический вход ВМС недоступен.','err');
+    }
+  }catch(e){wmsSetStatus('Не смог открыть ВМС: '+((e&&e.message)||e),'err');}
+}
+function wmsReloadNativeWms(){
+  try{
+    if(wmsNativeMethodExists('reloadWmsLogin')){
+      window.LenferAndroidWms.reloadWmsLogin();
+      wmsSetStatus('Перезагружаю ВМС. Если страница зависла — подожди загрузку и вернись в приложение.','wait');
+    }else{
+      wmsSetStatus('Перезагрузка ВМС доступна только в Android-обёртке.','err');
+    }
+  }catch(e){wmsSetStatus('Не смог перезагрузить ВМС: '+((e&&e.message)||e),'err');}
+}
+async function wmsCheckNativeAuth(){
+  if(!wmsNativeMethodExists('checkWmsAuth')){
+    wmsSetStatus('Проверка доступна только в Android-обёртке.','err');
+    return;
+  }
+  wmsSetStatus('Проверяю авторизацию ВМС…','wait');
+  try{
+    const raw=await wmsCallNative('checkWmsAuth',[],12000);
+    const ok=!!raw.hasAuth;
+    const bits=[];
+    if(raw.hasBearer)bits.push('Bearer');
+    if(raw.hasXAuth)bits.push('x-auth');
+    if(raw.hasCookie)bits.push('cookies');
+    const href=raw.href?(' · '+String(raw.href).slice(0,90)):'';
+    wmsSetStatus(ok ? ('WMS-авторизация найдена: '+(bits.join(', ')||'есть')+href) : ('WMS-авторизация пока не найдена. Открой WMS, дождись загрузки и вернись.'), ok?'ok':'err');
+  }catch(e){wmsSetStatus('Проверка ВМС не прошла: '+((e&&e.message)||e),'err');}
+}
+
 function wmsPrefixUt(){
   const el=document.getElementById('wms-query');
   if(!el)return;
@@ -456,20 +509,57 @@ function wmsDetectMode(v){
   return 'Название';
 }
 function wmsSetLookupKind(kind){
-  wmsLookupKind = kind==='changes' ? 'changes' : 'stocks';
+  wmsLookupKind = kind==='changes' ? 'changes' : (kind==='recounting' ? 'recounting' : (kind==='analysis' ? 'analysis' : (kind==='picking' ? 'picking' : (kind==='upper' ? 'upper' : (kind==='losses' ? 'losses' : 'stocks')))));
   wmsRefreshModeButtons();
-  wmsSetStatus(wmsLookupKind==='changes' ? 'Режим: изменение остатка. Введи УТ, ШК, название, ячейку или ЕО.' : 'Режим: текущие остатки. Введи УТ, ШК, название, ячейку или ЕО.', '');
+  if(wmsLookupKind==='recounting'){
+    wmsSetStatus('Пересчёты: кто, когда и какие ячейки закрывал. Настрой фильтры и нажми «Показать пересчёты».', '');
+    const box=document.getElementById('wms-result');
+    if(box && (!wmsLastResult || String(wmsLastResult.mode||'')!=='recountingTasks')) box.innerHTML='<div class="hint" style="padding:24px 12px;"><span class="mark">↻</span><span class="txt">Выбери дату, исполнителя или зону и нажми «Показать пересчёты»</span></div>';
+  }else if(wmsLookupKind==='analysis'){
+    wmsSetStatus('Разбор: введи ячейку, УТ или ЕО и нажми «Собрать картину».', '');
+    const box=document.getElementById('wms-result');
+    if(box && (!wmsLastResult || String(wmsLastResult.mode||'')!=='analysis')) box.innerHTML='<div class="hint" style="padding:24px 12px;"><span class="mark">◇</span><span class="txt">Разбор соединит остатки, изменения и пересчёты по запросу</span></div>';
+  }else if(wmsLookupKind==='picking'){
+    wmsSetStatus('Отбор: сначала открой товар в заказе внутри WMS, затем вернись сюда — ЕО подтянется к текущей ячейке.', '');
+    const box=document.getElementById('wms-result');
+    if(box && (!window.wmsLastPicking || !window.wmsLastPicking.items || !window.wmsLastPicking.items.length)) box.innerHTML='<div class="hint" style="padding:24px 12px;"><span class="mark">⇄</span><span class="txt">Открой в WMS заказ и товар. Потом нажми «Обновить отбор» — приложение покажет ЕО и её текущую ячейку.</span></div>';
+    else wmsRenderPickingResult(window.wmsLastPicking, document.getElementById('wms-picking-cell')?.value||'');
+  }else if(wmsLookupKind==='upper'){
+    wmsSetStatus('Верхние ярусы: сначала загрузи ячейки, затем сузь ряд и чётность перед проверкой остатков.', '');
+    wmsRenderUpperStorage();
+  }else if(wmsLookupKind==='losses'){
+    wmsSetStatus('Крупные минусы: выбери дату, зону и порог. Покажу только уменьшения из ячеек хранения HH/SH.', '');
+    wmsRenderLargeLosses();
+  }else{
+    wmsSetStatus(wmsLookupKind==='changes' ? 'История изменений: УТ, ШК, название, ячейка или ЕО.' : 'Остатки сейчас: УТ, ШК, название, ячейка или ЕО.', '');
+  }
 }
 function wmsRefreshModeButtons(){
   const s=document.getElementById('wms-mode-stocks');
   const c=document.getElementById('wms-mode-changes');
-  if(s){s.classList.toggle('primary', wmsLookupKind==='stocks');}
-  if(c){c.classList.toggle('primary', wmsLookupKind==='changes');}
+  const r=document.getElementById('wms-mode-recounting');
+  const a=document.getElementById('wms-mode-analysis');
+  const p=document.getElementById('wms-mode-picking');
+  const u=document.getElementById('wms-mode-upper');
+  const l=document.getElementById('wms-mode-losses');
+  if(s){s.classList.toggle('primary', wmsLookupKind==='stocks');s.setAttribute('aria-pressed',wmsLookupKind==='stocks'?'true':'false');}
+  if(c){c.classList.toggle('primary', wmsLookupKind==='changes');c.setAttribute('aria-pressed',wmsLookupKind==='changes'?'true':'false');}
+  if(r){r.classList.toggle('primary', wmsLookupKind==='recounting');r.setAttribute('aria-pressed',wmsLookupKind==='recounting'?'true':'false');}
+  if(a){a.classList.toggle('primary', wmsLookupKind==='analysis');a.setAttribute('aria-pressed',wmsLookupKind==='analysis'?'true':'false');}
+  if(p){p.classList.toggle('primary', wmsLookupKind==='picking');p.setAttribute('aria-pressed',wmsLookupKind==='picking'?'true':'false');}
+  if(u){u.classList.toggle('primary', wmsLookupKind==='upper');u.setAttribute('aria-pressed',wmsLookupKind==='upper'?'true':'false');}
+  if(l){l.classList.toggle('primary', wmsLookupKind==='losses');l.setAttribute('aria-pressed',wmsLookupKind==='losses'?'true':'false');}
+  const rc=document.getElementById('wms-recounting-controls'); if(rc)rc.style.display=wmsLookupKind==='recounting'?'block':'none';
+  const an=document.getElementById('wms-analysis-controls'); if(an)an.style.display=wmsLookupKind==='analysis'?'block':'none';
+  const pc=document.getElementById('wms-picking-controls'); if(pc)pc.style.display=wmsLookupKind==='picking'?'block':'none';
+  const up=document.getElementById('wms-upper-controls'); if(up)up.style.display=wmsLookupKind==='upper'?'block':'none';
+  const ls=document.getElementById('wms-losses-controls'); if(ls)ls.style.display=wmsLookupKind==='losses'?'block':'none';
+  const general=document.getElementById('wms-general-search'); if(general)general.style.display=(wmsLookupKind==='picking'||wmsLookupKind==='upper'||wmsLookupKind==='losses')?'none':'block';
 }
 function wmsOpenUrl(url){
   try{
     window.open(url,'_blank','noopener,noreferrer');
-    wmsSetStatus('Открыл ВМС-раздел. Если Android-обёртка не переключилась — нажми сверху «ВМС вход».','ok');
+    wmsSetStatus('Открыл WMS-раздел.','ok');
   }catch(e){ location.href=url; }
 }
 function wmsOpenRecounting(){
@@ -478,7 +568,7 @@ function wmsOpenRecounting(){
 function wmsOpenLabels(){
   wmsOpenUrl('https://wwh.samokat.ru/#/handing-units/print');
 }
-window.wmsOpenRecounting=wmsOpenRecounting;window.wmsOpenLabels=wmsOpenLabels;
+window.wmsOpenRecounting=wmsOpenRecounting;window.wmsOpenLabels=wmsOpenLabels;window.wmsOpenNativeLogin=wmsOpenNativeLogin;window.wmsReloadNativeWms=wmsReloadNativeWms;window.wmsCheckNativeAuth=wmsCheckNativeAuth;
 function wmsCopyFallback(text){
   text=String(text||'');
   if(navigator.clipboard&&navigator.clipboard.writeText){return navigator.clipboard.writeText(text).catch(()=>wmsCopyTextarea(text));}
@@ -490,7 +580,7 @@ function wmsCopyTextarea(text){
 function wmsClearResult(){
   wmsLastResult=null;wmsLastChoices=null;
   const box=document.getElementById('wms-result');if(box)box.innerHTML='';
-  wmsSetStatus('Очищено. Введи УТ, ШК, название, ячейку или ЕО.','');
+  wmsSetStatus(wmsLookupKind==='recounting'?'Очищено. Настрой фильтры пересчёта.':(wmsLookupKind==='analysis'?'Очищено. Введи ячейку, УТ или ЕО для разбора.':(wmsLookupKind==='picking'?'Очищен экран отбора. Открой товар в заказе WMS и нажми «Обновить отбор».':(wmsLookupKind==='upper'?'Список верхних ярусов очищен.':(wmsLookupKind==='losses'?'Список крупных минусов очищен.':'Очищено. Введи УТ, ШК, название, ячейку или ЕО.')))),'');
   wmsRefreshModeButtons();
 }
 function wmsClearImportText(){const el=document.getElementById('wms-import-text');if(el)el.value='';}
@@ -784,9 +874,8 @@ function wmsRenderResult(result){
     '</div>'+ 
     '<div class="wms-actions wms-result-actions">'+
       wmsStorageToggleButton()+
-      '<button class="exi-btn primary" onclick="wmsCopyCells()">Скопировать</button>'+ 
-      '<button class="exi-btn" onclick="wmsCopyProduct()">УТ/ШК</button>'+ 
-      '<button class="exi-btn" onclick="wmsSaveAsProblem()">В проблемы</button>'+ 
+      '<button class="exi-btn primary" onclick="wmsCopyCells()">Скопировать строки</button>'+ 
+      wmsCopySplitButtons()+ 
     '</div>'+ 
     '<div class="wms-table-wrap"><table class="wms-table"><thead>'+tableHead+'</thead><tbody>'+rowsHtml+'</tbody></table></div>';
 }
@@ -794,12 +883,42 @@ function wmsCopyCells(){
   if(!wmsLastResult){alert('Нет результата ВМС');return;}
   wmsCopyFallback(wmsFormatCells(wmsLastResult)).then(()=>wmsSetStatus('Скопировано.','ok'));
 }
-function wmsCopyProduct(){
-  if(!wmsLastResult){alert('Нет результата ВМС');return;}
-  const p=wmsLastResult.product||{};
-  const text=[p.nomenclatureCode||'',p.name||'',p.barcode?('ШК: '+p.barcode):'',wmsLastResult.cellAddress?('Ячейка: '+wmsLastResult.cellAddress):''].filter(Boolean).join('\n');
-  wmsCopyFallback(text).then(()=>wmsSetStatus('УТ/ШК скопированы.','ok'));
+function wmsUniqueValues(list){
+  const out=[]; const seen=new Set();
+  (list||[]).forEach(v=>{v=String(v||'').trim(); if(!v)return; const k=v.toLowerCase(); if(seen.has(k))return; seen.add(k); out.push(v);});
+  return out;
 }
+function wmsFieldValues(field){
+  if(!wmsLastResult)return [];
+  const p=wmsLastResult.product||{};
+  const rows=(wmsLastResult.rows||[]);
+  if(field==='ut')return wmsUniqueValues([p.nomenclatureCode].concat(rows.map(r=>r.nomenclatureCode)));
+  if(field==='name')return wmsUniqueValues([p.name].concat(rows.map(r=>r.name)));
+  if(field==='barcode'){
+    const vals=[];
+    if(p.barcode)vals.push(p.barcode);
+    if(Array.isArray(p.barcodes))p.barcodes.forEach(b=>vals.push(b));
+    rows.forEach(r=>{if(r.barcode)vals.push(r.barcode); if(Array.isArray(r.barcodes))r.barcodes.forEach(b=>vals.push(b));});
+    return wmsUniqueValues(vals);
+  }
+  return [];
+}
+function wmsCopyProductField(field){
+  if(!wmsLastResult){alert('Нет результата WMS');return;}
+  const vals=wmsFieldValues(field);
+  if(!vals.length){wmsSetStatus('Нет данных для копирования.','err');return;}
+  const label=field==='ut'?'УТ':(field==='barcode'?'ШК':'Наименование');
+  wmsCopyFallback(vals.join('\n')).then(()=>wmsSetStatus(label+' скопировано: '+vals.length,'ok'));
+}
+function wmsCopyProduct(){
+  if(!wmsLastResult){alert('Нет результата WMS');return;}
+  const text=[wmsFieldValues('ut').join('\n'),wmsFieldValues('barcode').join('\n'),wmsFieldValues('name').join('\n')].filter(Boolean).join('\n');
+  wmsCopyFallback(text).then(()=>wmsSetStatus('УТ/ШК/наименования скопированы.','ok'));
+}
+function wmsCopySplitButtons(){
+  return '<div class="wms-copy-split"><button class="exi-btn" onclick="wmsCopyProductField(\'ut\')">Копир УТ</button><button class="exi-btn" onclick="wmsCopyProductField(\'barcode\')">Копир ШК</button><button class="exi-btn" onclick="wmsCopyProductField(\'name\')">Копир название</button></div>';
+}
+
 function wmsSaveAsProblem(){
   if(!wmsLastResult){alert('Нет результата ВМС');return;}
   const p=wmsLastResult.product||{};
@@ -1125,9 +1244,8 @@ function wmsRenderChangesResult(result,p,rows){
     '</div>'+ 
     wmsChangeCompactFiltersHtml(base)+
     '<div class="wms-actions wms-result-actions">'+
-      '<button class="exi-btn primary" onclick="wmsCopyCells()">Скопировать</button>'+ 
-      '<button class="exi-btn" onclick="wmsCopyProduct()">УТ/ШК</button>'+ 
-      '<button class="exi-btn" onclick="wmsSaveAsProblem()">В проблемы</button>'+ 
+      '<button class="exi-btn primary" onclick="wmsCopyCells()">Скопировать строки</button>'+ 
+      wmsCopySplitButtons()+ 
     '</div>'+ 
     wmsChangeCardsHtml(visible)+
     wmsChangeTableHtml(visible);
@@ -1159,7 +1277,7 @@ function wmsRenderResult(result){
       '<td><b>'+escHtml(r.cellAddress||'—')+'</b></td>','<td class="num">'+escHtml(r.quantity)+'</td>','<td>'+escHtml(r.zoneName||'')+'</td>','<td>'+escHtml(r.locationName||'')+'</td>','<td>'+escHtml(r.bestBeforeDate||'')+'</td>','<td>'+escHtml(r.handlingUnitBarcode||'')+'</td>','<td>'+escHtml(r.status||'')+'</td>'
     ].join('')+'</tr>').join('');
   }
-  box.innerHTML='<div class="wms-card">'+(p.imageUrl?'<img class="wms-img" src="'+escHtml(p.imageUrl)+'" loading="lazy" onerror="this.style.display=\'none\'">':'')+'<div class="wms-card-body"><div class="wms-product-name">'+escHtml(title)+'</div><div class="wms-meta">'+meta+'</div></div></div><div class="wms-actions wms-result-actions">'+wmsStorageToggleButton()+'<button class="exi-btn primary" onclick="wmsCopyCells()">Скопировать</button><button class="exi-btn" onclick="wmsCopyProduct()">УТ/ШК</button><button class="exi-btn" onclick="wmsSaveAsProblem()">В проблемы</button></div><div class="wms-table-wrap"><table class="wms-table"><thead>'+tableHead+'</thead><tbody>'+rowsHtml+'</tbody></table></div>';
+  box.innerHTML='<div class="wms-card">'+(p.imageUrl?'<img class="wms-img" src="'+escHtml(p.imageUrl)+'" loading="lazy" onerror="this.style.display=\'none\'">':'')+'<div class="wms-card-body"><div class="wms-product-name">'+escHtml(title)+'</div><div class="wms-meta">'+meta+'</div></div></div><div class="wms-actions wms-result-actions">'+wmsStorageToggleButton()+'<button class="exi-btn primary" onclick="wmsCopyCells()">Скопировать строки</button><button class="exi-btn" onclick="wmsImportLastStocksToHH11()">В HH 1-1</button>'+wmsCopySplitButtons()+'</div><div class="wms-table-wrap"><table class="wms-table"><thead>'+tableHead+'</thead><tbody>'+rowsHtml+'</tbody></table></div>';
 }
 function wmsChangeRowText(r){
   return [
@@ -1221,6 +1339,759 @@ window.wmsSetChangeOperationFilter=wmsSetChangeOperationFilter;
 window.wmsCopyChangeRow=wmsCopyChangeRow;
 window.wmsSaveChangeAsProblem=wmsSaveChangeAsProblem;
 window.wmsSearchHuChanges=wmsSearchHuChanges;
+
+
+
+// ── WMS RECOUNTING TASKS v54 ──
+function wmsRecountLabelStatus(v){
+  const m={
+    COMPLETED:'Завершён',
+    COMPLETED_WITH_DISCREPANCY:'Подтверждено с расхождением',
+    AWAITING_CONFIRMATION:'Ждёт подтверждения',
+    IN_PROGRESS:'В работе',
+    CREATED:'Создан',
+    REJECTED:'Отклонён',
+    DECLINED:'Отклонён',
+    CANCELLED:'Отменён',
+    CANCELED:'Отменён',
+    WITHOUT_REVIEW:'Без ревью'
+  };
+  return m[String(v||'').toUpperCase()]||String(v||'');
+}
+function wmsRecountLabelScope(v){
+  const m={FULL:'Полный',PARTIAL:'Частичный'};
+  return m[String(v||'').toUpperCase()]||String(v||'');
+}
+function wmsRecountLabelReason(v){
+  const m={
+    CREATED_ON_PDT:'Создано на ТСД',
+    STOCKS_MISSING_DURING_PICKING_SELECTION:'Нет товара при отборе',
+    UNEXPECTED_STOCK_DISCREPANCY_CONFIRMATION:'Излишек / расхождение',
+    NOT_FOUND_STOCK_DISCREPANCY_CONFIRMATION:'Недостача / не найдено',
+    MANUAL:'Ручной пересчёт',
+    UNKNOWN:'Другое'
+  };
+  return m[String(v||'').toUpperCase()]||String(v||'');
+}
+function wmsDateIsoDay(s){
+  s=String(s||'').trim();
+  if(!s)return '';
+  const m=s.match(/^(\d{4}-\d{2}-\d{2})/); if(m)return m[1];
+  try{const d=new Date(s); if(!isNaN(d))return d.toISOString().slice(0,10);}catch(e){}
+  return s;
+}
+function wmsRecountDateText(s){
+  if(!s)return '';
+  try{
+    const str=String(s);
+    if(/^\d{4}-\d{2}-\d{2}$/.test(str))return str.split('-').reverse().join('.');
+    return new Date(str).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'2-digit',hour:'2-digit',minute:'2-digit'});
+  }catch(e){return String(s||'');}
+}
+function wmsFindRecountingItems(obj, depth){
+  depth=depth||0;
+  if(!obj || depth>7)return null;
+  if(Array.isArray(obj)){
+    if(obj.some(x=>x&&typeof x==='object'&&(x.scope||x.reason||x.executorName)&&(x.cell||x.cellAddress||x.status)))return obj;
+    for(const x of obj){const r=wmsFindRecountingItems(x,depth+1); if(r)return r;}
+    return null;
+  }
+  if(typeof obj==='object'){
+    if(obj.value&&Array.isArray(obj.value.items))return obj.value.items;
+    if(Array.isArray(obj.items))return obj.items;
+    for(const k of Object.keys(obj)){const r=wmsFindRecountingItems(obj[k],depth+1); if(r)return r;}
+  }
+  return null;
+}
+function wmsMapRecountingItem(item){
+  item=item||{};
+  const cell=item.cell||{};
+  return {
+    id:item.id||'',
+    type:item.type||'',
+    status:item.status||item.type||'',
+    cellAddress:cell.cellAddress||item.cellAddress||'',
+    reason:item.reason||'',
+    scope:item.scope||'',
+    createdAt:item.createdAt||'',
+    completedAt:item.completedAt||'',
+    executorName:item.executorName||'',
+    zoneName:item.zoneName||'',
+    detailLoaded:false,
+    positionCount:null,
+    partCount:null,
+    expectedQty:null,
+    actualQty:null,
+    defectiveQty:null,
+    discrepancyQty:null,
+    discrepancyRows:null,
+    detailTask:null,
+    raw:item
+  };
+}
+function wmsNormalizeRecountingResult(payload){
+  const items=wmsFindRecountingItems(payload)||[];
+  const rows=items.map(wmsMapRecountingItem).filter(r=>r.cellAddress||r.executorName||r.status||r.reason);
+  const value=payload&&payload.value?payload.value:{};
+  return {mode:'recountingTasks',rows,totalRows:rows.length,total:value.total||rows.length,loadedRows:(payload&&payload._loadedRows)||rows.length,filters:(payload&&payload._filters)||{}};
+}
+function wmsGetRecountingFilters(){
+  const val=id=>{const el=document.getElementById(id); return el?String(el.value||'').trim():'';};
+  return {status:val('wms-rc-status')||'all',scope:val('wms-rc-scope')||'all',reason:val('wms-rc-reason')||'all',date:val('wms-rc-date'),executor:val('wms-rc-executor'),executorId:val('wms-rc-executor-id'),cell:val('wms-rc-cell')};
+}
+function wmsRecountHasDiscrepancy(r){
+  if(!r || !r.detailLoaded)return false;
+  return Number(r.discrepancyQty||0)!==0 || Number(r.discrepancyRows||0)>0;
+}
+function wmsApplyRecountingFilters(rows, filters){
+  filters=filters||wmsGetRecountingFilters();
+  const ex=String(filters.executor||'').trim().toLowerCase();
+  const cell=String(filters.cell||'').trim().toLowerCase();
+  const date=String(filters.date||'').trim();
+  const status=String(filters.status||'all').trim().toUpperCase();
+  return (rows||[]).filter(r=>{
+    if(status==='DISCREPANCY'){
+      if(!wmsRecountHasDiscrepancy(r))return false;
+    }else if(status && status!=='ALL' && String(r.status||'').toUpperCase()!==status){
+      return false;
+    }
+    if(filters.scope && filters.scope!=='all' && String(r.scope||'').toUpperCase()!==filters.scope)return false;
+    if(filters.reason && filters.reason!=='all' && String(r.reason||'').toUpperCase()!==filters.reason)return false;
+    if(date && wmsDateIsoDay(r.completedAt||r.createdAt)!==date)return false;
+    if(ex && !String(r.executorName||'').toLowerCase().includes(ex))return false;
+    if(cell){const hay=[r.cellAddress,r.zoneName].join(' ').toLowerCase(); if(!hay.includes(cell))return false;}
+    return true;
+  });
+}
+function wmsCountBy(rows, fn){const m={};(rows||[]).forEach(r=>{const k=fn(r)||'—'; m[k]=(m[k]||0)+1;});return m;}
+function wmsTopEntries(obj, limit){return Object.entries(obj||{}).sort((a,b)=>b[1]-a[1]||String(a[0]).localeCompare(String(b[0]),'ru')).slice(0,limit||8);}
+function wmsNum(v){const n=Number(v);return Number.isFinite(n)?n:0;}
+function wmsRecountDetailStats(task){
+  task=task||{};
+  const products=Array.isArray(task.products)?task.products:[];
+  const st={positionCount:products.length,partCount:0,expectedQty:0,actualQty:0,defectiveQty:0,discrepancyQty:0,discrepancyRows:0};
+  products.forEach(p=>{
+    const parts=Array.isArray(p.parts)?p.parts:[];
+    st.partCount+=parts.length;
+    parts.forEach(part=>{
+      const expected=wmsNum(part.expectedQuantity);
+      const actual=wmsNum(part.actualQuantity);
+      const defective=wmsNum(part.defectiveQuantity);
+      let discrepancy=part.discrepancy;
+      if(discrepancy===undefined || discrepancy===null || discrepancy==='')discrepancy=actual-expected;
+      discrepancy=wmsNum(discrepancy);
+      st.expectedQty+=expected;
+      st.actualQty+=actual;
+      st.defectiveQty+=defective;
+      st.discrepancyQty+=discrepancy;
+      if(discrepancy!==0)st.discrepancyRows+=1;
+    });
+  });
+  return st;
+}
+function wmsApplyRecountDetail(row, task){
+  if(!row||!task)return row;
+  const st=wmsRecountDetailStats(task);
+  row.detailLoaded=true;
+  row.detailTask=task;
+  row.positionCount=st.positionCount;
+  row.partCount=st.partCount;
+  row.expectedQty=st.expectedQty;
+  row.actualQty=st.actualQty;
+  row.defectiveQty=st.defectiveQty;
+  row.discrepancyQty=st.discrepancyQty;
+  row.discrepancyRows=st.discrepancyRows;
+  row.scope=row.scope||task.scope||'';
+  row.status=row.status||task.status||'';
+  row.cellAddress=row.cellAddress||task.cellAddress||'';
+  return row;
+}
+function wmsRecountSum(rows,key){return (rows||[]).reduce((s,r)=>s+(Number.isFinite(Number(r[key]))?Number(r[key]):0),0);}
+function wmsRecountHasDetails(rows){return (rows||[]).some(r=>r&&r.detailLoaded);}
+function wmsRecountStatLine(r){
+  if(!r||!r.detailLoaded)return '<span class="wms-recount-badge">позиции не загружены</span>';
+  return '<span class="wms-recount-badge">поз. '+escHtml(r.positionCount)+'</span><span class="wms-recount-badge">парт. '+escHtml(r.partCount)+'</span><span class="wms-recount-badge">сист. '+escHtml(r.expectedQty)+'</span><span class="wms-recount-badge">факт '+escHtml(r.actualQty)+'</span><span class="wms-recount-badge">разн. '+escHtml(r.discrepancyQty)+'</span>';
+}
+function wmsRenderRecountingResult(result){
+  wmsLastResult=result; wmsLastChoices=null;
+  const box=document.getElementById('wms-result'); if(!box)return;
+  const filters=wmsGetRecountingFilters();
+  const rows=wmsApplyRecountingFilters((result&&result.rows)||[],filters);
+  if(!rows.length){box.innerHTML='<div class="no-results">Пересчётов по этим фильтрам нет</div>';return;}
+  const hasDetails=wmsRecountHasDetails(rows);
+  const byExecutor=wmsCountBy(rows,r=>r.executorName||'Без исполнителя');
+  const byDay=wmsCountBy(rows,r=>wmsDateIsoDay(r.completedAt||r.createdAt)||'Без даты');
+  const byZone=wmsCountBy(rows,r=>r.zoneName||'Без зоны');
+  const full=rows.filter(r=>String(r.scope).toUpperCase()==='FULL').length;
+  const partial=rows.filter(r=>String(r.scope).toUpperCase()==='PARTIAL').length;
+  const totalPositions=wmsRecountSum(rows,'positionCount');
+  const totalParts=wmsRecountSum(rows,'partCount');
+  const totalExpected=wmsRecountSum(rows,'expectedQty');
+  const totalActual=wmsRecountSum(rows,'actualQty');
+  const totalDiscrep=wmsRecountSum(rows,'discrepancyQty');
+  const totalDefect=wmsRecountSum(rows,'defectiveQty');
+  const executorCards=wmsTopEntries(byExecutor,6).map(([name,n])=>{
+    const personRows=rows.filter(r=>(r.executorName||'Без исполнителя')===name);
+    const detail=hasDetails?' · поз. '+wmsRecountSum(personRows,'positionCount')+' · факт '+wmsRecountSum(personRows,'actualQty'):'';
+    return '<div class="wms-recount-person"><b>'+escHtml(name)+'</b><span>'+escHtml(n)+' пересч.'+escHtml(detail)+' · '+escHtml(wmsTopEntries(wmsCountBy(personRows,r=>r.zoneName||'Без зоны'),3).map(x=>x[0]+' '+x[1]).join(', '))+'</span></div>';
+  }).join('');
+  const dayBadges=wmsTopEntries(byDay,7).map(([d,n])=>'<span class="wms-recount-badge">'+escHtml(d)+' · '+escHtml(n)+'</span>').join('');
+  const zoneBadges=wmsTopEntries(byZone,6).map(([z,n])=>'<span class="wms-recount-badge">'+escHtml(z)+' · '+escHtml(n)+'</span>').join('');
+  const detailHead=hasDetails?'<th>Поз.</th><th>Партии</th><th>Сист.</th><th>Факт</th><th>Разн.</th><th>Брак</th>':'';
+  const table=rows.map(r=>'<tr>'+[
+    '<td>'+escHtml(wmsRecountDateText(r.completedAt||r.createdAt))+'</td>',
+    '<td><b>'+escHtml(r.executorName||'—')+'</b><br>'+wmsRecountStatLine(r)+'</td>',
+    '<td><b>'+escHtml(r.cellAddress||'—')+'</b></td>',
+    '<td>'+escHtml(r.zoneName||'')+'</td>',
+    '<td>'+escHtml(wmsRecountLabelScope(r.scope))+'</td>',
+    '<td>'+escHtml(wmsRecountLabelReason(r.reason))+'<br><small>'+escHtml(r.reason||'')+'</small></td>',
+    '<td>'+escHtml(wmsRecountLabelStatus(r.status))+'</td>',
+    hasDetails?('<td>'+escHtml(r.detailLoaded?r.positionCount:'—')+'</td><td>'+escHtml(r.detailLoaded?r.partCount:'—')+'</td><td>'+escHtml(r.detailLoaded?r.expectedQty:'—')+'</td><td>'+escHtml(r.detailLoaded?r.actualQty:'—')+'</td><td>'+escHtml(r.detailLoaded?r.discrepancyQty:'—')+'</td><td>'+escHtml(r.detailLoaded?r.defectiveQty:'—')+'</td>'):''
+  ].join('')+'</tr>').join('');
+  box.innerHTML=
+    '<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">Задания на пересчёт</div><div class="wms-meta">Показано: <b>'+escHtml(rows.length)+'</b> · загружено из WMS: <b>'+escHtml(result.loadedRows||result.totalRows||rows.length)+'</b>'+(hasDetails?' · позиции загружены':'')+'</div></div></div>'+ 
+    '<div class="wms-recount-summary">'+
+      '<div class="wms-recount-stat"><b>'+escHtml(rows.length)+'</b><span>пересчётов по фильтру</span></div>'+ 
+      '<div class="wms-recount-stat"><b>'+escHtml(Object.keys(byExecutor).length)+'</b><span>исполнителей</span></div>'+ 
+      '<div class="wms-recount-stat"><b>'+escHtml(full)+' / '+escHtml(partial)+'</b><span>полный / частичный</span></div>'+ 
+      (hasDetails?('<div class="wms-recount-stat"><b>'+escHtml(totalPositions)+'</b><span>товарных позиций</span></div><div class="wms-recount-stat"><b>'+escHtml(totalParts)+'</b><span>партий / строк сроков</span></div><div class="wms-recount-stat"><b>'+escHtml(totalActual)+'</b><span>факт, всего штук</span></div><div class="wms-recount-stat"><b>'+escHtml(totalExpected)+'</b><span>система, всего штук</span></div><div class="wms-recount-stat"><b>'+escHtml(totalDiscrep)+'</b><span>расхождение</span></div><div class="wms-recount-stat"><b>'+escHtml(totalDefect)+'</b><span>брак</span></div>'):'')+
+    '</div>'+ 
+    '<div class="wms-filter-title">Кто и сколько</div><div class="wms-recount-executors">'+executorCards+'</div>'+ 
+    '<div class="wms-filter-title">По дням</div><div>'+dayBadges+'</div>'+ 
+    '<div class="wms-filter-title">По зонам</div><div>'+zoneBadges+'</div>'+ 
+    '<div class="wms-actions wms-result-actions"><button class="exi-btn primary" onclick="wmsLoadRecountingDetails()">Загрузить позиции</button><button class="exi-btn" onclick="wmsCopyRecountingTsv()">Скопировать TSV</button><button class="exi-btn" onclick="wmsLoadRecountingTasks()">Обновить</button></div>'+ 
+    '<div class="wms-table-wrap"><table class="wms-table"><thead><tr><th>Дата</th><th>Исполнитель</th><th>Ячейка</th><th>Зона</th><th>Тип</th><th>Причина</th><th>Статус</th>'+detailHead+'</tr></thead><tbody>'+table+'</tbody></table></div>';
+}
+async function wmsLoadRecountingTasks(){
+  const filters=wmsGetRecountingFilters();
+  const requestFilters=Object.assign({},filters);
+  // «С расхождениями» вычисляется только из деталей, поэтому сначала берём все статусы.
+  if(String(requestFilters.status||'').toUpperCase()==='DISCREPANCY')requestFilters.status='all';
+  wmsSetStatus('Загружаю пересчёты из WMS…','wait');
+  try{
+    const raw=await wmsCallNative('lookupWmsRecountingTasks',[JSON.stringify(requestFilters)],45000);
+    wmsLastRecountingRaw=raw;
+    const result=wmsNormalizeRecountingResult(raw);
+    wmsRenderRecountingResult(result);
+    const shown=wmsApplyRecountingFilters(result.rows,filters).length;
+    const note=String(filters.status||'').toUpperCase()==='DISCREPANCY' && !wmsRecountHasDetails(result.rows||[])
+      ? ' Для фильтра «С расхождениями» нажми «Загрузить позиции».' : '';
+    wmsSetStatus('Пересчёты: '+shown+' строк по фильтру.'+note,'ok');
+  }catch(e){wmsSetStatus((e&&e.message)||WMS_AUTO_UNAVAILABLE,'err');}
+}
+function wmsFindDetailTasks(payload){
+  if(!payload)return [];
+  if(payload.value&&Array.isArray(payload.value.tasks))return payload.value.tasks;
+  if(Array.isArray(payload.tasks))return payload.tasks;
+  return [];
+}
+async function wmsLoadRecountingDetails(){
+  if(!wmsLastResult || String(wmsLastResult.mode||'')!=='recountingTasks'){alert('Сначала загрузи список пересчётов');return;}
+  const currentFilters=wmsGetRecountingFilters();
+  const detailFilters=Object.assign({},currentFilters,{status:String(currentFilters.status||'').toUpperCase()==='DISCREPANCY'?'all':currentFilters.status});
+  const rows=wmsApplyRecountingFilters(wmsLastResult.rows||[],detailFilters).filter(r=>r.id && !r.detailLoaded);
+  if(!rows.length){wmsSetStatus('Позиции уже загружены или нет id пересчётов.','ok');return;}
+  const ids=rows.map(r=>r.id);
+  wmsSetStatus('Загружаю позиции пересчётов: '+ids.length+' задач…','wait');
+  try{
+    const raw=await wmsCallNative('lookupWmsRecountingTaskDetails',[JSON.stringify(ids)],120000);
+    const tasks=wmsFindDetailTasks(raw);
+    const byId={};
+    tasks.forEach(t=>{const id=t.id||t._loadedDetailId||''; if(id)byId[id]=t;});
+    (wmsLastResult.rows||[]).forEach(r=>{if(r.id&&byId[r.id])wmsApplyRecountDetail(r,byId[r.id]);});
+    wmsRenderRecountingResult(wmsLastResult);
+    const loaded=tasks.length;
+    const errors=(raw&&raw.value&&Array.isArray(raw.value.errors))?raw.value.errors.length:0;
+    wmsSetStatus('Позиции загружены: '+loaded+(errors?(' · ошибок: '+errors):''),'ok');
+  }catch(e){wmsSetStatus((e&&e.message)||'Не смог загрузить позиции пересчётов.','err');}
+}
+function wmsRecountingToday(){
+  const d=new Date();
+  const iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  const el=document.getElementById('wms-rc-date'); if(el)el.value=iso;
+  wmsLoadRecountingTasks();
+}
+function wmsClearRecountingFilters(){
+  const set=(id,v)=>{const el=document.getElementById(id); if(el)el.value=v;};
+  set('wms-rc-status','all'); set('wms-rc-scope','all'); set('wms-rc-reason','all'); set('wms-rc-date',''); set('wms-rc-executor',''); set('wms-rc-cell',''); set('wms-rc-executor-id','');
+  if(wmsLastResult && String(wmsLastResult.mode||'')==='recountingTasks')wmsRenderRecountingResult(wmsLastResult);
+}
+function wmsCopyRecountingTsv(){
+  if(!wmsLastResult || String(wmsLastResult.mode||'')!=='recountingTasks'){alert('Нет списка пересчётов');return;}
+  const rows=wmsApplyRecountingFilters(wmsLastResult.rows||[],wmsGetRecountingFilters());
+  const head=['Дата','Исполнитель','Ячейка','Зона','Тип','Причина','Статус','Позиций','Партий','Система','Факт','Расхождение','Брак','ID'];
+  const lines=[head.join('\t')].concat(rows.map(r=>[
+    wmsRecountDateText(r.completedAt||r.createdAt),r.executorName,r.cellAddress,r.zoneName,wmsRecountLabelScope(r.scope),wmsRecountLabelReason(r.reason),wmsRecountLabelStatus(r.status),
+    r.detailLoaded?r.positionCount:'',r.detailLoaded?r.partCount:'',r.detailLoaded?r.expectedQty:'',r.detailLoaded?r.actualQty:'',r.detailLoaded?r.discrepancyQty:'',r.detailLoaded?r.defectiveQty:'',r.id
+  ].map(v=>String(v||'').replace(/\t/g,' ').replace(/\n/g,' ')).join('\t')));
+  wmsCopyFallback(lines.join('\n')).then(()=>wmsSetStatus('TSV пересчётов скопирован: '+rows.length+' строк.','ok'));
+}
+
+
+// ── WMS MOBILE CARDS v59 ──
+// На телефоне позиции и пересчёты показываются карточками: без горизонтальной прокрутки.
+function wmsStockFieldValue(row, field){
+  row=row||{};
+  const p=(wmsLastResult&&wmsLastResult.product)||{};
+  if(field==='ut') return String(row.nomenclatureCode||p.nomenclatureCode||'');
+  if(field==='name') return String(row.name||p.name||'');
+  if(field==='barcode'){
+    if(row.barcode)return String(row.barcode);
+    if(Array.isArray(row.barcodes)&&row.barcodes.length)return String(row.barcodes[0]||'');
+    if(p.barcode)return String(p.barcode);
+    if(Array.isArray(p.barcodes)&&p.barcodes.length)return String(p.barcodes[0]||'');
+    return '';
+  }
+  if(field==='hu') return String(row.handlingUnitBarcode||'');
+  return '';
+}
+function wmsCopyStockField(index, field){
+  const rows=(wmsLastResult&&wmsLastResult.rows)||[];
+  const row=rows[Number(index)]||{};
+  const value=wmsStockFieldValue(row,field);
+  const label={ut:'УТ',barcode:'ШК',name:'Наименование',hu:'ЕО/HU'}[field]||'Поле';
+  if(!value){wmsSetStatus(label+' для этой позиции не найден.','err');return;}
+  wmsCopyFallback(value).then(()=>wmsSetStatus(label+' скопирован.','ok'));
+}
+function wmsStockStatusLabel(status){
+  const code=String(status||'').trim().toUpperCase();
+  const map={RESERVED_FOR_ORDER:'Резерв под заказ',AVAILABLE:'Доступен',DEFECTIVE:'Брак',BLOCKED:'Заблокирован'};
+  return map[code]||String(status||'');
+}
+function wmsStockCopyButtons(sourceIndex,row){
+  const btn=(label,field,enabled=true)=>enabled?'<button class="wms-mini-copy" onclick="wmsCopyStockField('+sourceIndex+',\''+field+'\')">'+label+'</button>':'';
+  return '<div class="wms-stock-copy-row">'+
+    btn('УТ','ut',!!wmsStockFieldValue(row,'ut'))+
+    btn('ШК','barcode',!!wmsStockFieldValue(row,'barcode'))+
+    btn('Название','name',!!wmsStockFieldValue(row,'name'))+
+    btn('ЕО','hu',!!wmsStockFieldValue(row,'hu'))+
+  '</div>';
+}
+function wmsStockCardsHtml(result, rows){
+  const all=(result&&result.rows)||[];
+  const mode=String((result&&result.mode)||'');
+  return '<div class="wms-stock-list">'+(rows||[]).map(r=>{
+    const sourceIndex=Math.max(0,all.indexOf(r));
+    const name=wmsStockFieldValue(r,'name')||'Товар';
+    const ut=wmsStockFieldValue(r,'ut');
+    const qty=Number(r.quantity)||0;
+    const date=r.bestBeforeDate?('до '+r.bestBeforeDate):'';
+    const hu=wmsStockFieldValue(r,'hu');
+    const location=mode==='product'?[r.cellAddress,r.zoneName||r.locationName].filter(Boolean).join(' · '):[r.cellAddress&&('Ячейка '+r.cellAddress),r.zoneName].filter(Boolean).join(' · ');
+    const status=r.status?wmsStockStatusLabel(r.status):'';
+    return '<article class="wms-stock-card">'+
+      '<div class="wms-stock-title">'+escHtml(name)+'</div>'+ 
+      '<div class="wms-stock-main">'+
+        (ut?'<span class="wms-stock-ut">'+escHtml(ut)+'</span>':'')+
+        '<span class="wms-stock-qty">'+escHtml(qty)+' шт</span>'+
+        (date?'<span>'+escHtml(date)+'</span>':'')+
+      '</div>'+ 
+      (location?'<div class="wms-stock-location">'+escHtml(location)+'</div>':'')+
+      '<div class="wms-stock-chips">'+
+        (hu?'<span class="wms-stock-chip">ЕО '+escHtml(hu)+'</span>':'')+
+        (status?'<span class="wms-stock-chip status">'+escHtml(status)+'</span>':'')+
+      '</div>'+ 
+      wmsStockCopyButtons(sourceIndex,r)+
+    '</article>';
+  }).join('')+'</div>';
+}
+function wmsRenderResult(result){
+  wmsLastResult=result; wmsLastChoices=null;
+  const box=document.getElementById('wms-result'); if(!box)return;
+  const p=(result&&result.product)||{};
+  const sourceRows=(result&&result.rows)||[];
+  const rows=wmsApplyStorageFilter(sourceRows);
+  if(!sourceRows.length){box.innerHTML='<div class="no-results">Нет строк</div>';return;}
+  if(String(result.mode||'').indexOf('changes')===0){box.innerHTML=wmsRenderChangesResult(result,p,sourceRows);return;}
+  if(!rows.length){box.innerHTML='<div class="no-results">По фильтру хранения строк нет. <button class="exi-btn" onclick="wmsToggleStorageOnly()">Показать всё</button></div>';return;}
+  const isCell=result.mode==='cell';
+  const isHu=result.mode==='hu';
+  const title=isCell?('Содержимое ячейки '+(result.cellAddress||rows[0].cellAddress||'')):(isHu?('Содержимое ЕО '+(result.query||rows[0].handlingUnitBarcode||'')):(p.name||rows[0].name||'Товар из WMS'));
+  const meta=(isCell||isHu)
+    ? 'Строк: <b>'+escHtml(result.totalRows||rows.length)+'</b> · Остаток: <b>'+escHtml(result.totalQuantity||0)+'</b> шт'
+    : ((p.nomenclatureCode?'<b>'+escHtml(p.nomenclatureCode)+'</b> · ':'')+'Строк: <b>'+escHtml(result.totalRows||rows.length)+'</b> · Остаток: <b>'+escHtml(result.totalQuantity||0)+'</b> шт');
+  box.innerHTML='<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">'+escHtml(title)+'</div><div class="wms-meta">'+meta+'</div></div></div>'+
+    '<div class="wms-actions wms-result-actions">'+wmsStorageToggleButton()+'<button class="exi-btn" onclick="wmsCopyCells()">Скопировать список</button></div>'+
+    wmsStockCardsHtml(result,rows);
+}
+function wmsRecountStatusClass(r){
+  if(wmsRecountHasDiscrepancy(r))return 'discrepancy';
+  const s=String((r&&r.status)||'').toUpperCase();
+  if(/AWAITING/.test(s))return 'awaiting';
+  if(/REJECT|DECLIN/.test(s))return 'rejected';
+  if(/CANCEL/.test(s))return 'cancelled';
+  if(/COMPLETE/.test(s))return 'completed';
+  if(/PROGRESS/.test(s))return 'progress';
+  return 'default';
+}
+function wmsRecountStatusBadges(r){
+  const main='<span class="wms-recount-status '+wmsRecountStatusClass(Object.assign({},r,{detailLoaded:false}))+'">'+escHtml(wmsRecountLabelStatus(r.status))+'</span>';
+  const discrepancy=wmsRecountHasDiscrepancy(r)?'<span class="wms-recount-status discrepancy">Есть расхождение '+escHtml(wmsDeltaText(r.discrepancyQty))+'</span>':'';
+  return '<div class="wms-recount-statuses">'+main+discrepancy+'</div>';
+}
+function wmsRecountProductsHtml(r){
+  if(!r||!r.detailLoaded||!r.detailTask||!Array.isArray(r.detailTask.products))return '';
+  const products=r.detailTask.products;
+  const lines=products.slice(0,60).map(p=>{
+    const parts=Array.isArray(p.parts)?p.parts:[];
+    const expected=parts.reduce((s,x)=>s+wmsNum(x.expectedQuantity),0);
+    const actual=parts.reduce((s,x)=>s+wmsNum(x.actualQuantity),0);
+    const diff=parts.reduce((s,x)=>{let d=x.discrepancy; if(d===undefined||d===null||d==='')d=wmsNum(x.actualQuantity)-wmsNum(x.expectedQuantity); return s+wmsNum(d);},0);
+    return '<div class="wms-recount-product"><b>'+escHtml(p.productName||'Товар')+'</b><span>сист. '+escHtml(expected)+' · факт '+escHtml(actual)+(diff!==0?' · разн. '+escHtml(wmsDeltaText(diff)):'')+'</span></div>';
+  }).join('');
+  const tail=products.length>60?'<div class="wms-recount-product-tail">Ещё '+escHtml(products.length-60)+' позиций не показано</div>':'';
+  return '<details class="wms-recount-products"><summary>Товары в пересчёте · '+escHtml(products.length)+'</summary>'+lines+tail+'</details>';
+}
+function wmsRecountActionButtons(r){
+  if(String((r&&r.status)||'').toUpperCase()!=='AWAITING_CONFIRMATION')return '';
+  const id=escHtml(String((r&&r.id)||''));
+  if(!r.detailLoaded)return '<div class="wms-recount-actions"><button class="exi-btn" onclick="wmsLoadOneRecountDetail(&quot;'+id+'&quot;)">Открыть позиции</button></div>';
+  if(!wmsRecountHasDiscrepancy(r))return '<div class="wms-recount-auto">Без расхождений — WMS подтверждает такой пересчёт автоматически.</div>';
+  return '<div class="wms-recount-actions"><button class="exi-btn primary" onclick="wmsDecideRecount(&quot;'+id+'&quot;,&quot;COMPLETED_WITH_DISCREPANCY&quot;)">Подтвердить</button><button class="exi-btn danger" onclick="wmsDecideRecount(&quot;'+id+'&quot;,&quot;REJECTED&quot;)">Отклонить</button></div>';
+}
+function wmsRecountCardsHtml(rows){
+  return '<div class="wms-recount-list">'+(rows||[]).map(r=>{
+    const date=wmsRecountDateText(r.completedAt||r.createdAt)||'Без даты';
+    const full=[wmsRecountLabelScope(r.scope),wmsRecountLabelReason(r.reason)].filter(Boolean).join(' · ');
+    const numeric=r.detailLoaded
+      ? '<div class="wms-recount-numbers"><span>Поз. <b>'+escHtml(r.positionCount)+'</b></span><span>Сист. <b>'+escHtml(r.expectedQty)+'</b></span><span>Факт <b>'+escHtml(r.actualQty)+'</b></span><span>Разн. <b>'+escHtml(wmsDeltaText(r.discrepancyQty))+'</b></span></div>'
+      : '<div class="wms-recount-pending">Позиции ещё не загружены</div>';
+    return '<article class="wms-recount-card">'+
+      '<div class="wms-recount-card-top"><div><div class="wms-recount-cell">'+escHtml(r.cellAddress||'—')+'</div><div class="wms-recount-date">'+escHtml(date)+(r.zoneName?' · '+escHtml(r.zoneName):'')+'</div></div>'+wmsRecountStatusBadges(r)+'</div>'+ 
+      '<div class="wms-recount-person-line">'+escHtml(r.executorName||'Исполнитель не указан')+'</div>'+ 
+      '<div class="wms-recount-type">'+escHtml(full||'Пересчёт')+'</div>'+numeric+wmsRecountProductsHtml(r)+wmsRecountActionButtons(r)+
+    '</article>';
+  }).join('')+'</div>';
+}
+function wmsRenderRecountingResult(result){
+  wmsLastResult=result; wmsLastChoices=null;
+  const box=document.getElementById('wms-result'); if(!box)return;
+  const filters=wmsGetRecountingFilters();
+  const allRows=(result&&result.rows)||[];
+  const rows=wmsApplyRecountingFilters(allRows,filters);
+  const hasDetails=wmsRecountHasDetails(allRows);
+  if(!rows.length && String(filters.status||'').toUpperCase()==='DISCREPANCY' && !hasDetails){
+    box.innerHTML='<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">Расхождения ещё не посчитаны</div><div class="wms-meta">Чтобы показать пересчёты с расхождениями, сначала загрузи позиции. WMS хранит разницу внутри деталей каждого задания.</div></div></div><div class="wms-actions"><button class="exi-btn primary" onclick="wmsLoadRecountingDetails()">Загрузить позиции</button></div>';
+    return;
+  }
+  if(!rows.length){box.innerHTML='<div class="no-results">Пересчётов по этим фильтрам нет</div>';return;}
+  const byExecutor=wmsCountBy(rows,r=>r.executorName||'Без исполнителя');
+  const statusCounts=wmsCountBy(rows,r=>wmsRecountLabelStatus(r.status)||'Без статуса');
+  const full=rows.filter(r=>String(r.scope).toUpperCase()==='FULL').length;
+  const partial=rows.filter(r=>String(r.scope).toUpperCase()==='PARTIAL').length;
+  const withDiscrepancy=rows.filter(wmsRecountHasDiscrepancy).length;
+  const totalPositions=wmsRecountSum(rows,'positionCount');
+  const totalActual=wmsRecountSum(rows,'actualQty');
+  const totalDiscrep=wmsRecountSum(rows,'discrepancyQty');
+  const executorCards=wmsTopEntries(byExecutor,6).map(([name,n])=>'<div class="wms-recount-person"><b>'+escHtml(name)+'</b><span>'+escHtml(n)+' пересч.'+(hasDetails?' · поз. '+escHtml(wmsRecountSum(rows.filter(r=>(r.executorName||'Без исполнителя')===name),'positionCount')):'')+'</span></div>').join('');
+  const statuses=wmsTopEntries(statusCounts,12).map(([name,n])=>'<span class="wms-recount-badge">'+escHtml(name)+' · '+escHtml(n)+'</span>').join('');
+  box.innerHTML='<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">Задания на пересчёт</div><div class="wms-meta">Показано: <b>'+escHtml(rows.length)+'</b> · загружено: <b>'+escHtml(result.loadedRows||result.totalRows||allRows.length)+'</b>'+(hasDetails?' · детали есть':'')+'</div></div></div>'+ 
+    '<div class="wms-recount-summary">'+
+      '<div class="wms-recount-stat"><b>'+escHtml(rows.length)+'</b><span>заданий</span></div>'+ 
+      '<div class="wms-recount-stat"><b>'+escHtml(Object.keys(byExecutor).length)+'</b><span>исполнителей</span></div>'+ 
+      '<div class="wms-recount-stat"><b>'+escHtml(full)+' / '+escHtml(partial)+'</b><span>полный / частичный</span></div>'+ 
+      '<div class="wms-recount-stat"><b>'+escHtml(withDiscrepancy)+'</b><span>с расхождениями</span></div>'+
+      (hasDetails?'<div class="wms-recount-stat"><b>'+escHtml(totalPositions)+'</b><span>товарных позиций</span></div><div class="wms-recount-stat"><b>'+escHtml(totalActual)+'</b><span>факт, шт.</span></div><div class="wms-recount-stat"><b>'+escHtml(wmsDeltaText(totalDiscrep))+'</b><span>суммарная разница</span></div>':'')+
+    '</div>'+ 
+    '<div class="wms-filter-title">Статусы в выборке</div><div class="wms-recount-status-summary">'+statuses+'</div>'+ 
+    '<div class="wms-filter-title">Кто и сколько</div><div class="wms-recount-executors">'+executorCards+'</div>'+ 
+    '<div class="wms-actions wms-result-actions"><button class="exi-btn primary" onclick="wmsLoadRecountingDetails()">Загрузить позиции</button><button class="exi-btn" onclick="wmsCopyRecountingTsv()">Скопировать TSV</button><button class="exi-btn" onclick="wmsLoadRecountingTasks()">Обновить</button></div>'+ 
+    wmsRecountCardsHtml(rows);
+}
+
+
+// ── v60: подтверждение пересчётов и отбор по открытым заказам ──
+async function wmsLoadOneRecountDetail(id){
+  if(!id){wmsSetStatus('Нет id задания пересчёта.','err');return;}
+  wmsSetStatus('Открываю товары и расхождения…','wait');
+  try{
+    const raw=await wmsCallNative('lookupWmsRecountingTaskDetails',[JSON.stringify([id])],45000);
+    const task=wmsFindDetailTasks(raw)[0];
+    const row=(wmsLastResult&&wmsLastResult.rows||[]).find(x=>x.id===id);
+    if(!task||!row)throw new Error('WMS не вернула детали пересчёта');
+    wmsApplyRecountDetail(row,task);
+    wmsRenderRecountingResult(wmsLastResult);
+    wmsSetStatus('Детали пересчёта открыты. Проверь позиции перед решением.','ok');
+  }catch(e){wmsSetStatus((e&&e.message)||'Не смог открыть детали пересчёта.','err');}
+}
+async function wmsDecideRecount(id,status){
+  const row=(wmsLastResult&&wmsLastResult.rows||[]).find(x=>x.id===id);
+  if(!row){wmsSetStatus('Не нашёл пересчёт в списке. Обнови данные.','err');return;}
+  if(!row.detailLoaded){await wmsLoadOneRecountDetail(id);return;}
+  if(!wmsRecountHasDiscrepancy(row)){wmsSetStatus('Без расхождений WMS подтверждает пересчёт автоматически.','ok');return;}
+  const action=status==='REJECTED'?'Отклонить':'Подтвердить';
+  const prompt=action+' пересчёт?\n\nЯчейка: '+(row.cellAddress||'—')+'\nПозиций: '+(row.positionCount??'—')+'\nСистема: '+(row.expectedQty??'—')+'\nФакт: '+(row.actualQty??'—')+'\nРазница: '+wmsDeltaText(row.discrepancyQty)+'\n\nДействие изменит статус в WMS.';
+  if(!confirm(prompt))return;
+  wmsSetStatus('Проверяю свежие детали и '+action.toLowerCase()+' пересчёт…','wait');
+  try{
+    const freshRaw=await wmsCallNative('lookupWmsRecountingTaskDetails',[JSON.stringify([id])],45000);
+    const fresh=wmsFindDetailTasks(freshRaw)[0];
+    if(!fresh)throw new Error('Не смог получить свежую версию задания');
+    const currentVersion=Number(fresh.taskVersion);
+    if(!Number.isFinite(currentVersion))throw new Error('В WMS нет taskVersion для подтверждения');
+    const payload={taskId:id,status:status,taskVersion:currentVersion+1};
+    await wmsCallNative('confirmWmsRecountingTask',[JSON.stringify(payload)],45000);
+    wmsApplyRecountDetail(row,fresh);
+    row.status=status;
+    wmsRenderRecountingResult(wmsLastResult);
+    wmsSetStatus(status==='REJECTED'?'Пересчёт отклонён в WMS.':'Пересчёт подтверждён в WMS.','ok');
+  }catch(e){wmsSetStatus((e&&e.message)||'Не удалось изменить статус пересчёта.','err');}
+}
+function wmsPickItems(raw){
+  const v=raw&&raw.value?raw.value:raw||{};
+  const items=Array.isArray(v.items)?v.items:(Array.isArray(raw&&raw.items)?raw.items:[]);
+  return items.map(x=>Object.assign({},x,{locations:Array.isArray(x.locations)?x.locations:[]}));
+}
+function wmsPickingActiveItems(items){
+  return (items||[]).filter(x=>{
+    const st=String(x.huStatus||x.status||'').toUpperCase();
+    const plan=Number(x.plannedQuantity||0), actual=Number(x.actualQuantity||0);
+    return plan>0 && actual<plan && !/CANCEL|REJECT/.test(st);
+  });
+}
+function wmsPickCell(v){return String(v||'').trim().toUpperCase();}
+function wmsPickingCopy(text,label){
+  wmsCopyFallback(text||'').then(()=>wmsSetStatus((label||'Данные')+' скопировано.','ok'));
+}
+function wmsPickingStatusLabel(st){
+  const s=String(st||'').toUpperCase();
+  if(s==='WAITING_FOR_PICKING')return 'Ждёт комплектацию';
+  if(s==='PICKING')return 'Идёт комплектация';
+  return s||'Статус не указан';
+}
+function wmsPickingStatusClass(st){
+  const s=String(st||'').toUpperCase();
+  if(s==='WAITING_FOR_PICKING')return 'wait';
+  if(s==='PICKING')return 'pick';
+  return '';
+}
+function wmsRenderPickingResult(raw, filterCell){
+  window.wmsLastPicking=raw||window.wmsLastPicking||{value:{items:[]}};
+  const box=document.getElementById('wms-result'); if(!box)return;
+  const all=wmsPickItems(window.wmsLastPicking);
+  const active=wmsPickingActiveItems(all);
+  const cell=wmsPickCell(filterCell);
+  const rows=cell?active.filter(x=>(x.locations||[]).some(l=>wmsPickCell(l.cellAddress)===cell)):active;
+  const cells={}; rows.forEach(x=>(x.locations||[]).forEach(l=>{
+    const key=wmsPickCell(l.cellAddress)||'Без ячейки';
+    if(!cells[key])cells[key]={cellAddress:l.cellAddress||'—',zoneName:l.zoneName||'',items:[]};
+    cells[key].items.push({item:x,location:l});
+  }));
+  const groups=Object.values(cells).sort((a,b)=>String(a.cellAddress).localeCompare(String(b.cellAddress),'ru'));
+  const wait=rows.filter(x=>String(x.orderStatus).toUpperCase()==='WAITING_FOR_PICKING').length;
+  const picking=rows.filter(x=>String(x.orderStatus).toUpperCase()==='PICKING').length;
+  const orderCount=new Set(rows.map(x=>x.shipmentNumber||x.shipmentId).filter(Boolean)).size;
+  const groupHtml=groups.map(g=>{
+    const lines=g.items.map(({item,location})=>{
+      const person=item.responsibleUser&&[item.responsibleUser.lastName,item.responsibleUser.firstName].filter(Boolean).join(' ');
+      const name=location.name||item.productName||'Товар из заказа';
+      const order=item.shipmentNumber||item.shipmentId||'';
+      const statusLabel=wmsPickingStatusLabel(item.orderStatus);
+      const statusCls=wmsPickingStatusClass(item.orderStatus);
+      const plan=Number(item.plannedQuantity||0), actual=Number(item.actualQuantity||0), reserved=Number(item.reservedQuantity||0);
+      return '<div class="wms-picking-line"><div class="wms-picking-name">'+escHtml(name)+'</div>'+ 
+        '<div class="wms-picking-meta"><span class="wms-pick-status '+escHtml(statusCls)+'">'+escHtml(statusLabel)+'</span>'+(order?' · заказ '+escHtml(order):'')+'</div>'+ 
+        '<div class="wms-picking-meta">План '+escHtml(plan)+' · резерв '+escHtml(reserved||plan)+' · собрано '+escHtml(actual)+' из '+escHtml(plan)+(person?' · '+escHtml(person):'')+'</div>'+ 
+        '<div class="wms-picking-code">ЕО '+escHtml(item.barcode||'')+'</div>'+ 
+        '<div class="wms-picking-actions"><button class="wms-mini-copy" onclick="wmsPickingCopy(\''+escHtml(item.barcode||'')+'\',\'ЕО\')">ЕО</button><button class="wms-mini-copy" onclick="wmsPickingCopy(\''+escHtml(g.cellAddress||'')+'\',\'Ячейка\')">Ячейка</button>'+(order?'<button class="wms-mini-copy" onclick="wmsPickingCopy(\''+escHtml(order)+'\',\'Заказ\')">Заказ</button>':'')+'</div></div>';
+    }).join('');
+    const orders=new Set(g.items.map(x=>x.item.shipmentNumber||x.item.shipmentId).filter(Boolean)).size;
+    return '<article class="wms-picking-card"><div class="wms-picking-head"><div><div class="wms-picking-cell">'+escHtml(g.cellAddress)+'</div><div class="wms-picking-zone">'+escHtml(g.zoneName||'Зона не указана')+' · '+escHtml(orders)+' заказ. · '+escHtml(g.items.length)+' строк</div></div><button class="wms-mini-copy" onclick="wmsPickingCopy(\''+escHtml(g.cellAddress||'')+'\',\'Ячейка\')">Ячейка</button></div>'+lines+'</article>';
+  }).join('');
+  const text=cell ? (rows.length?'На этой ячейке есть активный отбор по выбранным статусам.':'Активного отбора по выбранным статусам на этой ячейке не найдено.') : (active.length?'Активный отбор по заказам WMS.':'Активных ЕО/позиций по выбранным фильтрам не найдено.');
+  const meta=window.wmsLastPicking&&window.wmsLastPicking.value?window.wmsLastPicking.value:{};
+  const limits=(meta.shipmentsAvailable&&meta.shipmentsLoaded<meta.shipmentsAvailable)?'<div class="wms-picking-note">Показаны первые '+escHtml(meta.shipmentsLoaded)+' заказов из '+escHtml(meta.shipmentsAvailable)+'. Сузь дату/статус, если нужно точнее.</div>':'';
+  box.innerHTML='<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">'+(cell?'Проверка ячейки '+escHtml(cell):'Отбор сейчас')+'</div><div class="wms-meta">'+escHtml(text)+'</div></div></div><div class="wms-picking-summary"><b>'+escHtml(rows.length)+'</b><span>позиций</span><b>'+escHtml(groups.length)+'</b><span>ячеек</span><b>'+escHtml(orderCount)+'</b><span>заказов</span><b>'+escHtml(wait)+'</b><span>ждёт</span><b>'+escHtml(picking)+'</b><span>идёт</span></div>'+(groupHtml?'<div class="wms-picking-list">'+groupHtml+'</div>':'<div class="no-results">'+escHtml(text)+'</div>')+limits;
+}
+async function wmsLoadPickingOrders(){
+  const date=document.getElementById('wms-picking-date')?.value || new Date().toISOString().slice(0,10);
+  const status=document.getElementById('wms-picking-status')?.value || 'both';
+  const temp=document.getElementById('wms-picking-temp')?.value || 'all';
+  const b=wmsMoscowDayBounds(date);
+  if(!b){wmsSetStatus('Выбери дату отгрузки.','err');return;}
+  wmsSetStatus('Загружаю заказы отбора и текущие ячейки ЕО…','wait');
+  try{
+    const raw=await wmsCallNative('lookupWmsPickingOrders',[JSON.stringify({date,from:b.from,to:b.to,status,temperatureMode:temp,maxShipments:25,maxProducts:350})],240000);
+    window.wmsLastPicking=raw;
+    wmsRenderPickingResult(raw,document.getElementById('wms-picking-cell')?.value||'');
+    const all=wmsPickItems(raw),active=wmsPickingActiveItems(all);
+    wmsSetStatus('Отбор: '+active.length+' активных позиций из '+all.length+' ЕО/строк.','ok');
+  }catch(e){wmsSetStatus((e&&e.message)||'Не смог загрузить отбор по заказам.','err');}
+}
+async function wmsLoadObservedPicking(){
+  // Оставляем старый механизм как запасной, но основной теперь — список заказов по статусам.
+  return wmsLoadPickingOrders();
+}
+async function wmsCheckPickingCell(){
+  const el=document.getElementById('wms-picking-cell');const cell=wmsPickCell(el?el.value:'');
+  if(!cell){wmsSetStatus('Введи ячейку, например SH-4-54-3-2.','err');return;}
+  if(!window.wmsLastPicking)await wmsLoadPickingOrders();
+  if(window.wmsLastPicking)wmsRenderPickingResult(window.wmsLastPicking,cell);
+}
+async function wmsClearObservedPicking(){
+  try{if(window.LenferAndroidWms&&typeof window.LenferAndroidWms.clearWmsObservedPicking==='function')await wmsCallNative('clearWmsObservedPicking',[],15000);}catch(e){}
+  window.wmsLastPicking=null;wmsSetStatus('Отбор очищен.','ok');wmsSetLookupKind('picking');
+}
+
+// ── v63: сверка верхних ярусов с товарами и отметками ──
+function wmsUpperAddr(v){return String(v||'').trim().toUpperCase();}
+function wmsUpperParts(addr){
+  const p=wmsUpperAddr(addr).split('-').filter(Boolean);
+  return {prefix:p[0]||'', row:p[1]||'', section:p[2]||'', place:p[3]||'', tier:p[4]||''};
+}
+function wmsUpperRowKey(addr){return wmsUpperParts(addr).row||'';}
+function wmsUpperSectionNumber(addr){const s=wmsUpperParts(addr).section;return /^\d+$/.test(s)?Number(s):null;}
+function wmsUpperTier(addr){return wmsUpperParts(addr).tier||'';}
+function wmsUpperZoneKey(c){
+  const a=wmsUpperAddr(c.address||c.cellAddress||''); const z=String(c.zoneName||c.zone?.name||'').toLowerCase();
+  if(a.startsWith('HH-')||z.includes('холод'))return 'cold';
+  if(a.startsWith('SH-')||z.includes('сух'))return 'dry';
+  return 'other';
+}
+function wmsUpperItems(raw){
+  const v=raw&&raw.value?raw.value:raw||{};
+  const items=Array.isArray(v.items)?v.items:(Array.isArray(raw&&raw.items)?raw.items:[]);
+  return items.map(x=>({
+    cellId:String(x.id||x.cellId||'').trim(), address:String(x.address||x.cellAddress||'').trim(),
+    zoneName:String((x.zone&&x.zone.name)||x.zoneName||'').trim(), locationName:String((x.location&&x.location.name)||x.locationName||'').trim(),
+    type:String(x.type||''), status:String(x.status||''), allowedOperations:Array.isArray(x.allowedOperations)?x.allowedOperations:[]
+  })).filter(x=>x.cellId&&x.address);
+}
+function wmsUpperFiltered(){
+  const zone=document.getElementById('wms-upper-zone')?.value||'all';
+  const row=wmsUpperAddr(document.getElementById('wms-upper-row')?.value||'');
+  const parity=document.getElementById('wms-upper-parity')?.value||'all';
+  const tier=String(document.getElementById('wms-upper-tier')?.value||'').trim();
+  const state=document.getElementById('wms-upper-state')?.value||'all';
+  const mark=document.getElementById('wms-upper-mark-filter')?.value||'all';
+  return (wmsUpperCells||[]).filter(c=>{
+    if(zone!=='all'&&wmsUpperZoneKey(c)!==zone)return false;
+    const parts=wmsUpperParts(c.address);
+    if(row && !(parts.row===row || String(c.address).toUpperCase().includes(row)))return false;
+    if(tier && parts.tier!==tier)return false;
+    const sec=wmsUpperSectionNumber(c.address);
+    if(parity==='even' && (sec===null||sec%2!==0))return false;
+    if(parity==='odd' && (sec===null||sec%2!==1))return false;
+    const o=wmsUpperOccupancy[c.cellId];
+    if(state==='occupied' && !(o&&o.hasStock))return false;
+    if(state==='empty' && !(o&&!o.hasStock))return false;
+    const m=(wmsUpperMarks[c.cellId]&&wmsUpperMarks[c.cellId].state)||'unchecked';
+    if(mark!=='all' && m!==mark)return false;
+    return true;
+  }).sort((a,b)=>String(a.address).localeCompare(String(b.address),'ru',{numeric:true}));
+}
+function wmsFillUpperRowList(){
+  const dl=document.getElementById('wms-upper-row-list'); if(!dl)return;
+  const zone=document.getElementById('wms-upper-zone')?.value||'all';
+  const vals=[...new Set((wmsUpperCells||[]).filter(c=>zone==='all'||wmsUpperZoneKey(c)===zone).map(c=>wmsUpperRowKey(c.address)).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ru',{numeric:true}));
+  dl.innerHTML=vals.map(v=>'<option value="'+escHtml(v)+'"></option>').join('');
+}
+function wmsUpperSaveMarks(){try{localStorage.setItem('lenfer_wms_upper_marks',JSON.stringify(wmsUpperMarks||{}));}catch(e){}}
+function wmsUpperMark(cellId,state){
+  if(!cellId)return;
+  if(!wmsUpperMarks[cellId])wmsUpperMarks[cellId]={};
+  wmsUpperMarks[cellId].state=state||'unchecked';
+  wmsUpperMarks[cellId].updatedAt=new Date().toISOString();
+  wmsUpperSaveMarks(); wmsRenderUpperStorage();
+}
+function wmsUpperToggle(cellId){
+  const el=document.getElementById('upper-items-'+String(cellId).replace(/[^a-zA-Z0-9_-]/g,''));
+  if(el)el.style.display=el.style.display==='none'?'block':'none';
+}
+function wmsUpperFilterChanged(){wmsFillUpperRowList();wmsRenderUpperStorage();}
+function wmsUpperCopy(v,label){wmsCopyFallback(v||'').then(()=>wmsSetStatus((label||'Данные')+' скопировано.','ok'));}
+function wmsUpperStateLabel(v){return {ok:'Всё на месте',empty:'Физически пусто',discrepancy:'Есть расхождение',unchecked:'Не проверено'}[v]||'Не проверено';}
+function wmsUpperRenderItem(it){
+  it=it||{};
+  const name=it.name||'Товар'; const ut=it.nomenclatureCode||''; const hu=it.handlingUnitBarcode||''; const bc=it.barcode||'';
+  return '<div class="wms-upper-item">'+(it.imageUrl?'<img src="'+escHtml(it.imageUrl)+'" alt="" loading="lazy"/>':'')+'<div class="wms-upper-item-body"><b>'+escHtml(name)+'</b><span>'+escHtml(ut)+' · '+escHtml(it.quantity||0)+' шт.'+(it.bestBeforeDate?' · до '+escHtml(it.bestBeforeDate):'')+'</span><span>ЕО '+escHtml(hu||'—')+' · '+escHtml(it.status||'')+'</span><div class="wms-stock-copy-row"><button class="wms-mini-copy" onclick="wmsUpperCopy(\''+escHtml(ut)+'\',\'УТ\')">УТ</button><button class="wms-mini-copy" onclick="wmsUpperCopy(\''+escHtml(bc)+'\',\'ШК\')">ШК</button><button class="wms-mini-copy" onclick="wmsUpperCopy(\''+escHtml(name.replace(/'/g,"\\'"))+'\',\'Название\')">Название</button><button class="wms-mini-copy" onclick="wmsUpperCopy(\''+escHtml(hu)+'\',\'ЕО\')">ЕО</button></div></div></div>';
+}
+function wmsRenderUpperStorage(){
+  const box=document.getElementById('wms-result'); if(!box||wmsLookupKind!=='upper')return;
+  const all=wmsUpperCells||[]; const rows=wmsUpperFiltered();
+  if(!all.length){box.innerHTML='<div class="hint" style="padding:24px 12px;"><span class="mark">▥</span><span class="txt">Загрузи список верхних ярусов. Потом приложение подтянет товары по каждой ячейке и даст отметить факт.</span></div>';return;}
+  const occ=rows.filter(c=>wmsUpperOccupancy[c.cellId]&&wmsUpperOccupancy[c.cellId].hasStock).length;
+  const empty=rows.filter(c=>wmsUpperOccupancy[c.cellId]&&!wmsUpperOccupancy[c.cellId].hasStock).length;
+  const checked=rows.filter(c=>((wmsUpperMarks[c.cellId]||{}).state||'unchecked')!=='unchecked').length;
+  const cards=rows.slice(0,260).map(c=>{
+    const o=wmsUpperOccupancy[c.cellId]; const parts=wmsUpperParts(c.address); const mark=(wmsUpperMarks[c.cellId]&&wmsUpperMarks[c.cellId].state)||'unchecked';
+    const items=Array.isArray(o&&o.items)?o.items:[];
+    const system=!o?'Остатки не загружены':(o.hasStock?('Системно занято · '+o.stockRows+' строк · '+o.quantity+' шт. · '+o.huCount+' ЕО'):'Системно пусто');
+    const cls=!o?'unknown':(o.hasStock?'occupied':'empty');
+    const domId='upper-items-'+String(c.cellId).replace(/[^a-zA-Z0-9_-]/g,'');
+    const detail=items.length?'<div class="wms-upper-items" id="'+domId+'" style="display:none">'+items.map(wmsUpperRenderItem).join('')+'</div>':'';
+    return '<article class="wms-upper-card '+cls+' mark-'+escHtml(mark)+'"><div class="wms-upper-head"><div><div class="wms-upper-address">'+escHtml(c.address)+'</div><div class="wms-upper-meta">'+escHtml(c.zoneName||'Зона не указана')+' · ряд '+escHtml(parts.row||'—')+' · секция '+escHtml(parts.section||'—')+' · место '+escHtml(parts.place||'—')+' · ярус '+escHtml(parts.tier||'—')+'</div></div><button class="wms-mini-copy" onclick="wmsUpperCopy(\''+escHtml(c.address)+'\',\'Ячейка\')">Ячейка</button></div><div class="wms-upper-system">'+escHtml(system)+'</div><div class="wms-upper-markline">Факт: <b>'+escHtml(wmsUpperStateLabel(mark))+'</b></div><div class="wms-upper-actions"><button class="wms-mini-copy" onclick="wmsUpperMark(\''+escHtml(c.cellId)+'\',\'ok\')">✓ На месте</button><button class="wms-mini-copy" onclick="wmsUpperMark(\''+escHtml(c.cellId)+'\',\'empty\')">Пусто</button><button class="wms-mini-copy" onclick="wmsUpperMark(\''+escHtml(c.cellId)+'\',\'discrepancy\')">Расхожд.</button>'+(items.length?'<button class="wms-mini-copy" onclick="wmsUpperToggle(\''+escHtml(c.cellId)+'\')">Товары</button>':'')+'</div>'+detail+'</article>';
+  }).join('');
+  const tail=rows.length>260?'<div class="wms-upper-note">Показаны первые 260. Сузь ряд/секцию/ярус, чтобы работать без простыни.</div>':'';
+  box.innerHTML='<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">Сверка верхних ярусов</div><div class="wms-meta">Карточка = ячейка. Внутри — товары из WMS, ЕО, УТ, количество и твоя отметка факта.</div></div></div><div class="wms-upper-summary"><b>'+escHtml(rows.length)+'</b><span>ячеек</span><b>'+escHtml(occ)+'</b><span>занято</span><b>'+escHtml(empty)+'</b><span>пусто</span><b>'+escHtml(checked)+'</b><span>проверено</span></div><div class="wms-actions wms-upper-result-actions"><button class="exi-btn primary" onclick="wmsCheckUpperOccupancy()">Подтянуть товары</button><button class="exi-btn" onclick="wmsLoadUpperStorageCells()">Обновить ячейки</button></div><div class="wms-upper-list">'+(cards||'<div class="no-results">Нет ячеек по выбранному фильтру</div>')+'</div>'+tail;
+}
+async function wmsLoadUpperStorageCells(){
+  wmsSetStatus('Загружаю список верхних ячеек хранения…','wait');
+  try{
+    const raw=await wmsCallNative('lookupWmsUpperStorageCells',[JSON.stringify({})],120000);
+    wmsUpperCells=wmsUpperItems(raw); wmsUpperOccupancy={}; wmsFillUpperRowList(); wmsRenderUpperStorage();
+    wmsSetStatus('Загружено ячеек: '+wmsUpperCells.length+'. Выбери ряд/чётность/ярус и подтяни товары.','ok');
+  }catch(e){wmsSetStatus((e&&e.message)||'Не смог загрузить верхние ярусы.','err');}
+}
+async function wmsCheckUpperOccupancy(){
+  const cells=wmsUpperFiltered();
+  if(!cells.length){wmsSetStatus('По фильтру нет ячеек.','err');return;}
+  const chunkSize=80; let loaded=0;
+  wmsSetStatus('Подтягиваю товары: 0 / '+cells.length+' ячеек…','wait');
+  try{
+    for(let i=0;i<cells.length;i+=chunkSize){
+      const chunk=cells.slice(i,i+chunkSize);
+      const raw=await wmsCallNative('lookupWmsUpperStorageOccupancy',[JSON.stringify(chunk.map(c=>({cellId:c.cellId,address:c.address,zoneName:c.zoneName})))],180000);
+      const v=raw&&raw.value?raw.value:raw||{}; const items=Array.isArray(v.items)?v.items:[];
+      items.forEach(x=>{if(x&&x.cellId)wmsUpperOccupancy[String(x.cellId)]=x;});
+      loaded+=items.length; wmsRenderUpperStorage(); wmsSetStatus('Подтягиваю товары: '+loaded+' / '+cells.length+' ячеек…','wait');
+    }
+    wmsRenderUpperStorage(); wmsSetStatus('Товары подтянуты: '+loaded+' ячеек. Можно отмечать факт.','ok');
+  }catch(e){wmsSetStatus((e&&e.message)||'Не смог проверить остатки верхних ярусов.','err');}
+}
+function wmsMoscowDayBounds(date){
+  const d=String(date||'').trim(); if(!/^\d{4}-\d{2}-\d{2}$/.test(d))return null;
+  const dt=new Date(d+'T00:00:00Z'); dt.setUTCDate(dt.getUTCDate()-1);
+  const from=dt.toISOString().slice(0,10)+'T21:00:00.000Z';
+  const to=d+'T20:59:59.999Z'; return {from,to};
+}
+function wmsLossSourceZone(r){const a=wmsUpperAddr(r.sourceCellAddress||'');if(a.startsWith('HH-'))return 'cold';if(a.startsWith('SH-'))return 'dry';return 'other';}
+function wmsLargeLossRows(){
+  const base=wmsLargeLosses&&wmsLargeLosses.rows||[];
+  const zone=document.getElementById('wms-loss-zone')?.value||'all';
+  const min=Math.max(1,Number(document.getElementById('wms-loss-min')?.value||20)||20);
+  const only=document.getElementById('wms-loss-kind')?.value||'all';
+  return base.filter(r=>{
+    const loss=Math.abs(Math.min(0,Number(r.sourceDelta||0)));
+    if(loss<min)return false;
+    if(zone!=='all'&&wmsLossSourceZone(r)!==zone)return false;
+    if(only==='writeoff'&&!/WRITE_OFF/i.test(String(r.operationType||'')))return false;
+    return true;
+  }).sort((a,b)=>Math.abs(Number(b.sourceDelta||0))-Math.abs(Number(a.sourceDelta||0)));
+}
+function wmsRenderLargeLosses(){
+  const box=document.getElementById('wms-result');if(!box||wmsLookupKind!=='losses')return;
+  if(!wmsLargeLosses){box.innerHTML='<div class="hint" style="padding:24px 12px;"><span class="mark">▼</span><span class="txt">Выбери дату, зону и минимальный минус. Покажу крупные уменьшения остатка именно из хранения HH/SH.</span></div>';return;}
+  const rows=wmsLargeLossRows(); const cold=rows.filter(r=>wmsLossSourceZone(r)==='cold'); const dry=rows.filter(r=>wmsLossSourceZone(r)==='dry');
+  const sum=list=>list.reduce((n,r)=>n+Math.abs(Math.min(0,Number(r.sourceDelta||0))),0);
+  const cards=rows.slice(0,200).map(r=>{
+    const loss=Math.abs(Math.min(0,Number(r.sourceDelta||0)));
+    const code=(r.nomenclatureCode||'').replace(/'/g,"\\'"); const name=(r.name||'').replace(/'/g,"\\'"); const bc=(r.barcode||'').replace(/'/g,"\\'");
+    return '<article class="wms-loss-card"><div class="wms-loss-head"><div class="wms-loss-delta">−'+escHtml(loss)+' шт.</div><div class="wms-loss-op">'+escHtml(wmsOperationLabel(r.operationType||'')||r.operationType||'Операция')+'</div></div><div class="wms-loss-name">'+escHtml(r.name||'Товар не указан')+'</div><div class="wms-loss-meta">'+escHtml(r.nomenclatureCode||'')+' · '+escHtml(wmsDateShort(r.operationStartedAt))+'</div><div class="wms-loss-location">Из хранения: <b>'+escHtml(r.sourceCellAddress||'—')+'</b>'+((r.sourceHandlingUnitBarcode)?(' · ЕО '+escHtml(r.sourceHandlingUnitBarcode)):'')+'</div><div class="wms-loss-meta">'+escHtml(r.userName||'Исполнитель не указан')+'</div><div class="wms-stock-copy-row"><button class="wms-mini-copy" onclick="wmsCopyFallback(\''+escHtml(code)+'\');wmsSetStatus(\'УТ скопировано.\',\'ok\')">УТ</button><button class="wms-mini-copy" onclick="wmsCopyFallback(\''+escHtml(bc)+'\');wmsSetStatus(\'ШК скопирован.\',\'ok\')">ШК</button><button class="wms-mini-copy" onclick="wmsCopyFallback(\''+escHtml(name)+'\');wmsSetStatus(\'Название скопировано.\',\'ok\')">Название</button><button class="wms-mini-copy" onclick="wmsCopyFallback(\''+escHtml((r.sourceCellAddress||'').replace(/'/g,"\\'"))+'\');wmsSetStatus(\'Ячейка скопирована.\',\'ok\')">Ячейка</button></div></article>';
+  }).join('');
+  box.innerHTML='<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">Крупные минусы из хранения</div><div class="wms-meta">Показаны уменьшения в <b>исходных</b> ячейках HH/SH. Операция остаётся рядом, чтобы не перепутать отгрузку, перемещение и списание.</div></div></div><div class="wms-loss-summary"><b>'+escHtml(rows.length)+'</b><span>строк</span><b>−'+escHtml(sum(cold))+'</b><span>Холод</span><b>−'+escHtml(sum(dry))+'</b><span>Сухой</span></div><div class="wms-actions"><button class="exi-btn primary" onclick="wmsLoadLargeLosses()">Обновить</button></div><div class="wms-loss-list">'+(cards||'<div class="no-results">По выбранным условиям крупных минусов из хранения нет.</div>')+'</div>'+(rows.length>200?'<div class="wms-upper-note">Показаны первые 200 строк. Подними порог, чтобы сузить список.</div>':'');
+}
+async function wmsLoadLargeLosses(){
+  const date=document.getElementById('wms-loss-date')?.value||''; if(!date){wmsSetStatus('Выбери дату.','err');return;}
+  const b=wmsMoscowDayBounds(date); if(!b){wmsSetStatus('Некорректная дата.','err');return;}
+  const zone=document.getElementById('wms-loss-zone')?.value||'all'; const only=document.getElementById('wms-loss-kind')?.value||'all';
+  wmsSetStatus('Ищу крупные минусы из хранения за '+date+'…','wait');
+  try{
+    const raw=await wmsCallNative('lookupWmsDailyStorageLosses',[JSON.stringify({date,from:b.from,to:b.to,zone,kind:only})],180000);
+    const norm=wmsNormalizeResult(raw); wmsLargeLosses=norm; wmsRenderLargeLosses();
+    wmsSetStatus('Загружены изменения: '+(norm.rows||[]).length+'. Применён фильтр крупных минусов.','ok');
+  }catch(e){wmsSetStatus((e&&e.message)||'Не смог загрузить крупные минусы.','err');}
+}
 
 function wmsParseImport(){
   const el=document.getElementById('wms-import-text');
@@ -1308,9 +2179,130 @@ function wmsLookupChosenProductId(productId){
 function wmsLookupChosenCellId(cellId,address){
   return wmsLookupKind==='changes' ? wmsLookupCellChangesId(cellId,address) : wmsLookupCellId(cellId,address);
 }
+
+function wmsAnalysisDate(){const el=document.getElementById('wms-an-date');return el?String(el.value||'').trim():'';}
+function wmsAnalysisExecutor(){const el=document.getElementById('wms-an-executor');return el?String(el.value||'').trim():'';}
+function wmsAnalysisStatus(){const el=document.getElementById('wms-an-status');return el?String(el.value||'COMPLETED').trim():'COMPLETED';}
+function wmsAnalysisToday(){const d=new Date();const iso=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');const el=document.getElementById('wms-an-date');if(el)el.value=iso;wmsRunAnalysis();}
+function wmsClearAnalysisFilters(){['wms-an-date','wms-an-executor'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});const st=document.getElementById('wms-an-status');if(st)st.value='COMPLETED';}
+function wmsAnalysisIsCell(q){return wmsDetectMode(q)==='Ячейка';}
+function wmsAnalysisRowsSummary(result){const rows=(result&&result.rows)||[];return {rows:rows.length,qty:rows.reduce((s,r)=>s+wmsNum(r.quantity),0)};}
+function wmsAnalysisChangesSummary(result){let rows=((result&&result.rows)||[]);rows=wmsFilteredChangeRows(rows);const ops=wmsTopEntries(wmsChangeOperationCounts(rows),6).map(([k,n])=>wmsOperationLabel(k)+' '+n).join(', ');const outgoing=rows.filter(wmsIsOutgoing).length;const incoming=rows.filter(wmsIsIncoming).length;return {rows, count:rows.length, outgoing, incoming, ops};}
+function wmsAnalysisRecountMatches(rows, q){q=String(q||'').trim().toLowerCase();const date=wmsAnalysisDate();const ex=wmsAnalysisExecutor().toLowerCase();const isCell=wmsAnalysisIsCell(q);return (rows||[]).filter(r=>{if(date && wmsDateIsoDay(r.completedAt||r.createdAt)!==date)return false;if(ex && !String(r.executorName||'').toLowerCase().includes(ex))return false;if(isCell && q && !String(r.cellAddress||'').toLowerCase().includes(q))return false;return true;});}
+function wmsAnalysisFilterDetailsByProduct(rows, q, stockResult){q=String(q||'').trim().toLowerCase();const names=[];if(stockResult&&stockResult.product&&stockResult.product.name)names.push(String(stockResult.product.name).toLowerCase());((stockResult&&stockResult.rows)||[]).forEach(r=>{if(r.name)names.push(String(r.name).toLowerCase());});const needle=names[0]||q;if(!needle)return rows;return (rows||[]).filter(r=>{const task=r.detailTask||{};return (Array.isArray(task.products)?task.products:[]).some(p=>String(p.productName||p.name||'').toLowerCase().includes(needle)||needle.includes(String(p.productName||'').toLowerCase()));});}
+function wmsAnalysisRecountSummary(rows){const byExecutor=wmsCountBy(rows,r=>r.executorName||'Без исполнителя');return {count:rows.length,executors:Object.keys(byExecutor).length,positions:wmsRecountSum(rows,'positionCount'),parts:wmsRecountSum(rows,'partCount'),expected:wmsRecountSum(rows,'expectedQty'),actual:wmsRecountSum(rows,'actualQty'),discrepancy:wmsRecountSum(rows,'discrepancyQty'),defective:wmsRecountSum(rows,'defectiveQty'),top:wmsTopEntries(byExecutor,6)};}
+function wmsAnalysisChangeTable(rows){rows=(rows||[]).slice(0,20);if(!rows.length)return '<div class="no-results">Изменений по запросу не найдено</div>';return '<div class="wms-table-wrap"><table class="wms-table"><thead><tr><th>Дата</th><th>Операция</th><th>Товар</th><th>Ячейка</th><th>ЕО/HU</th><th>Δ</th><th>Исполнитель</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+escHtml(wmsRecountDateText(r.completedAt||r.operationCompletedAt||r.startedAt||r.operationStartedAt))+'</td><td>'+escHtml(wmsOperationLabel(r.operationType))+'<br><small>'+escHtml(r.operationType||'')+'</small></td><td><b>'+escHtml(r.name||'')+'</b><br><small>'+escHtml(r.nomenclatureCode||'')+'</small></td><td>'+escHtml(wmsChangeDirectionText(r))+'</td><td>'+escHtml(wmsChangeHuText(r))+'</td><td>'+escHtml(wmsDeltaText(wmsChangeMainDelta(r)))+'</td><td>'+escHtml(r.userName||'')+'</td></tr>').join('')+'</tbody></table></div>';}
+function wmsAnalysisRecountTable(rows){rows=(rows||[]).slice(0,30);if(!rows.length)return '<div class="no-results">Пересчётов по запросу не найдено</div>';return '<div class="wms-table-wrap"><table class="wms-table"><thead><tr><th>Дата</th><th>Исполнитель</th><th>Ячейка</th><th>Тип</th><th>Причина</th><th>Поз.</th><th>Сист.</th><th>Факт</th><th>Разн.</th></tr></thead><tbody>'+rows.map(r=>'<tr><td>'+escHtml(wmsRecountDateText(r.completedAt||r.createdAt))+'</td><td><b>'+escHtml(r.executorName||'')+'</b><br><small>'+escHtml(r.zoneName||'')+'</small></td><td><b>'+escHtml(r.cellAddress||'')+'</b></td><td>'+escHtml(wmsRecountLabelScope(r.scope))+'</td><td>'+escHtml(wmsRecountLabelReason(r.reason))+'</td><td>'+escHtml(r.detailLoaded?r.positionCount:'—')+'</td><td>'+escHtml(r.detailLoaded?r.expectedQty:'—')+'</td><td>'+escHtml(r.detailLoaded?r.actualQty:'—')+'</td><td>'+escHtml(r.detailLoaded?r.discrepancyQty:'—')+'</td></tr>').join('')+'</tbody></table></div>';}
+function wmsAiActionLabel(action){return ({explain:'Что произошло?',check:'Что проверить?',problem:'Черновик проблемы',shift_summary:'Сводка смены'})[action]||'ИИ-разбор';}
+function wmsAiTextToHtml(text){return escHtml(String(text||'').trim()).replace(/\n/g,'<br>');}
+function wmsAiSlimStocks(rows){return (rows||[]).slice(0,120).map(r=>({
+  ut:r.nomenclatureCode||'', name:r.name||'', qty:wmsNum(r.quantity), cell:r.cellAddress||'', hu:r.handlingUnitBarcode||'',
+  bestBefore:r.bestBeforeDate||'', status:r.status||'', zone:r.zoneName||''
+}));}
+function wmsAiSlimChanges(rows){return (rows||[]).slice(0,100).map(r=>({
+  at:r.completedAt||r.operationCompletedAt||r.startedAt||r.operationStartedAt||'', operation:r.operationType||'', operationLabel:wmsOperationLabel(r.operationType),
+  ut:r.nomenclatureCode||'', name:r.name||'', from:r.sourceCellAddress||'', to:r.targetCellAddress||'',
+  sourceHu:r.sourceHandlingUnitBarcode||'', targetHu:r.targetHandlingUnitBarcode||'', delta:wmsChangeMainDelta(r), status:r.status||''
+}));}
+function wmsAiSlimRecounts(rows){return (rows||[]).slice(0,60).map(r=>{
+  const task=r.detailTask||{};
+  const products=(Array.isArray(task.products)?task.products:[]).slice(0,50).map(p=>({
+    name:p.productName||p.name||'',
+    parts:(Array.isArray(p.parts)?p.parts:[]).slice(0,8).map(x=>({expected:wmsNum(x.expectedQuantity),actual:wmsNum(x.actualQuantity),discrepancy:wmsNum(x.discrepancy==null?(wmsNum(x.actualQuantity)-wmsNum(x.expectedQuantity)):x.discrepancy),defective:wmsNum(x.defectiveQuantity),bestBefore:x.bestBeforeDate||''}))
+  }));
+  return {cell:r.cellAddress||'', zone:r.zoneName||'', status:r.status||'', scope:r.scope||'', reason:r.reason||'', createdAt:r.createdAt||'', completedAt:r.completedAt||'',
+    positions:r.positionCount==null?null:wmsNum(r.positionCount), parts:r.partCount==null?null:wmsNum(r.partCount), expected:r.expectedQty==null?null:wmsNum(r.expectedQty), actual:r.actualQty==null?null:wmsNum(r.actualQty), discrepancy:r.discrepancyQty==null?null:wmsNum(r.discrepancyQty), defective:r.defectiveQty==null?null:wmsNum(r.defectiveQty), products:products};
+});}
+function wmsBuildAiPayload(){
+  const a=wmsLastResult;
+  if(!a||a.mode!=='analysis')throw new Error('Сначала собери разбор WMS.');
+  const stock=wmsAnalysisRowsSummary(a.stocks);
+  const changes=wmsAnalysisChangesSummary(a.changes);
+  const rec=wmsAnalysisRecountSummary(a.recountRows||[]);
+  return {
+    source:'Lenfer WMS analysis',
+    query:{value:a.query||'',type:wmsDetectMode(a.query||''),date:a.date||'',executorFilter:a.executor||''},
+    summary:{stockRows:stock.rows,stockQty:stock.qty,changes:changes.count,outgoing:changes.outgoing,incoming:changes.incoming,operations:changes.ops||'',recounts:rec.count,positions:rec.positions,parts:rec.parts,expected:rec.expected,actual:rec.actual,discrepancy:rec.discrepancy,defective:rec.defective},
+    currentStocks:wmsAiSlimStocks((a.stocks&&a.stocks.rows)||[]),
+    changes:wmsAiSlimChanges(changes.rows||[]),
+    recounts:wmsAiSlimRecounts(a.recountRows||[]),
+    collectionWarnings:(a.errors||[]).slice(0,8)
+  };
+}
+async function wmsGetFirebaseToken(force){
+  if(!(window.firebase&&firebase.auth))throw new Error('Firebase авторизация ещё не загрузилась. Открой приложение заново.');
+  const user=firebase.auth().currentUser;
+  if(!user)throw new Error('Войди в приложение, чтобы использовать ИИ-разбор.');
+  return user.getIdToken(!!force);
+}
+function wmsAiSetAnswer(title,text){
+  const box=document.getElementById('wms-ai-answer');
+  if(!box)return;
+  if(!text){box.className='wms-ai-answer empty';box.innerHTML='';return;}
+  box.className='wms-ai-answer';
+  box.innerHTML='<div class="wms-ai-answer-title">'+escHtml(title||'ИИ-разбор')+'</div><div>'+wmsAiTextToHtml(text)+'</div>';
+}
+async function wmsAskAi(){
+  if(wmsAiBusy)return;
+  const select=document.getElementById('wms-ai-action');
+  const action=select?String(select.value||'explain'):'explain';
+  let data;
+  try{data=wmsBuildAiPayload();}catch(e){wmsSetStatus((e&&e.message)||'Нет данных для ИИ-разбора.','err');return;}
+  wmsAiBusy=true;
+  const btn=document.getElementById('wms-ai-run');
+  if(btn){btn.disabled=true;btn.textContent='ИИ думает…';}
+  wmsAiSetAnswer('ИИ-разбор','');
+  wmsSetStatus('Отправляю собранный разбор в ИИ…','wait');
+  const doRequest=async(force)=>{
+    const token=await wmsGetFirebaseToken(force);
+    const controller=new AbortController();
+    const timer=setTimeout(()=>controller.abort(),70000);
+    try{
+      const resp=await fetch(WAREHOUSE_AI_URL,{method:'POST',headers:{'Content-Type':'application/json','X-Firebase-Token':token},body:JSON.stringify({action,data}),signal:controller.signal});
+      const payload=await resp.json().catch(()=>({}));
+      if(!resp.ok)throw new Error(payload.error||('ИИ-сервис вернул '+resp.status));
+      if(!payload.answer)throw new Error('ИИ-сервис не вернул ответ');
+      return payload;
+    }finally{clearTimeout(timer);}
+  };
+  try{
+    let result;
+    try{result=await doRequest(false);}catch(e){
+      if(/Firebase|токен|401/i.test(String((e&&e.message)||e)))result=await doRequest(true); else throw e;
+    }
+    wmsAiSetAnswer(wmsAiActionLabel(action),result.answer);
+    wmsSetStatus('ИИ-разбор готов.','ok');
+  }catch(e){
+    const msg=(e&&e.name==='AbortError')?'ИИ-сервис не ответил за 70 секунд. Попробуй ещё раз.':((e&&e.message)||String(e));
+    wmsAiSetAnswer('Не удалось получить ИИ-разбор',msg);
+    wmsSetStatus('ИИ-разбор не выполнен: '+msg,'err');
+  }finally{
+    wmsAiBusy=false;
+    if(btn){btn.disabled=false;btn.textContent='Разобрать';}
+  }
+}
+function wmsAiCardHtml(){return '<div class="wms-ai-card"><div class="wms-ai-title">ИИ-разбор</div><div class="wms-ai-note">ИИ получает только собранный разбор этой ячейки/товара. Авторизация WMS и её токены не передаются.</div><div class="wms-ai-row"><select id="wms-ai-action" class="wms-select"><option value="explain">Что произошло?</option><option value="check">Что проверить?</option><option value="problem">Черновик проблемы</option></select><button id="wms-ai-run" class="exi-btn primary" onclick="wmsAskAi()">Разобрать</button></div><div id="wms-ai-answer" class="wms-ai-answer empty"></div></div>';}
+function wmsRenderAnalysis(result){wmsLastResult=result;wmsLastChoices=null;const box=document.getElementById('wms-result');if(!box)return;const stock=wmsAnalysisRowsSummary(result.stocks);const changes=wmsAnalysisChangesSummary(result.changes);const rec=wmsAnalysisRecountSummary(result.recountRows||[]);const title=result.query||'Разбор WMS';const queryType=wmsDetectMode(result.query||'');const people=rec.top.map(([n,c])=>'<span class="wms-recount-badge">'+escHtml(n)+' · '+escHtml(c)+'</span>').join('');box.innerHTML='<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">Разбор: '+escHtml(title)+'</div><div class="wms-meta">Тип запроса: <b>'+escHtml(queryType)+'</b>'+(result.date?' · дата: <b>'+escHtml(result.date)+'</b>':'')+(result.executor?' · исполнитель: <b>'+escHtml(result.executor)+'</b>':'')+'</div></div></div>'+
+'<div class="wms-recount-summary">'+
+'<div class="wms-recount-stat"><b>'+escHtml(stock.rows)+'</b><span>строк остатков</span></div><div class="wms-recount-stat"><b>'+escHtml(stock.qty)+'</b><span>штук сейчас</span></div>'+ 
+'<div class="wms-recount-stat"><b>'+escHtml(changes.count)+'</b><span>изменений</span></div><div class="wms-recount-stat"><b>'+escHtml(changes.outgoing)+' / '+escHtml(changes.incoming)+'</b><span>убыло / пришло</span></div>'+ 
+'<div class="wms-recount-stat"><b>'+escHtml(rec.count)+'</b><span>пересчётов</span></div><div class="wms-recount-stat"><b>'+escHtml(rec.positions)+'</b><span>позиций в пересчётах</span></div>'+ 
+'<div class="wms-recount-stat"><b>'+escHtml(rec.expected)+' / '+escHtml(rec.actual)+'</b><span>система / факт</span></div><div class="wms-recount-stat"><b>'+escHtml(rec.discrepancy)+'</b><span>расхождение</span></div></div>'+ 
+wmsAiCardHtml()+
+'<div class="wms-actions wms-result-actions"><button class="exi-btn primary" onclick="wmsCopyAnalysisTsv()">Скопировать TSV</button><button class="exi-btn" onclick="wmsRunAnalysis()">Обновить разбор</button></div>'+ 
+'<div class="wms-filter-title">Операции вокруг запроса</div><div class="wms-meta">'+escHtml(changes.ops||'Операций нет')+'</div>'+ 
+'<div class="wms-filter-title">Кто считал</div><div>'+people+'</div>'+ 
+'<div class="wms-filter-title">Последние изменения</div>'+wmsAnalysisChangeTable(changes.rows)+
+'<div class="wms-filter-title">Пересчёты и детализация</div>'+wmsAnalysisRecountTable(result.recountRows||[]);}
+function wmsCopyAnalysisTsv(){if(!wmsLastResult||wmsLastResult.mode!=='analysis'){alert('Нет разбора');return;}const a=wmsLastResult;const lines=[];lines.push(['Блок','Дата','Исполнитель','Ячейка','Операция/тип','УТ','Товар','ЕО/HU','Система','Факт','Разница','ID'].join('\t'));(wmsAnalysisChangesSummary(a.changes).rows||[]).forEach(r=>{lines.push(['Изменение',wmsRecountDateText(r.completedAt||r.operationCompletedAt||r.startedAt||r.operationStartedAt),r.userName||'',wmsChangeDirectionText(r),wmsOperationLabel(r.operationType),r.nomenclatureCode||'',r.name||'',wmsChangeHuText(r),'','',wmsDeltaText(wmsChangeMainDelta(r)),r.id||''].map(v=>String(v||'').replace(/\t|\n/g,' ')).join('\t'));});(a.recountRows||[]).forEach(r=>{lines.push(['Пересчёт',wmsRecountDateText(r.completedAt||r.createdAt),r.executorName||'',r.cellAddress||'',wmsRecountLabelScope(r.scope)+' / '+wmsRecountLabelReason(r.reason),'','', '',r.expectedQty||'',r.actualQty||'',r.discrepancyQty||'',r.id||''].map(v=>String(v||'').replace(/\t|\n/g,' ')).join('\t'));});wmsCopyFallback(lines.join('\n')).then(()=>wmsSetStatus('TSV разбора скопирован.','ok'));}
+async function wmsRunAnalysis(){const inp=document.getElementById('wms-query');const code=wmsCleanCode(inp?inp.value:'');if(!code){wmsSetStatus('Введи ячейку, УТ, ШК, название или ЕО для разбора.','err');return;}if(inp)inp.value=code;const date=wmsAnalysisDate();const executor=wmsAnalysisExecutor();wmsSetStatus('Собираю разбор: остатки + изменения + пересчёты…','wait');let stocks=null,changes=null,recount=null,recountRows=[];const errors=[];try{stocks=wmsNormalizeResult(await wmsNativeLookup(code));}catch(e){errors.push('остатки: '+((e&&e.message)||e));stocks={mode:'empty',rows:[]};}try{changes=wmsNormalizeResult(await wmsNativeLookupChanges(code));}catch(e){errors.push('изменения: '+((e&&e.message)||e));changes={mode:'changesEmpty',rows:[]};}try{const filters={status:wmsAnalysisStatus()||'COMPLETED',scope:'all',reason:'all',date:date,executor:executor,cell:wmsAnalysisIsCell(code)?code:''};recount=wmsNormalizeRecountingResult(await wmsCallNative('lookupWmsRecountingTasks',[JSON.stringify(filters)],45000));recountRows=wmsAnalysisRecountMatches(recount.rows||[],code);if(recountRows.length){const ids=recountRows.slice(0,80).map(r=>r.id).filter(Boolean);if(ids.length){const rawDetails=await wmsCallNative('lookupWmsRecountingTaskDetails',[JSON.stringify(ids)],120000);const tasks=wmsFindDetailTasks(rawDetails);const byId={};tasks.forEach(t=>{const id=t.id||t._loadedDetailId||'';if(id)byId[id]=t;});recountRows.forEach(r=>{if(r.id&&byId[r.id])wmsApplyRecountDetail(r,byId[r.id]);});if(!wmsAnalysisIsCell(code) && wmsDetectMode(code)!=='ЕО/HU')recountRows=wmsAnalysisFilterDetailsByProduct(recountRows,code,stocks);}}}catch(e){errors.push('пересчёты: '+((e&&e.message)||e));recount={mode:'recountingTasks',rows:[]};}
+const result={mode:'analysis',query:code,date,executor,stocks,changes,recount,recountRows,errors};wmsRenderAnalysis(result);wmsSetStatus(errors.length?('Разбор собран частично: '+errors.join(' · ')):'Разбор собран.','ok');}
+
 async function wmsLookupFromApp(){
   const inp=document.getElementById('wms-query');
   const code=wmsCleanCode(inp?inp.value:'');
+  if(wmsLookupKind==='recounting'){ wmsLoadRecountingTasks(); return; }
+  if(wmsLookupKind==='analysis'){ wmsRunAnalysis(); return; }
   if(!code){wmsSetStatus('Введи УТ, ШК, название, ячейку или ЕО.','err');return;}
   if(inp)inp.value=code;
   wmsSetStatus((wmsLookupKind==='changes'?'Ищу изменения: ':'Ищу остатки: ')+code+' · режим: '+wmsDetectMode(code)+'…','wait');
@@ -1336,7 +2328,13 @@ function renderWms(){
   wmsRefreshModeButtons();
   const box=document.getElementById('wms-result');
   if(box && !wmsLastResult && !wmsLastChoices && !box.innerHTML){
-    box.innerHTML='<div class="hint" style="padding:34px 12px;"><span class="mark">✶</span><span class="txt">Введи УТ, ШК, название, ячейку или ЕО и жми «Найти»</span></div>';
+    box.innerHTML=wmsLookupKind==='recounting'
+      ? '<div class="hint" style="padding:34px 12px;"><span class="mark">↻</span><span class="txt">Выбери фильтры пересчётов и нажми «Показать пересчёты»</span></div>'
+      : (wmsLookupKind==='analysis'
+        ? '<div class="hint" style="padding:34px 12px;"><span class="mark">◇</span><span class="txt">Введи ячейку, УТ или ЕО и нажми «Собрать картину»</span></div>'
+        : (wmsLookupKind==='picking'
+          ? '<div class="hint" style="padding:34px 12px;"><span class="mark">⇄</span><span class="txt">Открой товар в заказе внутри WMS, затем вернись сюда и нажми «Обновить отбор»</span></div>'
+          : '<div class="hint" style="padding:34px 12px;"><span class="mark">✶</span><span class="txt">Введи УТ, ШК, название, ячейку или ЕО и жми «Найти»</span></div>'));
   }
 }
 window.wmsLookupFromApp=wmsLookupFromApp;
@@ -1347,14 +2345,40 @@ window.wmsLookupChosenCellId=wmsLookupChosenCellId;
 window.wmsLookupProductChangesId=wmsLookupProductChangesId;
 window.wmsLookupCellChangesId=wmsLookupCellChangesId;
 window.wmsSetLookupKind=wmsSetLookupKind;
+window.wmsLoadRecountingTasks=wmsLoadRecountingTasks;
+window.wmsLoadRecountingDetails=wmsLoadRecountingDetails;
+window.wmsRecountingToday=wmsRecountingToday;
+window.wmsRunAnalysis=wmsRunAnalysis;
+window.wmsAnalysisToday=wmsAnalysisToday;
+window.wmsClearAnalysisFilters=wmsClearAnalysisFilters;
+window.wmsCopyAnalysisTsv=wmsCopyAnalysisTsv;
+window.wmsAskAi=wmsAskAi;
+window.wmsClearRecountingFilters=wmsClearRecountingFilters;
+window.wmsCopyRecountingTsv=wmsCopyRecountingTsv;
 window.wmsParseImport=wmsParseImport;
 window.wmsClearResult=wmsClearResult;
 window.wmsPrefixUt=wmsPrefixUt;
 window.wmsCopyCells=wmsCopyCells;
 window.wmsCopyProduct=wmsCopyProduct;
+window.wmsCopyProductField=wmsCopyProductField;
+window.wmsCopyStockField=wmsCopyStockField;
 window.wmsSaveAsProblem=wmsSaveAsProblem;
 window.wmsPasteImportFromClipboard=wmsPasteImportFromClipboard;
 window.wmsClearImportText=wmsClearImportText;
+window.wmsLoadOneRecountDetail=wmsLoadOneRecountDetail;
+window.wmsDecideRecount=wmsDecideRecount;
+window.wmsLoadObservedPicking=wmsLoadObservedPicking;
+window.wmsLoadPickingOrders=wmsLoadPickingOrders;
+window.wmsCheckPickingCell=wmsCheckPickingCell;
+window.wmsClearObservedPicking=wmsClearObservedPicking;
+window.wmsPickingCopy=wmsPickingCopy;
+window.wmsLoadUpperStorageCells=wmsLoadUpperStorageCells;
+window.wmsCheckUpperOccupancy=wmsCheckUpperOccupancy;
+window.wmsUpperFilterChanged=wmsUpperFilterChanged;
+window.wmsUpperCopy=wmsUpperCopy;
+window.wmsUpperMark=wmsUpperMark;
+window.wmsUpperToggle=wmsUpperToggle;
+window.wmsLoadLargeLosses=wmsLoadLargeLosses;
 window.lenferWmsNativeResolve=lenferWmsNativeResolve;
 window.lenferWmsNativeReject=lenferWmsNativeReject;
 
@@ -2799,6 +3823,36 @@ function hh11SetMode(mode){
   if(sw)sw.style.opacity=mode==='listed'?'1':'0.35';
 }
 function hh11SetView(view){hh11View=view;renderHH11();}
+function hh11ListQuery(){const el=document.getElementById('hh11-list-search');return el?String(el.value||''):'';}
+function hh11ListSearch(){renderHH11();}
+function hh11ClearListSearch(){const el=document.getElementById('hh11-list-search');if(el)el.value='';renderHH11();}
+function hh11ItemSearchText(x){
+  return [x.ut,x.name,x.eo,x.hu,x.handlingUnitBarcode,x.wmsStatus,x.bestBeforeDate,x.comment,x.sys,x.fact,x.mode].filter(v=>v!==undefined&&v!==null).join(' ');
+}
+function hh11MatchQuery(x,q){
+  q=String(q||'').trim();
+  if(!q)return true;
+  const raw=hh11ItemSearchText(x);
+  const hay=normSearchText(raw);
+  const compact=String(raw).toLowerCase().replace(/[^0-9a-zа-яё]+/gi,'');
+  const tokens=normSearchText(q).split(/\s+/).filter(Boolean);
+  if(!tokens.length)return true;
+  return tokens.every(t=>{
+    const tc=String(t).toLowerCase().replace(/[^0-9a-zа-яё]+/gi,'');
+    return hay.includes(t)||compact.includes(tc);
+  });
+}
+function hh11ApplyListSearch(items){
+  const q=hh11ListQuery();
+  if(!String(q||'').trim())return items;
+  return (items||[]).filter(x=>hh11MatchQuery(x,q));
+}
+function hh11UpdateSearchStatus(total,shown){
+  const el=document.getElementById('hh11-list-search-status');
+  if(!el)return;
+  const q=hh11ListQuery().trim();
+  el.textContent=q?('Показано '+shown+' из '+total+' по запросу: '+q):'';
+}
 function hh11ToggleNewItemForm(){
   const f=document.getElementById('hh11-new-item-form');
   if(!f)return;
@@ -2938,30 +3992,76 @@ function hh11EditEO(id,val){
   if(r.eo)hh11MarkEOUsed(r.eo);
   renderHH11();
 }
+
+function hh11GroupKey(x){
+  const eo=String(x&&x.eo||'').trim();
+  if(eo)return 'eo:'+eo;
+  return 'row:'+String(x&&x.id||Math.random());
+}
+function hh11GroupCount(items){
+  const keys=new Set();
+  (items||[]).forEach(x=>keys.add(hh11GroupKey(x)));
+  return keys.size;
+}
+function hh11GroupItems(items){
+  const map=new Map(); const order=[];
+  (items||[]).forEach(x=>{
+    const key=hh11GroupKey(x);
+    if(!map.has(key)){map.set(key,[]);order.push(key);}
+    map.get(key).push(x);
+  });
+  return order.map(k=>map.get(k));
+}
+function hh11TogglePlacedGroup(key){
+  const arr=getHH11(); const items=arr.filter(x=>hh11GroupKey(x)===key);
+  if(!items.length)return;
+  const shouldPlace=!items.every(x=>x.placed);
+  items.forEach(r=>{r.placed=shouldPlace?1:0; if(shouldPlace){r.shortage=0;r.placedTs=new Date().toLocaleString('ru-RU');}else r.placedTs=''; touchMeta(r);});
+  set('hh11_log',arr); logAction('hh11',shouldPlace?'HH ЕО отмечена размещенной':'HH ЕО возвращена',{key:key,count:items.length}); renderHH11();
+}
+function hh11ToggleShortageGroup(key){
+  const arr=getHH11(); const items=arr.filter(x=>hh11GroupKey(x)===key);
+  if(!items.length)return;
+  const should=!items.every(x=>x.shortage);
+  items.forEach(r=>{r.shortage=should?1:0; if(should){r.placed=0;r.placedTs='';} touchMeta(r);});
+  set('hh11_log',arr); logAction('hh11',should?'HH ЕО отмечена недостача':'HH ЕО недостача снята',{key:key,count:items.length}); renderHH11();
+}
+
 function hh11Stats(arr){
-  const listed=arr.filter(x=>x.mode==='listed');
-  const found=arr.filter(x=>x.mode==='found');
-  return {all:arr.length,active:arr.filter(x=>!x.archived).length,archive:arr.filter(x=>x.archived).length,listed:listed.length,found:found.length,placed:arr.filter(x=>x.placed).length,shortage:arr.filter(x=>x.shortage).length,openListed:listed.filter(x=>!x.placed&&!x.shortage&&!x.archived).length,mismatch:arr.filter(x=>x.mismatch).length};
+  const listed=arr.filter(x=>x.mode==='listed'&&!x.archived);
+  const found=arr.filter(x=>x.mode==='found'&&!x.archived);
+  const active=arr.filter(x=>!x.archived);
+  return {
+    all:hh11GroupCount(arr),
+    active:hh11GroupCount(active),
+    archive:hh11GroupCount(arr.filter(x=>x.archived)),
+    listed:hh11GroupCount(listed),
+    found:hh11GroupCount(found),
+    placed:hh11GroupCount(arr.filter(x=>x.placed&&!x.archived)),
+    shortage:hh11GroupCount(arr.filter(x=>x.shortage&&!x.archived)),
+    openListed:hh11GroupCount(listed.filter(x=>!x.placed&&!x.shortage)),
+    mismatch:hh11GroupCount(arr.filter(x=>x.mismatch&&!x.archived))
+  };
 }
 function hh11BoardButton(view,label,num,accent){
   const active=hh11View===view;
   return '<button onclick="hh11SetView(\''+view+'\')" style="background:'+(active?'var(--gold-dim)':'var(--surface2)')+';border:1px solid '+(active?'var(--gold)':'var(--border)')+';border-radius:9px;padding:9px 8px;color:'+(active?'#fff':'var(--text)')+';font-family:\'Oswald\',sans-serif;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.7px;text-align:left;cursor:pointer;min-width:0;"><span style="display:block;color:'+(accent||'var(--gold)')+';font-family:\'Spectral\',serif;font-size:20px;line-height:1;">'+num+'</span>'+label+'</button>';
 }
 function hh11RenderOverview(arr){
-  const listed=arr.filter(x=>x.mode==='listed');
-  const found=arr.filter(x=>x.mode==='found');
+  const listed=arr.filter(x=>x.mode==='listed'&&!x.archived);
+  const found=arr.filter(x=>x.mode==='found'&&!x.archived);
   const open=listed.filter(x=>!x.placed&&!x.shortage);
-  const placed=arr.filter(x=>x.placed);
-  const shortage=arr.filter(x=>x.shortage);
+  const placed=arr.filter(x=>x.placed&&!x.archived);
+  const shortage=arr.filter(x=>x.shortage&&!x.archived);
   const sum=(items,field)=>items.reduce((sumVal,x)=>sumVal+(parseInt(x[field])||0),0);
   return '<div class="hh-overview">'+
     '<div class="hh-overview-title">Общий обзор HH 1-1</div>'+ 
     '<div class="hh-overview-grid">'+
-      '<div class="hh-overview-cell"><div class="hh-overview-label">Числятся</div><div class="hh-overview-value">'+listed.length+'</div><div class="hh-overview-note">система: '+sum(listed,'sys')+' · факт: '+sum(listed,'fact')+'</div></div>'+ 
-      '<div class="hh-overview-cell"><div class="hh-overview-label">Не числятся</div><div class="hh-overview-value">'+found.length+'</div><div class="hh-overview-note">факт: '+sum(found,'fact')+'</div></div>'+ 
-      '<div class="hh-overview-cell"><div class="hh-overview-label">К размещению</div><div class="hh-overview-value">'+open.length+'</div><div class="hh-overview-note">ещё не вычеркнуто</div></div>'+ 
-      '<div class="hh-overview-cell"><div class="hh-overview-label">Размещено</div><div class="hh-overview-value">'+placed.length+'</div><div class="hh-overview-note">вычеркнуто</div></div>'+ 
-      '<div class="hh-overview-cell wide"><div class="hh-overview-label">Проблемы</div><div class="hh-overview-value">'+shortage.length+'</div><div class="hh-overview-note">недостача · пересорт: '+arr.filter(x=>x.mismatch).length+'</div></div>'+ 
+      '<div class="hh-overview-cell"><div class="hh-overview-label">Числятся</div><div class="hh-overview-value">'+hh11GroupCount(listed)+'</div><div class="hh-overview-note">товаров: '+listed.length+' · система: '+sum(listed,'sys')+' · факт: '+sum(listed,'fact')+'</div></div>'+ 
+      '<div class="hh-overview-cell"><div class="hh-overview-label">Не числятся</div><div class="hh-overview-value">'+hh11GroupCount(found)+'</div><div class="hh-overview-note">товаров: '+found.length+' · факт: '+sum(found,'fact')+'</div></div>'+ 
+      '<div class="hh-overview-cell"><div class="hh-overview-label">К размещению</div><div class="hh-overview-value">'+hh11GroupCount(open)+'</div><div class="hh-overview-note">ЕО/HU ещё не вычеркнуты</div></div>'+ 
+      '<div class="hh-overview-cell"><div class="hh-overview-label">Размещено</div><div class="hh-overview-value">'+hh11GroupCount(placed)+'</div><div class="hh-overview-note">ЕО/HU вычеркнуты</div></div>'+ 
+      '<div class="hh-overview-cell wide"><div class="hh-overview-label">Проблемы</div><div class="hh-overview-value">'+hh11GroupCount(shortage)+'</div><div class="hh-overview-note">недостача · пересорт: '+hh11GroupCount(arr.filter(x=>x.mismatch&&!x.archived))+'</div></div>'+ 
     '</div></div>';
 }
 function hh11RenderBoard(arr){
@@ -3001,45 +4101,81 @@ function hh11Filtered(arr){
   if(hh11View==='mismatch')return arr.filter(x=>x.mismatch&&!x.archived);
   return arr;
 }
+function hh11RenderGroupedCard(group,kind){
+  group=(group||[]).slice().sort((a,b)=>String(a.ut||'').localeCompare(String(b.ut||''),'ru'));
+  const first=group[0]||{};
+  const key=hh11GroupKey(first);
+  const safeKey=jsStr(key);
+  const eo=String(first.eo||'').trim();
+  const safeEO=jsStr(eo);
+  const placedAll=group.length&&group.every(x=>x.placed);
+  const shortageAny=group.some(x=>x.shortage);
+  const mismatchAny=group.some(x=>x.mismatch);
+  const sysSum=group.reduce((s,x)=>s+(parseInt(x.sys)||0),0);
+  const factSum=group.reduce((s,x)=>s+(parseInt(x.fact)||0),0);
+  const border=shortageAny?'#c0392b':(mismatchAny?'#c0392b':(kind==='listed'?'var(--gold)':'var(--red)'));
+  const opacity=(placedAll||shortageAny)?'0.68':'1';
+  const badges=(placedAll?'<span style="background:rgba(90,138,74,0.18);border:1px solid #5a8a4a;color:#5a8a4a;border-radius:6px;padding:2px 6px;font-family:\'Oswald\',sans-serif;font-size:9px;text-transform:uppercase;letter-spacing:0.6px;">размещено</span>':'')+(shortageAny?'<span style="background:rgba(192,57,43,0.14);border:1px solid #c0392b;color:#c0392b;border-radius:6px;padding:2px 6px;font-family:\'Oswald\',sans-serif;font-size:9px;text-transform:uppercase;letter-spacing:0.6px;">недостача</span>':'')+(mismatchAny?'<span style="background:rgba(192,57,43,0.14);border:1px solid #c0392b;color:#c0392b;border-radius:6px;padding:2px 6px;font-family:\'Oswald\',sans-serif;font-size:9px;text-transform:uppercase;letter-spacing:0.6px;">пересорт</span>':'');
+  let h='<div class="hh11-eo-group" style="background:var(--bg2);border-radius:10px;padding:10px;margin-bottom:9px;border-left:4px solid '+border+';opacity:'+opacity+';">';
+  h+='<div style="display:flex;gap:8px;align-items:flex-start;justify-content:space-between;">';
+  h+='<div style="min-width:0;flex:1;">';
+  h+=(eo?'<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px;flex-wrap:wrap;"><span style="font-family:\'JetBrains Mono\',monospace;font-size:12px;font-weight:800;color:var(--text);background:rgba(0,0,0,0.16);border:1px solid var(--border);border-radius:6px;padding:4px 7px;">ЕО/HU '+escHtml(eo)+'</span>'+badges+'</div>':'<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px;flex-wrap:wrap;"><span style="font-family:\'Oswald\',sans-serif;color:var(--muted);font-size:11px;text-transform:uppercase;">Без ЕО/HU</span>'+badges+'</div>');
+  h+='<div style="font-size:11px;color:var(--muted);">'+group.length+' товар(ов) · система: '+sysSum+' · факт: '+factSum+'</div>';
+  h+='</div><div style="display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end;">';
+  if(eo)h+='<button onclick="zoomBarcode(\''+safeEO+'\',null,{title:\'ЕО/HU\',subtitle:\''+safeEO+'\',eo:\''+safeEO+'\'},{compact:true})" class="exi-btn" style="padding:5px 8px;font-size:10px;">ШК</button>';
+  if(kind==='listed'&&eo&&!placedAll&&!shortageAny)h+='<button onclick="hh11ZoomPlacement('+first.id+')" class="exi-btn" style="padding:5px 8px;font-size:10px;border-color:var(--gold);color:var(--gold);">⤢</button>';
+  if(kind==='listed')h+='<button onclick="hh11TogglePlacedGroup(\''+safeKey+'\')" class="exi-btn" style="padding:5px 8px;font-size:10px;border-color:'+(placedAll?'#5a8a4a':'var(--border)')+';color:'+(placedAll?'#5a8a4a':'var(--muted)')+';">'+(placedAll?'↩ ЕО':'✓ ЕО')+'</button><button onclick="hh11ToggleShortageGroup(\''+safeKey+'\')" class="exi-btn" style="padding:5px 8px;font-size:10px;border-color:'+(shortageAny?'#c0392b':'var(--border)')+';color:'+(shortageAny?'#c0392b':'var(--muted)')+';">недост.</button>';
+  h+='</div></div>';
+  h+='<div style="margin-top:8px;display:grid;gap:7px;">'+group.map(it=>hh11RenderItemMini(it,kind)).join('')+'</div>';
+  h+=authorLine(first);
+  h+='</div>';
+  return h;
+}
+
+function hh11RenderItemMini(it,kind){
+  const placed=!!it.placed, shortage=!!it.shortage, mismatch=!!it.mismatch;
+  const textDeco=(placed||shortage)?'text-decoration:line-through;':'';
+  return `<div class="hh11-eo-group-product">
+    <div style="display:flex;gap:8px;align-items:flex-start;">
+      <div style="flex:1;min-width:0;">
+        <div style="${textDeco}font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;color:var(--gold);">${escHtml(it.ut)}</div>
+        <div style="${textDeco}font-size:12px;color:var(--text);line-height:1.25;">${escHtml(it.name)}</div>
+      </div>
+      <div style="display:flex;gap:5px;align-items:flex-start;">
+        <button onclick="hh11Archive(${it.id})" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:10px;padding:4px 7px;cursor:pointer;">${it.archived?'↩':'арх'}</button>
+        <button onclick="hh11Del(${it.id})" style="background:none;border:none;color:var(--red-bright);font-size:14px;cursor:pointer;">✕</button>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:${kind==='listed'?'1fr 1fr':'1fr'};gap:6px;margin-top:7px;">
+      ${kind==='listed'?`<div><label class="modal-lbl">Система</label><input class="calc-inp" type="number" inputmode="numeric" value="${it.sys||0}" onchange="hh11EditQty(${it.id},'sys',this.value)" style="margin-bottom:0;font-size:15px;padding:8px;text-align:center;"></div>`:''}
+      <div><label class="modal-lbl">Факт</label><input class="calc-inp" type="number" inputmode="numeric" value="${it.fact||0}" onchange="hh11EditQty(${it.id},'fact',this.value)" style="margin-bottom:0;font-size:15px;padding:8px;text-align:center;"></div>
+    </div>
+    <div style="display:flex;gap:6px;margin-top:7px;flex-wrap:wrap;">
+      ${kind==='listed'?`<button onclick="hh11TogglePlaced(${it.id})" class="exi-btn" style="flex:1;min-width:110px;border-color:${placed?'#5a8a4a':'var(--border)'};color:${placed?'#5a8a4a':'var(--muted)'};">${placed?'↩ вернуть':'✓ размещено'}</button><button onclick="hh11ToggleShortage(${it.id})" class="exi-btn" style="flex:1;min-width:100px;border-color:${shortage?'#c0392b':'var(--border)'};color:${shortage?'#c0392b':'var(--muted)'};">недостача</button>`:''}
+      <button onclick="hh11ToggleMismatch(${it.id})" class="exi-btn" style="flex:1;min-width:100px;border-color:${mismatch?'#c0392b':'var(--border)'};color:${mismatch?'#c0392b':'var(--muted)'};">пересорт</button>
+    </div>
+  </div>`;
+}
+
 function hh11RenderGroup(title,items,kind){
   if(!items.length)return '<div class="gen-box"><div style="font-family:\'Oswald\',sans-serif;font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:1px;">'+title+'</div><div style="font-size:12px;color:var(--faint);margin-top:6px;">Пусто</div></div>';
   items=items.slice().sort((a,b)=>((a.placed||a.shortage)?1:0)-((b.placed||b.shortage)?1:0));
   const tsvKind=kind==='found'?'found':'listed';
-  let h='<div class="gen-box"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;"><div style="font-family:\'Oswald\',sans-serif;font-size:12px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;flex:1;">'+title+'</div><button onclick="hh11CopyTSVKind(\''+tsvKind+'\')" class="exi-btn" style="flex:0 0 auto;padding:6px 10px;font-size:10px;">TSV</button><b style="color:var(--gold);">'+items.length+'</b></div>';
-  items.forEach(it=>{
-    const eo=String(it.eo||'').trim();
-    const safeEO=jsStr(eo);
-    const placed=!!it.placed;
-    const shortage=!!it.shortage;
-    const mismatch=!!it.mismatch;
-    const border=shortage?'#c0392b':(mismatch?'#c0392b':(kind==='listed'?'var(--gold)':'var(--red)'));
-    const rowOpacity=(placed||shortage)?'0.58':'1';
-    const textDeco=(placed||shortage)?'text-decoration:line-through;':'';
-    const badges=(placed?'<span style="background:rgba(90,138,74,0.18);border:1px solid #5a8a4a;color:#5a8a4a;border-radius:6px;padding:2px 6px;font-family:\'Oswald\',sans-serif;font-size:9px;text-transform:uppercase;letter-spacing:0.6px;">размещено</span>':'')+(shortage?'<span style="background:rgba(192,57,43,0.14);border:1px solid #c0392b;color:#c0392b;border-radius:6px;padding:2px 6px;font-family:\'Oswald\',sans-serif;font-size:9px;text-transform:uppercase;letter-spacing:0.6px;">недостача</span>':'')+(mismatch?'<span style="background:rgba(192,57,43,0.14);border:1px solid #c0392b;color:#c0392b;border-radius:6px;padding:2px 6px;font-family:\'Oswald\',sans-serif;font-size:9px;text-transform:uppercase;letter-spacing:0.6px;">пересорт</span>':'');
-    h+='<div style="background:var(--bg2);border-radius:8px;padding:9px 10px;margin-bottom:7px;border-left:3px solid '+border+';opacity:'+rowOpacity+';">'+
-      '<div style="display:flex;gap:8px;align-items:flex-start;"><div style="flex:1;min-width:0;">'+
-        (eo?'<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px;flex-wrap:wrap;"><span style="font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:var(--text);background:rgba(0,0,0,0.16);border:1px solid var(--border);border-radius:6px;padding:3px 6px;">ЕО '+escHtml(eo)+'</span><button onclick="zoomBarcode(\''+safeEO+'\',null,{title:\''+jsStr(it.name||it.ut)+'\',subtitle:\''+jsStr(it.ut)+'\',eo:\''+safeEO+'\'},{compact:true})" style="background:none;border:1px solid var(--border);border-radius:6px;padding:3px 7px;color:var(--muted);font-family:\'Oswald\',sans-serif;font-size:10px;cursor:pointer;">ШК</button>'+(kind==='listed'&&!placed&&!shortage?'<button onclick="hh11ZoomPlacement('+it.id+')" style="background:rgba(212,168,67,.12);border:1px solid var(--gold);border-radius:6px;padding:3px 7px;color:var(--gold);font-family:\'Oswald\',sans-serif;font-size:10px;cursor:pointer;">⤢ размещение</button>':'')+badges+'</div>':(badges?'<div style="display:flex;gap:6px;align-items:center;margin-bottom:5px;flex-wrap:wrap;">'+badges+'</div>':''))+
-        '<div style="'+textDeco+'font-family:\'JetBrains Mono\',monospace;font-size:11px;font-weight:700;color:var(--gold);">'+escHtml(it.ut)+'</div><div style="'+textDeco+'font-size:12px;color:var(--text);line-height:1.25;">'+escHtml(it.name)+'</div></div><div style="display:flex;gap:6px;align-items:flex-start;"><button onclick="hh11Archive('+it.id+')" style="background:none;border:1px solid var(--border);border-radius:6px;color:var(--muted);font-size:10px;padding:4px 7px;cursor:pointer;">'+(it.archived?'↩':'арх')+'</button><button onclick="hh11Del('+it.id+')" style="background:none;border:none;color:var(--red-bright);font-size:14px;cursor:pointer;">✕</button></div></div>'+ 
-      '<div style="display:grid;grid-template-columns:'+(kind==='listed'?'1fr 1fr':'1fr')+';gap:6px;margin-top:8px;">'+
-      (kind==='listed'?'<div><label class="modal-lbl">Система</label><input class="calc-inp" type="number" inputmode="numeric" value="'+(it.sys||0)+'" onchange="hh11EditQty('+it.id+',\'sys\',this.value)" style="margin-bottom:0;font-size:16px;padding:9px;text-align:center;"></div>':'')+
-      '<div><label class="modal-lbl">Факт</label><input class="calc-inp" type="number" inputmode="numeric" value="'+(it.fact||0)+'" onchange="hh11EditQty('+it.id+',\'fact\',this.value)" style="margin-bottom:0;font-size:16px;padding:9px;text-align:center;"></div></div>'+ 
-      '<div style="margin-top:7px;"><label class="modal-lbl">ЕО</label><input class="calc-inp" type="text" inputmode="numeric" value="'+escHtml(eo)+'" onchange="hh11EditEO('+it.id+',this.value)" style="margin-bottom:0;font-size:14px;padding:8px;text-align:center;"></div>'+ 
-      '<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">'+
-      (kind==='listed'?'<button onclick="hh11TogglePlaced('+it.id+')" class="exi-btn" style="flex:1;min-width:120px;border-color:'+(placed?'#5a8a4a':'var(--border)')+';color:'+(placed?'#5a8a4a':'var(--muted)')+';">'+(placed?'↩ Вернуть':'✓ Размещено')+'</button><button onclick="hh11ToggleShortage('+it.id+')" class="exi-btn" style="flex:1;min-width:110px;border-color:'+(shortage?'#c0392b':'var(--border)')+';color:'+(shortage?'#c0392b':'var(--muted)')+';">Недостача</button>':'')+
-      '<button onclick="hh11ToggleMismatch('+it.id+')" class="exi-btn" style="flex:1;min-width:110px;border-color:'+(mismatch?'#c0392b':'var(--border)')+';color:'+(mismatch?'#c0392b':'var(--muted)')+';">Пересорт</button></div>'+ 
-      (placed&&it.placedTs?'<div style="font-size:10px;color:#5a8a4a;margin-top:5px;">Размещено: '+escHtml(it.placedTs)+'</div>':'')+
-      authorLine(it)+
-      '</div>';
-  });
+  const groups=hh11GroupItems(items);
+  let h='<div class="gen-box"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:8px;"><div style="font-family:\'Oswald\',sans-serif;font-size:12px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;flex:1;">'+title+'</div><button onclick="hh11CopyTSVKind(\''+tsvKind+'\')" class="exi-btn" style="flex:0 0 auto;padding:6px 10px;font-size:10px;">TSV</button><b style="color:var(--gold);">'+groups.length+'</b></div>';
+  groups.forEach(group=>{ h+=hh11RenderGroupedCard(group,kind); });
   h+='</div>';return h;
 }
+
 function renderHH11(){
   hh11SetMode(hh11Mode);
   const arr=getHH11();
-  const cnt=document.getElementById('hh11-count');if(cnt)cnt.textContent=arr.length+' поз.';
+  const cnt=document.getElementById('hh11-count');if(cnt)cnt.textContent=hh11GroupCount(arr)+' ЕО / '+arr.length+' товаров';
   hh11RenderBoard(arr);
   const box=document.getElementById('hh11-list');if(!box)return;
-  const data=hh11Filtered(arr);
+  const base=hh11Filtered(arr);
+  const data=hh11ApplyListSearch(base);
+  hh11UpdateSearchStatus(base.length,data.length);
   if(hh11View==='all'){
     const listed=data.filter(x=>x.mode==='listed');
     const found=data.filter(x=>x.mode==='found');
@@ -3071,7 +4207,10 @@ function hh11Status(x){
 }
 function hh11ListedComment(x){
   if(x.shortage)return 'Недостача';
-  if(x.placed)return 'Размещено';
+  if(x.placed){
+    const f=parseInt(x.fact)||0;
+    return f>0 ? ('Размещено, факт '+f) : 'Размещено';
+  }
   return '';
 }
 function hh11ExportTSV(kind){
@@ -3100,6 +4239,146 @@ function hh11CopyTSV(kind){const text=hh11ExportTSV(kind);navigator.clipboard.wr
 function hh11CopyTSVKind(kind){hh11CopyTSV(kind);}
 function hh11Share(){shareText(hh11ExportText());}
 function hh11Clear(){if(confirm('Очистить HH 1-1 за смену?')){set('hh11_log',[]);renderHH11();}}
+
+function hh11ImportSetStatus(text,kind){
+  const el=document.getElementById('hh11-import-status');
+  if(!el)return;
+  el.textContent=text||'';
+  el.style.color=kind==='err'?'var(--red-bright)':(kind==='ok'?'#7fb069':'var(--muted)');
+}
+function hh11NormalizeUt(raw){
+  let v=String(raw||'').trim().toUpperCase().replace(/\s+/g,'');
+  if(!v)return '';
+  if(/^\d{5,}$/.test(v))v='УТ-'+v.padStart(8,'0');
+  return v;
+}
+function hh11EnsureCatalogItem(ut,name){
+  ut=hh11NormalizeUt(ut);name=String(name||'').trim();
+  if(!ut||!name)return;
+  const exists=productAllItems().some(i=>String(i.ut||'').toUpperCase()===ut.toUpperCase());
+  if(exists)return;
+  const items=getCustomItems();
+  items.unshift(createMeta({ut:ut,name:name,barcode:'',img:'',custom:true,source:'wms'}));
+  set('custom_items',items);
+}
+function hh11RowKey(x){
+  return [String(x.mode||''),String(x.ut||'').toUpperCase(),String(x.eo||''),String(x.sys||''),String(x.bestBeforeDate||''),String(x.name||'').toLowerCase()].join('|');
+}
+function hh11ImportRows(rows,sourceLabel){
+  rows=(rows||[]).filter(Boolean);
+  if(!rows.length){hh11ImportSetStatus('Нет строк для импорта.','err');return {added:0,skipped:0};}
+  const arr=getHH11();
+  const keys=new Set(arr.map(hh11RowKey));
+  let added=0,skipped=0;
+  rows.forEach(r=>{
+    const ut=hh11NormalizeUt(r.ut||r.nomenclatureCode);
+    const name=String(r.name||'').trim();
+    const qty=Math.max(0,parseInt(r.sys ?? r.quantity ?? r.qty)||0);
+    const eo=normalizeEOCode(r.eo||r.hu||r.handlingUnitBarcode||'');
+    if(!ut||!name){skipped++;return;}
+    hh11EnsureCatalogItem(ut,name);
+    const row=createMeta({
+      id:Date.now()+Math.floor(Math.random()*1000000)+added,
+      eo:eo,
+      ut:ut,
+      name:name,
+      mode:'listed',
+      sys:qty,
+      fact:0,
+      comment:[r.bestBeforeDate?('до '+r.bestBeforeDate):'',r.status||'',sourceLabel||'ВМС'].filter(Boolean).join(' · '),
+      bestBeforeDate:r.bestBeforeDate||'',
+      wmsStatus:r.status||'',
+      mismatch:0,
+      placed:0,
+      shortage:0,
+      ts:new Date().toLocaleString('ru-RU')
+    });
+    const key=hh11RowKey(row);
+    if(keys.has(key)){skipped++;return;}
+    keys.add(key);arr.unshift(row);added++;
+    if(eo)hh11MarkEOUsed(eo);
+  });
+  set('hh11_log',arr);
+  if(added)logAction('hh11','Импорт содержимого в HH-1-1: '+added+' строк',{source:sourceLabel||'wms',added:added,skipped:skipped});
+  renderHH11();
+  hh11ImportSetStatus('Импорт в HH-1-1: добавлено '+added+'. Пропущено дублей/пустых: '+skipped+'.','ok');
+  return {added,skipped};
+}
+function hh11RowsFromWmsResult(result){
+  const rows=(result&&result.rows)||[];
+  return rows.map(r=>({
+    ut:r.nomenclatureCode,
+    name:r.name,
+    qty:r.quantity,
+    eo:r.handlingUnitBarcode,
+    bestBeforeDate:r.bestBeforeDate,
+    status:r.status
+  })).filter(r=>r.ut&&r.name);
+}
+function wmsImportLastStocksToHH11(){
+  if(!wmsLastResult){alert('Нет результата ВМС');return;}
+  if(String(wmsLastResult.mode||'').indexOf('changes')===0){alert('В HH 1-1 импортируются текущие остатки, не изменения. Переключись на «Остатки».');return;}
+  const rows=hh11RowsFromWmsResult(wmsLastResult);
+  if(!rows.length){alert('В результате ВМС нет строк для импорта.');return;}
+  if(!confirm('Перенести '+rows.length+' строк в HH 1-1 → «Числится»? Дубли будут пропущены.'))return;
+  switchTab('hh11');
+  setTimeout(()=>hh11ImportRows(rows,'ВМС: '+(wmsLastResult.cellAddress||wmsLastResult.query||'остатки')),80);
+}
+function hh11ParseWmsTextLine(line){
+  const src=String(line||'').trim();
+  if(!src || !/^УТ-/i.test(src))return null;
+  const parts=src.split(/\s+—\s+/);
+  if(parts.length<6)return null;
+  const ut=hh11NormalizeUt(parts[0]);
+  const status=parts[parts.length-1].trim();
+  const huPart=parts[parts.length-2]||'';
+  const datePart=parts[parts.length-3]||'';
+  const qtyPart=parts[parts.length-4]||'';
+  const name=parts.slice(1,parts.length-4).join(' — ').trim();
+  const qtyM=qtyPart.match(/(\d+)/);
+  const dateM=datePart.match(/(\d{4}-\d{2}-\d{2}|\d{2}\.\d{2}\.\d{2,4})/);
+  const huM=huPart.match(/(?:HU|ЕО)?\s*(\d{8,})/i);
+  if(!ut||!name||!qtyM)return null;
+  return {ut,name,qty:parseInt(qtyM[1])||0,bestBeforeDate:dateM?dateM[1]:'',eo:huM?huM[1]:'',status};
+}
+function hh11ParseWmsText(text){
+  return String(text||'').split(/\r?\n/).map(hh11ParseWmsTextLine).filter(Boolean);
+}
+async function hh11PasteWmsImport(){
+  try{
+    const text=await navigator.clipboard.readText();
+    const el=document.getElementById('hh11-wms-import-text');if(el)el.value=text;
+    hh11ImportSetStatus('Вставил из буфера. Жми «Разобрать».','ok');
+  }catch(e){hh11ImportSetStatus('Не смог прочитать буфер. Вставь вручную долгим тапом.','err');}
+}
+function hh11ClearWmsImport(){const el=document.getElementById('hh11-wms-import-text');if(el)el.value='';hh11ImportSetStatus('', '');}
+function hh11ImportWmsText(){
+  const el=document.getElementById('hh11-wms-import-text');
+  const rows=hh11ParseWmsText(el?el.value:'');
+  if(!rows.length){hh11ImportSetStatus('Не нашёл строк формата «УТ — название — 3 шт — до дата — HU ... — статус».','err');return;}
+  if(!confirm('Разобрал '+rows.length+' строк. Добавить в «Числится»?'))return;
+  hh11ImportRows(rows,'ручной список ВМС');
+}
+async function hh11PullFromWmsCell(){
+  const el=document.getElementById('hh11-wms-cell');
+  const q=wmsCleanCode(el&&el.value||'HH-1-1');
+  if(!q){hh11ImportSetStatus('Введи ячейку ВМС.','err');return;}
+  hh11ImportSetStatus('Тяну из ВМС: '+q+'…','');
+  try{
+    let raw;
+    if(typeof window.lookupWmsByCode==='function')raw=await window.lookupWmsByCode(q);
+    else raw=await wmsNativeLookup(q);
+    const result=wmsNormalizeResult(raw);
+    if(result._kind){
+      hh11ImportSetStatus('ВМС вернула несколько вариантов. Открыл во вкладке ВМС — выбери нужный, потом нажми «В HH 1-1».','err');
+      switchTab('wms');wmsRenderChoices(result);return;
+    }
+    const rows=hh11RowsFromWmsResult(result);
+    if(!rows.length){hh11ImportSetStatus('ВМС ответила, но строк остатков для импорта нет.','err');return;}
+    hh11ImportRows(rows,'ВМС: '+q);
+  }catch(e){hh11ImportSetStatus((e&&e.message)||'ВМС не ответила. Используй ручной список.','err');}
+}
+
 
 
 // ── RK CHECK JOURNAL ──
@@ -4818,6 +6097,7 @@ function quickIntegrityCheck(){
   };
 
   var USER_ROOT = 'users';
+  var DEFAULT_WORKSPACE_ID = 'warehouse-dbec9';
   var LEGACY_DB_PATH = 'w21';
   var DB_PATH = null;           // users/<uid>/w21
   var PULL_EVERY = 60000;       // запасной авто-приём раз в минуту; realtime работает сразу
@@ -5189,7 +6469,7 @@ function quickIntegrityCheck(){
   function userPath(user){ return USER_ROOT + '/' + user.uid + '/w21'; }
   function cleanWorkspaceId(v){return String(v||'').trim().toLowerCase().replace(/[^a-z0-9_-]+/g,'-').replace(/^-+|-+$/g,'').slice(0,48);}
   function workspacePath(id){return 'workspaces/' + cleanWorkspaceId(id) + '/w21';}
-  function getStoredWorkspaceId(){try{return cleanWorkspaceId(localStorage.getItem('lenfer_workspace_id')||'');}catch(_){return '';}}
+  function getStoredWorkspaceId(){try{return cleanWorkspaceId(localStorage.getItem('lenfer_workspace_id')||DEFAULT_WORKSPACE_ID)||DEFAULT_WORKSPACE_ID;}catch(_){return DEFAULT_WORKSPACE_ID;}}
   function activeDataPath(user){var ws=getStoredWorkspaceId(); currentWorkspaceId=ws; return ws ? workspacePath(ws) : userPath(user);}
   function actorFromFirebaseUser(user){
     user=user||currentUser||{};
@@ -5396,11 +6676,11 @@ function quickIntegrityCheck(){
   };
   window.workspaceUsePersonal=async function(){
     if(!currentUser)return status('Сначала войди в аккаунт');
-    try{localStorage.removeItem('lenfer_workspace_id');}catch(_){ }
-    currentWorkspaceId=''; membersCache={}; DB_PATH=activeDataPath(currentUser);
-    logAction('workspace','Возврат в личную базу',{workspace:''});
+    try{localStorage.setItem('lenfer_workspace_id',DEFAULT_WORKSPACE_ID);}catch(_){ }
+    currentWorkspaceId=DEFAULT_WORKSPACE_ID; membersCache={}; DB_PATH=activeDataPath(currentUser);
+    logAction('workspace','Подключена общая база по умолчанию',{workspace:DEFAULT_WORKSPACE_ID});
     startAfterLogin();
-    status('Личная база подключена.',true);
+    status('Подключена общая база: '+DEFAULT_WORKSPACE_ID,true);
   };
   window.workspacePublishCurrent=async function(){
     if(!currentUser)return status('Сначала войди в аккаунт');
@@ -5710,3 +6990,210 @@ function quickIntegrityCheck(){
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else setTimeout(boot, 0);
 })();
+
+
+// ── v62: смартфон, реальные ряды верхних ярусов, недостачи/списания, импорт WMS в товары ──
+function wmsBackFromTool(){
+  // Возврат из инструментов/деталей к обычному экрану остатков внутри WMS.
+  wmsSetLookupKind('stocks');
+  const q=document.getElementById('wms-query'); if(q)q.focus();
+  wmsSetStatus('Остатки сейчас. Введи УТ, ШК, название, ячейку или ЕО.','');
+}
+
+function wmsJsString(v){return String(v==null?'':v).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\r?\n/g,' ');}
+function wmsUpperPartsV62(addr){return wmsUpperAddr(addr).split('-').filter(Boolean);}
+function wmsUpperRowNumberV62(addr){const p=wmsUpperPartsV62(addr);return p.length>=2 && /^\d+$/.test(p[1])?Number(p[1]):null;}
+function wmsUpperSectionNumberV62(addr){const p=wmsUpperPartsV62(addr);return p.length>=3 && /^\d+$/.test(p[2])?Number(p[2]):null;}
+function wmsUpperPlaceNumberV62(addr){const p=wmsUpperPartsV62(addr);return p.length>=4 && /^\d+$/.test(p[3])?Number(p[3]):null;}
+function wmsUpperTierNumberV62(addr){const p=wmsUpperPartsV62(addr);return p.length>=5 && /^\d+$/.test(p[4])?Number(p[4]):null;}
+function wmsUpperRowKey(addr){
+  const p=wmsUpperPartsV62(addr); const r=wmsUpperRowNumberV62(addr);
+  return r===null?(p[0]||wmsUpperAddr(addr)):String(r);
+}
+function wmsUpperSectionKeyV62(addr){const n=wmsUpperSectionNumberV62(addr);return n===null?'—':String(n);}
+function wmsUpperRowsFromRawV62(raw){
+  const v=raw&&raw.value?raw.value:raw||{};
+  const items=Array.isArray(v.items)?v.items:(Array.isArray(v.cells)?v.cells:(Array.isArray(raw&&raw.items)?raw.items:[]));
+  return items.map(x=>({
+    cellId:String(x.id||x.cellId||'').trim(), address:String(x.address||x.cellAddress||'').trim(),
+    zoneName:String((x.zone&&x.zone.name)||x.zoneName||'').trim(), locationName:String((x.location&&x.location.name)||x.locationName||'').trim(),
+    type:String(x.type||''), status:String(x.status||''), allowedOperations:Array.isArray(x.allowedOperations)?x.allowedOperations:[]
+  })).filter(x=>x.cellId&&x.address);
+}
+wmsUpperItems=wmsUpperRowsFromRawV62;
+function wmsUpperFiltered(){
+  const zone=document.getElementById('wms-upper-zone')?.value||'all';
+  const rawRow=wmsUpperAddr(document.getElementById('wms-upper-row')?.value||'');
+  const rowDigits=(rawRow.match(/\d+/)||[]).join('');
+  const parity=document.getElementById('wms-upper-parity')?.value||'all';
+  const state=document.getElementById('wms-upper-state')?.value||'all';
+  return (wmsUpperCells||[]).filter(c=>{
+    if(zone!=='all'&&wmsUpperZoneKey(c)!==zone)return false;
+    const row=wmsUpperRowNumberV62(c.address);
+    if(rowDigits && String(row??'')!==rowDigits)return false;
+    const section=wmsUpperSectionNumberV62(c.address);
+    if(parity==='even' && (section===null||section%2!==0))return false;
+    if(parity==='odd' && (section===null||section%2!==1))return false;
+    const o=wmsUpperOccupancy[c.cellId];
+    if(state==='occupied' && !(o&&o.hasStock))return false;
+    if(state==='empty' && !(o&&!o.hasStock))return false;
+    return true;
+  }).sort((a,b)=>{
+    const ra=wmsUpperRowNumberV62(a.address)||0,rb=wmsUpperRowNumberV62(b.address)||0;
+    const sa=wmsUpperSectionNumberV62(a.address)||0,sb=wmsUpperSectionNumberV62(b.address)||0;
+    const pa=wmsUpperPlaceNumberV62(a.address)||0,pb=wmsUpperPlaceNumberV62(b.address)||0;
+    const ta=wmsUpperTierNumberV62(a.address)||0,tb=wmsUpperTierNumberV62(b.address)||0;
+    return ra-rb||sa-sb||pa-pb||ta-tb||String(a.address).localeCompare(String(b.address),'ru');
+  });
+}
+function wmsFillUpperRowList(){
+  const dl=document.getElementById('wms-upper-row-list'); if(!dl)return;
+  const zone=document.getElementById('wms-upper-zone')?.value||'all';
+  const vals=[...new Set((wmsUpperCells||[]).filter(c=>zone==='all'||wmsUpperZoneKey(c)===zone).map(c=>wmsUpperRowNumberV62(c.address)).filter(n=>n!==null).map(String))].sort((a,b)=>Number(a)-Number(b));
+  dl.innerHTML=vals.map(v=>'<option value="'+escHtml(v)+'"></option>').join('');
+}
+function wmsUpperCardV62(c){
+  const o=wmsUpperOccupancy[c.cellId];
+  const system=!o?'Система не проверена':(o.hasStock?('Системно занято · '+(o.stockRows||0)+' строк · '+(o.quantity||0)+' шт. · '+(o.huCount||0)+' ЕО'):'Системно пусто');
+  const cls=!o?'unknown':(o.hasStock?'occupied':'empty');
+  const row=wmsUpperRowNumberV62(c.address),section=wmsUpperSectionNumberV62(c.address),place=wmsUpperPlaceNumberV62(c.address),tier=wmsUpperTierNumberV62(c.address);
+  const addr=wmsJsString(c.address),cid=wmsJsString(c.cellId);
+  return '<article class="wms-upper-card '+cls+'"><div class="wms-upper-head"><div><div class="wms-upper-address">'+escHtml(c.address)+'</div><div class="wms-upper-meta">'+escHtml(c.zoneName||'Зона не указана')+' · ряд '+escHtml(row??'—')+' · секция '+escHtml(section??'—')+' · место '+escHtml(place??'—')+' · ярус '+escHtml(tier??'—')+'</div></div><button class="wms-mini-copy" onclick="wmsUpperCopy(\''+addr+'\',\'Ячейка\')">Ячейка</button></div><div class="wms-upper-system">'+escHtml(system)+'</div><div class="wms-upper-actions"><button class="wms-mini-copy" onclick="wmsLookupCellId(\''+cid+'\',\''+addr+'\')">Открыть</button><button class="wms-mini-copy" onclick="wmsUpperCopy(\''+wmsJsString(String(row??''))+'\',\'Ряд\')">Ряд</button><button class="wms-mini-copy" onclick="wmsUpperCopy(\''+wmsJsString(String(section??''))+'\',\'Секция\')">Секция</button></div></article>';
+}
+function wmsRenderUpperStorage(){
+  const box=document.getElementById('wms-result'); if(!box||wmsLookupKind!=='upper')return;
+  const all=wmsUpperCells||[]; const rows=wmsUpperFiltered();
+  if(!all.length){box.innerHTML='<div class="hint" style="padding:24px 12px;"><span class="mark">▥</span><span class="txt">Нажми «Загрузить ячейки». WMS отдаст активные верхние места хранения.</span></div>';return;}
+  const loaded=Object.keys(wmsUpperOccupancy||{}).length;
+  const occ=rows.filter(c=>wmsUpperOccupancy[c.cellId]&&wmsUpperOccupancy[c.cellId].hasStock).length;
+  const empty=rows.filter(c=>wmsUpperOccupancy[c.cellId]&&!wmsUpperOccupancy[c.cellId].hasStock).length;
+  const cards=rows.slice(0,180).map(wmsUpperCardV62).join('');
+  const tail=rows.length>180?'<div class="wms-upper-note">Показаны первые 180. Сузь ряд или чётность секции.</div>':'';
+  box.innerHTML='<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">Верхние ярусы</div><div class="wms-meta">Адрес: <b>SH-4-54-3-2</b> → ряд 4 · секция 54 · место 3 · ярус 2. Чётность — по секции.</div></div></div><div class="wms-upper-summary"><b>'+escHtml(rows.length)+'</b><span>в выборке</span><b>'+escHtml(occ)+'</b><span>занято</span><b>'+escHtml(empty)+'</b><span>пусто</span></div><div class="wms-actions wms-upper-result-actions"><button class="exi-btn primary" onclick="wmsCheckUpperOccupancy()">Проверить остатки</button><button class="exi-btn" onclick="wmsLoadUpperStorageCells()">Обновить ячейки</button><button class="exi-btn" onclick="wmsBackFromTool()">← Назад</button></div><div class="wms-upper-list">'+(cards||'<div class="no-results">Нет ячеек по выбранному фильтру</div>')+'</div>'+tail+(loaded?'<div class="wms-upper-note">Проверено остатков: '+escHtml(loaded)+' ячеек.</div>':'');
+}
+async function wmsLoadUpperStorageCells(){
+  wmsSetStatus('Загружаю активные верхние ячейки хранения…','wait');
+  try{
+    const raw=await wmsCallNative('lookupWmsUpperStorageCells',[JSON.stringify({})],120000);
+    wmsUpperCells=wmsUpperRowsFromRawV62(raw); wmsUpperOccupancy={}; wmsFillUpperRowList(); wmsRenderUpperStorage();
+    if(!wmsUpperCells.length)throw new Error('WMS вернула пустой справочник. Проверь авторизацию WMS.');
+    wmsSetStatus('Загружено ячеек: '+wmsUpperCells.length+'. Выбери ряд и чётность секции.','ok');
+  }catch(e){wmsSetStatus((e&&e.message)||'Не смог загрузить верхние ячейки.','err');}
+}
+
+function wmsProductsFromResultV62(result){
+  if(!result)return [];
+  const p=result.product||{}; const out=[];
+  function add(x){
+    const ut=String(x.nomenclatureCode||x.ut||'').trim();
+    const name=String(x.name||'').trim();
+    const barcodes=[];
+    if(x.barcode)barcodes.push(String(x.barcode));
+    if(Array.isArray(x.barcodes))x.barcodes.forEach(b=>{if(b)barcodes.push(String(b));});
+    const unique=wmsUniqueValues(barcodes);
+    if(!ut||!name)return;
+    out.push({ut,name,barcodes:unique,barcode:unique[0]||'',img:String(x.imageUrl||x.img||'').trim()});
+  }
+  if(p.nomenclatureCode||p.name)add(p);
+  (result.rows||[]).forEach(add);
+  const by={}; out.forEach(x=>{const k=x.ut.toUpperCase(); if(!by[k])by[k]=x; else {if(!by[k].img&&x.img)by[k].img=x.img; by[k].barcodes=wmsUniqueValues(by[k].barcodes.concat(x.barcodes||[]));by[k].barcode=by[k].barcodes[0]||by[k].barcode;}});
+  return Object.values(by);
+}
+function wmsImportLastStocksToCatalog(){
+  const products=wmsProductsFromResultV62(wmsLastResult);
+  if(!products.length){wmsSetStatus('В результате нет УТ и наименований для импорта.','err');return;}
+  const custom=getCustomItems().slice(); let added=0,updated=0;
+  products.forEach(p=>{
+    const i=custom.findIndex(x=>String(x.ut||'').toUpperCase()===p.ut.toUpperCase());
+    const allB=wmsUniqueValues(p.barcodes||[]);
+    if(i<0){custom.unshift(createMeta({ut:p.ut,name:p.name,barcode:p.barcode,barcodes:allB.join(', '),img:p.img,imageUrl:p.img,custom:true,source:'wms'}));added++;}
+    else {const old=custom[i];custom[i]=touchMeta({...old,name:p.name||old.name,barcode:p.barcode||old.barcode,barcodes:allB.length?allB.join(', '):(old.barcodes||''),img:p.img||old.img||'',imageUrl:p.img||old.imageUrl||'',source:old.source||'wms'});updated++;}
+    if(p.barcode)saveCustomBarcode(p.ut,p.barcode);
+  });
+  try{set('custom_items',custom);}catch(e){wmsSetStatus('Не смог сохранить товары: возможно, не хватает места для картинок.','err');return;}
+  logAction('product','Импорт из WMS в товары: '+products.length,{count:products.length,added,updated});
+  try{if(typeof render==='function')render();}catch(e){}
+  wmsSetStatus('В товары: '+products.length+' поз. · добавлено '+added+' · обновлено '+updated+'. УТ, ШК, название и картинка сохранены.','ok');
+}
+
+function wmsRenderStocksMobileV62(result){
+  wmsLastResult=result;wmsLastChoices=null;
+  const box=document.getElementById('wms-result'); if(!box)return;
+  const sourceRows=(result&&result.rows)||[]; const rows=wmsApplyStorageFilter(sourceRows);
+  if(!sourceRows.length){box.innerHTML='<div class="no-results">Нет строк</div>';return;}
+  if(String(result.mode||'').indexOf('changes')===0){box.innerHTML=wmsRenderChangesResult(result,result.product||{},sourceRows);return;}
+  if(!rows.length){box.innerHTML='<div class="no-results">По фильтру хранения строк нет. <button class="exi-btn" onclick="wmsToggleStorageOnly()">Показать всё</button></div>';return;}
+  const p=result.product||{};
+  const isCell=result.mode==='cell'||result.mode==='hu';
+  const title=isCell?(p.name||((result.mode==='hu'?'Содержимое ЕО ':'Содержимое ячейки ')+(result.cellAddress||result.query||''))):(p.name||rows[0].name||'Остатки WMS');
+  const headerImg=p.imageUrl?'<img class="wms-img" src="'+escHtml(p.imageUrl)+'" loading="lazy" onerror="this.style.display=\'none\'">':'';
+  const cards=rows.map((r,idx)=>{
+    const img=r.imageUrl?'<img class="wms-stock-thumb" src="'+escHtml(r.imageUrl)+'" loading="lazy" onerror="this.style.display=\'none\'">':'';
+    const name=r.name||p.name||'Товар'; const ut=r.nomenclatureCode||p.nomenclatureCode||''; const bc=r.barcode||p.barcode||''; const hu=r.handlingUnitBarcode||'';
+    const address=r.cellAddress||result.cellAddress||'';
+    const copy=(v,l)=>'<button class="wms-mini-copy" onclick="wmsCopyFallback(\''+wmsJsString(v)+'\');wmsSetStatus(\''+l+' скопировано.\',\'ok\')">'+l+'</button>';
+    return '<article class="wms-stock-card"><div class="wms-stock-main">'+img+'<div class="wms-stock-copy"><div class="wms-stock-name">'+escHtml(name)+'</div><div class="wms-stock-meta"><b>'+escHtml(ut||'Без УТ')+'</b> · '+escHtml(r.quantity||0)+' шт.'+(r.bestBeforeDate?' · до '+escHtml(r.bestBeforeDate):'')+'</div>'+(address?'<div class="wms-stock-meta">'+escHtml(address)+(r.zoneName?' · '+escHtml(r.zoneName):'')+'</div>':'')+(hu?'<div class="wms-stock-code">ЕО '+escHtml(hu)+'</div>':'')+(r.status?'<div class="wms-stock-status">'+escHtml(r.status)+'</div>':'')+'</div></div><div class="wms-stock-copy-row">'+copy(ut,'УТ')+copy(bc,'ШК')+copy(name,'Название')+(hu?copy(hu,'ЕО'):'')+(address?copy(address,'Ячейка'):'')+'</div></article>';
+  }).join('');
+  box.innerHTML='<div class="wms-card">'+headerImg+'<div class="wms-card-body"><div class="wms-product-name">'+escHtml(title)+'</div><div class="wms-meta">Строк: <b>'+escHtml(rows.length)+'</b> · остаток: <b>'+escHtml(rows.reduce((n,r)=>n+(Number(r.quantity)||0),0))+'</b> шт.</div></div></div><div class="wms-actions wms-result-actions">'+wmsStorageToggleButton()+'<button class="exi-btn primary" onclick="wmsImportLastStocksToCatalog()">В товары</button><button class="exi-btn" onclick="wmsImportLastStocksToHH11()">В HH 1-1</button><button class="exi-btn" onclick="wmsCopyCells()">Список</button></div><div class="wms-stock-list">'+cards+'</div>';
+}
+wmsRenderResult=wmsRenderStocksMobileV62;
+
+function wmsIssueZoneV62(addr){const a=wmsUpperAddr(addr);if(a.startsWith('HH-'))return 'cold';if(a.startsWith('SH-'))return 'dry';return 'other';}
+function wmsIssueDateV62(r){return wmsDateIsoDay(r.completedAt||r.createdAt||r.operationStartedAt||'');}
+function wmsLargeIssueRowsV62(){
+  const state=window.wmsLargeIssues||{writeoffs:[],recounts:[]};
+  const zone=document.getElementById('wms-loss-zone')?.value||'all';
+  const min=Math.max(1,Number(document.getElementById('wms-loss-min')?.value||20)||20);
+  const rows=[];
+  (state.writeoffs||[]).forEach(r=>{const loss=Math.abs(Math.min(0,Number(r.sourceDelta||0)));if(loss<min)return;const z=wmsIssueZoneV62(r.sourceCellAddress);if(zone!=='all'&&z!==zone)return;rows.push({kind:'writeoff',loss,zone:z,row:r,cell:r.sourceCellAddress||''});});
+  (state.recounts||[]).forEach(r=>{const diff=Number(r.discrepancyQty||0);const loss=Math.abs(Math.min(0,diff));if(loss<min)return;const z=wmsIssueZoneV62(r.cellAddress);if(zone!=='all'&&z!==zone)return;rows.push({kind:'recount',loss,zone:z,row:r,cell:r.cellAddress||''});});
+  return rows.sort((a,b)=>b.loss-a.loss||String(a.cell).localeCompare(String(b.cell),'ru'));
+}
+function wmsRenderLargeLosses(){
+  const box=document.getElementById('wms-result');if(!box||wmsLookupKind!=='losses')return;
+  if(!window.wmsLargeIssues){box.innerHTML='<div class="hint" style="padding:24px 12px;"><span class="mark">▼</span><span class="txt">Выбери дату и порог. Покажу только крупные недостачи по пересчётам и списания из хранения.</span></div>';return;}
+  const rows=wmsLargeIssueRowsV62(); const cold=rows.filter(x=>x.zone==='cold'),dry=rows.filter(x=>x.zone==='dry'); const sum=a=>a.reduce((n,x)=>n+x.loss,0);
+  const cards=rows.slice(0,200).map(x=>{
+    if(x.kind==='recount'){
+      const r=x.row;const cell=wmsJsString(r.cellAddress||''),id=wmsJsString(r.id||'');
+      return '<article class="wms-loss-card"><div class="wms-loss-head"><div class="wms-loss-delta">−'+escHtml(x.loss)+' шт.</div><div class="wms-loss-op">Пересчёт</div></div><div class="wms-loss-name">'+escHtml(r.cellAddress||'Ячейка не указана')+'</div><div class="wms-loss-meta">'+escHtml(wmsRecountLabelScope(r.scope||''))+' · '+escHtml(wmsRecountLabelReason(r.reason||''))+' · '+escHtml(wmsRecountDateText(r.completedAt||r.createdAt||''))+'</div><div class="wms-loss-location">Система: <b>'+escHtml(r.expectedQty??'—')+'</b> · факт: <b>'+escHtml(r.actualQty??'—')+'</b> · позиций: '+escHtml(r.positionCount??'—')+'</div><div class="wms-loss-meta">'+escHtml(r.executorName||'Исполнитель не указан')+'</div><div class="wms-stock-copy-row"><button class="wms-mini-copy" onclick="wmsCopyFallback(\''+cell+'\');wmsSetStatus(\'Ячейка скопирована.\',\'ok\')">Ячейка</button><button class="wms-mini-copy" onclick="wmsOpenLargeIssueRecount(\''+id+'\')">Детали</button></div></article>';
+    }
+    const r=x.row;const ut=wmsJsString(r.nomenclatureCode||''),name=wmsJsString(r.name||''),bc=wmsJsString(r.barcode||''),cell=wmsJsString(r.sourceCellAddress||'');
+    return '<article class="wms-loss-card"><div class="wms-loss-head"><div class="wms-loss-delta">−'+escHtml(x.loss)+' шт.</div><div class="wms-loss-op">Списание</div></div><div class="wms-loss-name">'+escHtml(r.name||'Товар не указан')+'</div><div class="wms-loss-meta">'+escHtml(r.nomenclatureCode||'')+' · '+escHtml(wmsDateShort(r.operationStartedAt))+'</div><div class="wms-loss-location">Из хранения: <b>'+escHtml(r.sourceCellAddress||'—')+'</b>'+((r.sourceHandlingUnitBarcode)?(' · ЕО '+escHtml(r.sourceHandlingUnitBarcode)):'')+'</div><div class="wms-loss-meta">'+escHtml(r.userName||'Исполнитель не указан')+'</div><div class="wms-stock-copy-row"><button class="wms-mini-copy" onclick="wmsCopyFallback(\''+ut+'\');wmsSetStatus(\'УТ скопировано.\',\'ok\')">УТ</button><button class="wms-mini-copy" onclick="wmsCopyFallback(\''+bc+'\');wmsSetStatus(\'ШК скопирован.\',\'ok\')">ШК</button><button class="wms-mini-copy" onclick="wmsCopyFallback(\''+name+'\');wmsSetStatus(\'Название скопировано.\',\'ok\')">Название</button><button class="wms-mini-copy" onclick="wmsCopyFallback(\''+cell+'\');wmsSetStatus(\'Ячейка скопирована.\',\'ok\')">Ячейка</button></div></article>';
+  }).join('');
+  box.innerHTML='<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">Крупные недостачи и списания</div><div class="wms-meta">Только пересчёты с минусом и списания. Отгрузки/перемещения исключены.</div></div></div><div class="wms-loss-summary"><b>'+escHtml(rows.length)+'</b><span>случаев</span><b>−'+escHtml(sum(cold))+'</b><span>Холод</span><b>−'+escHtml(sum(dry))+'</b><span>Сухой</span></div><div class="wms-actions"><button class="exi-btn primary" onclick="wmsLoadLargeLosses()">Обновить</button><button class="exi-btn" onclick="wmsBackFromTool()">← Назад</button></div><div class="wms-loss-list">'+(cards||'<div class="no-results">По выбранным условиям недостач и списаний нет.</div>')+'</div>'+(rows.length>200?'<div class="wms-upper-note">Показаны первые 200 строк. Подними порог, чтобы сузить список.</div>':'');
+}
+async function wmsLoadLargeLosses(){
+  const date=document.getElementById('wms-loss-date')?.value||''; if(!date){wmsSetStatus('Выбери дату.','err');return;}
+  const b=wmsMoscowDayBounds(date); if(!b){wmsSetStatus('Некорректная дата.','err');return;}
+  wmsSetStatus('Ищу списания и пересчёты с недостачей за '+date+'…','wait');
+  const errors=[];let writeoffs=[];let recounts=[];
+  try{const raw=await wmsCallNative('lookupWmsDailyStorageLosses',[JSON.stringify({date,from:b.from,to:b.to,zone:'all',kind:'writeoff'})],180000);writeoffs=wmsNormalizeChangesResult(raw).rows||[];}catch(e){errors.push('списания: '+((e&&e.message)||e));}
+  try{
+    const raw=await wmsCallNative('lookupWmsRecountingTasks',[JSON.stringify({status:'all'})],90000);
+    const list=wmsNormalizeRecountingResult(raw).rows||[];
+    const day=list.filter(r=>wmsDateIsoDay(r.completedAt||r.createdAt)===date).slice(0,100);
+    if(day.length){const det=await wmsCallNative('lookupWmsRecountingTaskDetails',[JSON.stringify(day.map(r=>r.id).filter(Boolean))],180000);const tasks=wmsFindDetailTasks(det);const by={};tasks.forEach(t=>{const id=t.id||t._loadedDetailId||'';if(id)by[id]=t;});day.forEach(r=>{if(by[r.id])wmsApplyRecountDetail(r,by[r.id]);});recounts=day.filter(r=>r.detailLoaded);}
+  }catch(e){errors.push('пересчёты: '+((e&&e.message)||e));}
+  window.wmsLargeIssues={writeoffs,recounts,date};wmsRenderLargeLosses();
+  wmsSetStatus(errors.length?('Загружено частично: '+errors.join(' · ')):('Готово: списаний '+writeoffs.length+' · пересчётов '+recounts.length+'.'),'ok');
+}
+
+// Экспорт функций для inline-кнопок.
+window.wmsBackFromTool=wmsBackFromTool;
+window.wmsImportLastStocksToCatalog=wmsImportLastStocksToCatalog;
+window.wmsLoadUpperStorageCells=wmsLoadUpperStorageCells;
+window.wmsCheckUpperOccupancy=wmsCheckUpperOccupancy;
+window.wmsUpperFilterChanged=wmsUpperFilterChanged;
+window.wmsLoadLargeLosses=wmsLoadLargeLosses;
+
+// v62.1: открыть детали пересчёта из списка крупных недостач без зависимости от предыдущего экрана.
+async function wmsOpenLargeIssueRecount(id){
+  const issue=(window.wmsLargeIssues&&window.wmsLargeIssues.recounts||[]).find(x=>String(x.id||'')===String(id||''));
+  if(!issue){wmsSetStatus('Не нашёл этот пересчёт в текущем списке. Обнови данные.','err');return;}
+  wmsLastResult={mode:'recountingTasks',rows:[issue],totalRows:1,loadedRows:1,filters:{status:'all'}};
+  wmsSetLookupKind('recounting');
+  wmsRenderRecountingResult(wmsLastResult);
+  await wmsLoadOneRecountDetail(id);
+}
+window.wmsOpenLargeIssueRecount=wmsOpenLargeIssueRecount;

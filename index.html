@@ -12,19 +12,19 @@
 <meta content="L'Enfer" name="apple-mobile-web-app-title"/>
 <link href="./icons/icon-192.png" rel="apple-touch-icon"/>
 <title>L'Enfer</title>
-<!-- build: pwa-json-barcodes-v56-ui-v46 -->
-<script src="./assets/js/vendor/zxing.min.js?v=20260615-v46-android-ui"></script>
+<!-- build: pwa-json-barcodes-v62-upper-rows-issues-products -->
+<script src="./assets/js/vendor/zxing.min.js?v=20260618-v57-wms-report"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script id="auth-gate-v43" src="./assets/js/auth-gate.js?v=20260615-v46-android-ui"></script>
-<link href="./assets/css/app.css?v=20260615-v46-android-ui" rel="stylesheet"/>
-<meta content="modular-files-sync-v46-android-ui" name="lenfer-build"/></head>
+<script id="auth-gate-v43" src="./assets/js/auth-gate.js?v=20260618-v57-wms-report"></script>
+<link href="./assets/css/app.css?v=20260618-v57-wms-report" rel="stylesheet"/>
+<meta content="modular-files-sync-v57-wms-report" name="lenfer-build"/></head>
 <body>
 <div class="app-error-banner" id="app-error-banner"></div>
-<script src="./assets/js/error-banner.js?v=20260615-v46-android-ui"></script>
-<script src="./assets/js/pwa-and-search-boot.js?v=20260615-v46-android-ui"></script>
+<script src="./assets/js/error-banner.js?v=20260618-v57-wms-report"></script>
+<script src="./assets/js/pwa-and-search-boot.js?v=20260618-v57-wms-report"></script>
 <header>
 <div class="header-top">
 <div class="brand">
@@ -33,17 +33,11 @@
 </div>
 <div class="header-btns">
 <button class="hbtn" id="theme-btn" onclick="toggleTheme()">☾</button>
-<a class="hbtn wms-home-btn" href="https://wwh.samokat.ru/" rel="noopener noreferrer" target="_blank">WMS</a>
 <button class="hbtn" id="pwa-install-btn" onclick="installPWA()" title="Установить как приложение">PWA</button>
 <button class="hbtn" onclick="location.reload()">↻</button>
 </div>
 </div>
-<div aria-label="Быстрый доступ WMS" class="wms-quick wms-quick-global">
-<a class="wms-qbtn main" href="https://wwh.samokat.ru/#/recounting-tasks?status=AWAITING_CONFIRMATION&amp;sortCompletedDate=DESC&amp;pageNumber=1" rel="noopener noreferrer" target="_blank" title="Подтвердить пересчёт">Пересчёт</a>
-<a class="wms-qbtn" href="https://wwh.samokat.ru/#/stocks/details?pageNumber=1" rel="noopener noreferrer" target="_blank" title="Детализация остатков">Остатки</a>
-<a class="wms-qbtn" href="https://wwh.samokat.ru/#/stocks/changes" rel="noopener noreferrer" target="_blank" title="Изменение остатка">Изменения</a>
-<a class="wms-qbtn" href="https://wwh.samokat.ru/#/handing-units/print" rel="noopener noreferrer" target="_blank" title="Печать этикеток">Этикетки</a>
-</div>
+
 <div id="catalog-search-area">
 <div class="search-row smart-search-box">
 <svg fill="none" height="16" stroke="currentColor" stroke-width="2.5" viewbox="0 0 24 24" width="16"><circle cx="11" cy="11" r="8"></circle><path d="m21 21-4.35-4.35"></path></svg>
@@ -87,16 +81,21 @@
 <!-- WMS LOOKUP -->
 <div id="tab-wms" style="display:none">
 <div class="section-head">
-<div class="section-title">Поиск в ВМС</div>
+<div class="section-title">Поиск в WMS</div><button class="exi-btn" id="wms-back-btn" onclick="wmsBackFromTool()" style="margin-left:auto;min-height:42px;">← Назад</button>
 </div>
 <div class="wms-panel">
-<div class="wms-warning"><b>Рабочий режим:</b> Android-обёртка. Сначала сверху открой «ВМС вход» и залогинься. Потом здесь можно искать по УТ, ШК, названию, ячейке или ЕО. Выгружает все страницы результата. В изменениях результат показывается карточками, есть фильтр «Хранение HH/SH». Ручной импорт ниже — только диагностика.</div>
+<div class="wms-login-card single">
+<button class="exi-btn primary wms-auth-main-btn" onclick="wmsOpenNativeLogin()">Авторизация WMS</button>
+</div>
+<div id="wms-general-search">
 <label class="modal-lbl">УТ / ШК / название / ячейка / ЕО</label>
 <div class="wms-hub-tabs" style="margin-top:0;margin-bottom:10px;">
-<button class="exi-btn primary" id="wms-mode-stocks" onclick="wmsSetLookupKind('stocks')">Остатки</button>
-<button class="exi-btn" id="wms-mode-changes" onclick="wmsSetLookupKind('changes')">Изменения</button>
-<button class="exi-btn" onclick="wmsOpenRecounting()">Пересчёт</button>
-<button class="exi-btn" onclick="wmsOpenLabels()">Этикетки</button>
+<button class="exi-btn primary wms-mode-btn wms-mode-stocks" id="wms-mode-stocks" onclick="wmsSetLookupKind('stocks')">Остатки сейчас</button>
+<button class="exi-btn wms-mode-btn wms-mode-changes" id="wms-mode-changes" onclick="wmsSetLookupKind('changes')">История изменений</button>
+<button class="exi-btn wms-mode-btn wms-mode-recounting" id="wms-mode-recounting" onclick="wmsSetLookupKind('recounting')">Пересчёты</button>
+<button class="exi-btn wms-mode-btn wms-mode-analysis" id="wms-mode-analysis" onclick="wmsSetLookupKind('analysis')">Разбор</button>
+<button class="exi-btn wms-mode-btn wms-mode-picking" id="wms-mode-picking" onclick="wmsSetLookupKind('picking')">Отбор</button>
+<details class="wms-tools-more"><summary>Инструменты хранения</summary><div class="wms-tools-more-actions"><button class="exi-btn wms-mode-btn" id="wms-mode-upper" onclick="wmsSetLookupKind('upper')">Верхние ярусы</button><button class="exi-btn wms-mode-btn" id="wms-mode-losses" onclick="wmsSetLookupKind('losses')">Крупные минусы</button></div></details>
 </div>
 <div class="wms-search-row">
 <input class="calc-inp" id="wms-query" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="УТ-10547087 / святой источник / SH-11-62-2-1 / 022200231322" style="margin-bottom:0;" type="text"/>
@@ -106,7 +105,78 @@
 <button class="exi-btn" onclick="wmsPrefixUt()">УТ-</button>
 <button class="exi-btn" onclick="wmsClearResult()">Очистить</button>
 </div>
-<div class="wms-status" id="wms-status">Готов. Выбери «Остатки» или «Изменение остатка», затем введи УТ, ШК, название, ячейку или ЕО.</div>
+</div>
+<div class="wms-recounting-panel" id="wms-recounting-controls" style="display:none;">
+  <div class="wms-filter-title">Фильтры пересчётов</div>
+  <div class="wms-recounting-grid">
+    <label><span>Статус / итог</span><select class="wms-select" id="wms-rc-status"><option value="all">Все статусы</option><option value="COMPLETED">Завершён</option><option value="COMPLETED_WITH_DISCREPANCY">Подтверждено с расхождением</option><option value="AWAITING_CONFIRMATION">Ждёт подтверждения</option><option value="IN_PROGRESS">В работе</option><option value="CREATED">Создан</option><option value="REJECTED">Отклонён</option><option value="CANCELLED">Отменён</option><option value="DISCREPANCY">С расхождениями</option></select></label>
+    <label><span>Тип</span><select class="wms-select" id="wms-rc-scope"><option value="all">Любой</option><option value="FULL">Полный</option><option value="PARTIAL">Частичный</option></select></label>
+    <label><span>Причина</span><select class="wms-select" id="wms-rc-reason"><option value="all">Любая</option><option value="CREATED_ON_PDT">Создано на ТСД</option><option value="STOCKS_MISSING_DURING_PICKING_SELECTION">Нет товара при отборе</option><option value="UNEXPECTED_STOCK_DISCREPANCY_CONFIRMATION">Излишек / расхождение</option><option value="NOT_FOUND_STOCK_DISCREPANCY_CONFIRMATION">Недостача / не найдено</option></select></label>
+    <label><span>Дата завершения</span><input class="calc-inp" id="wms-rc-date" placeholder="2026-06-18" type="date"/></label>
+    <label><span>Исполнитель</span><input class="calc-inp" id="wms-rc-executor" placeholder="Фамилия / имя" type="text"/></label>
+    <label><span>Ячейка / зона</span><input class="calc-inp" id="wms-rc-cell" placeholder="HH-2 / Холод / SH" type="text"/></label>
+  </div>
+  <details class="wms-import-fold wms-rc-advanced"><summary>ExecutorId / точный фильтр</summary><input class="calc-inp" id="wms-rc-executor-id" placeholder="be5e697b-3666-4799-b7d4-f1327def6551" type="text"/></details>
+  <div class="wms-actions wms-rc-actions">
+    <button class="exi-btn primary" onclick="wmsLoadRecountingTasks()">Показать пересчёты</button>
+    <button class="exi-btn" onclick="wmsRecountingToday()">Сегодня</button>
+    <button class="exi-btn" onclick="wmsClearRecountingFilters()">Сбросить</button>
+  </div>
+</div>
+<div class="wms-analysis-panel" id="wms-analysis-controls" style="display:none;">
+  <div class="wms-filter-title">Разбор WMS</div>
+  <div class="wms-analysis-help">Собирает в одну карточку остатки, историю изменений, пересчёты и позиции внутри пересчётов. Лучше всего работает по ячейке: HH/SH.</div>
+  <div class="wms-recounting-grid">
+    <label><span>Дата пересчётов</span><input class="calc-inp" id="wms-an-date" type="date"/></label>
+    <label><span>Исполнитель</span><input class="calc-inp" id="wms-an-executor" placeholder="Фамилия / имя" type="text"/></label>
+    <label><span>Статус пересчётов</span><select class="wms-select" id="wms-an-status"><option value="all">Все статусы</option><option value="COMPLETED">Завершён</option><option value="AWAITING_CONFIRMATION">Ждёт подтверждения</option><option value="IN_PROGRESS">В работе</option><option value="REJECTED">Отклонён</option><option value="CANCELLED">Отменён</option></select></label>
+  </div>
+  <div class="wms-actions wms-analysis-actions">
+    <button class="exi-btn primary" onclick="wmsRunAnalysis()">Собрать картину</button>
+    <button class="exi-btn" onclick="wmsAnalysisToday()">Сегодня</button>
+    <button class="exi-btn" onclick="wmsClearAnalysisFilters()">Сбросить</button>
+  </div>
+</div>
+<div class="wms-picking-panel" id="wms-picking-controls" style="display:none;">
+  <div class="wms-filter-title">Отбор сейчас</div>
+  <div class="wms-picking-help">Загружает заказы WMS со статусами «Ждёт комплектацию» и «Идёт комплектация», подтягивает ЕО по товарам и показывает текущие ячейки отбора.</div>
+  <div class="wms-recounting-grid">
+    <label><span>Дата отгрузки</span><input class="calc-inp" id="wms-picking-date" type="date"/></label>
+    <label><span>Статус заказа</span><select class="wms-select" id="wms-picking-status"><option value="both">Ждёт + идёт</option><option value="WAITING_FOR_PICKING">Ждёт комплектацию</option><option value="PICKING">Идёт комплектация</option></select></label>
+    <label><span>Температура</span><select class="wms-select" id="wms-picking-temp"><option value="all">Все</option><option value="ORDINARY">Сухой / ordinary</option><option value="COLD">Холод</option></select></label>
+    <label><span>Проверить ячейку</span><input class="calc-inp" id="wms-picking-cell" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="SH-4-54-3-2" type="text"/></label>
+  </div>
+  <div class="wms-actions wms-picking-actions">
+    <button class="exi-btn primary" onclick="wmsLoadPickingOrders()">Загрузить отбор</button>
+    <button class="exi-btn" onclick="wmsCheckPickingCell()">Проверить ячейку</button>
+    <button class="exi-btn" onclick="wmsClearObservedPicking()">Очистить</button>
+  </div>
+</div>
+<div class="wms-upper-panel" id="wms-upper-controls" style="display:none;">
+  <div class="wms-filter-title">Сверка верхних ярусов</div>
+  <div class="wms-upper-help">Адрес: <b>SH-4-54-3-2</b> → ряд 4 · секция 54 · место 3 · ярус 2. Чётность считается по секции. Карточка = ячейка, внутри можно открыть товары и отметить факт.</div>
+  <div class="wms-recounting-grid">
+    <label><span>Зона</span><select class="wms-select" id="wms-upper-zone" onchange="wmsUpperFilterChanged()"><option value="all">Холод и Сухой</option><option value="cold">Холод · HH</option><option value="dry">Сухой · SH</option></select></label>
+    <label><span>Ряд</span><input class="calc-inp" id="wms-upper-row" list="wms-upper-row-list" autocapitalize="characters" autocomplete="off" spellcheck="false" inputmode="numeric" placeholder="Напр. 4" oninput="wmsUpperFilterChanged()" type="text"/><datalist id="wms-upper-row-list"></datalist></label>
+    <label><span>Чётность секции</span><select class="wms-select" id="wms-upper-parity" onchange="wmsUpperFilterChanged()"><option value="all">Все секции</option><option value="even">Чётные секции</option><option value="odd">Нечётные секции</option></select></label>
+    <label><span>Ярус</span><input class="calc-inp" id="wms-upper-tier" inputmode="numeric" placeholder="2" oninput="wmsUpperFilterChanged()" type="text"/></label>
+    <label><span>Система</span><select class="wms-select" id="wms-upper-state" onchange="wmsUpperFilterChanged()"><option value="all">Все</option><option value="occupied">Только занятые</option><option value="empty">Только пустые</option></select></label>
+    <label><span>Факт</span><select class="wms-select" id="wms-upper-mark-filter" onchange="wmsUpperFilterChanged()"><option value="all">Все</option><option value="unchecked">Не проверено</option><option value="ok">Всё на месте</option><option value="empty">Физически пусто</option><option value="discrepancy">Есть расхождение</option></select></label>
+  </div>
+  <div class="wms-actions wms-upper-actions"><button class="exi-btn primary" onclick="wmsLoadUpperStorageCells()">Загрузить ячейки</button><button class="exi-btn" onclick="wmsCheckUpperOccupancy()">Подтянуть товары</button></div>
+</div>
+<div class="wms-losses-panel" id="wms-losses-controls" style="display:none;">
+  <div class="wms-filter-title">Крупные недостачи и списания</div>
+  <div class="wms-loss-help">Только два источника: недостачи по пересчётам и списания из хранения. Отгрузки и перемещения сюда не попадают.</div>
+  <div class="wms-recounting-grid">
+    <label><span>Дата</span><input class="calc-inp" id="wms-loss-date" type="date"/></label>
+    <label><span>Зона</span><select class="wms-select" id="wms-loss-zone"><option value="all">Холод и Сухой</option><option value="cold">Холод · HH</option><option value="dry">Сухой · SH</option></select></label>
+    <label><span>Минус от, шт.</span><input class="calc-inp" id="wms-loss-min" inputmode="numeric" value="20" min="1" type="number"/></label>
+    <label><span>Источник</span><div class="wms-static-note">Пересчёты + списания</div></label>
+  </div>
+  <div class="wms-actions"><button class="exi-btn primary" onclick="wmsLoadLargeLosses()">Показать минусы</button></div>
+</div>
+<div class="wms-status" id="wms-status">Выбери режим WMS.</div>
 <details class="wms-import-fold">
 <summary>Диагностика / ручной импорт JSON</summary>
 <div class="wms-warning" style="margin-top:10px;">Это аварийный режим для проверки парсера. В нормальной работе им пользоваться не надо.</div>
@@ -524,6 +594,25 @@
 <div class="gen-box" style="border-left:3px solid var(--gold);overflow:visible;position:relative;z-index:45;">
 <div style="font-family:'Oswald',sans-serif;font-size:11px;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Буферная ячейка · HH 1-1 · ЕО + фиксация</div>
 <div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:12px;">Сначала ЕО, потом товар. Товар можно выбрать из каталога или добавить прямо здесь — он сохранится в каталог и сразу попадёт в строку HH 1-1.</div>
+
+<div class="hh11-import-panel" style="margin:12px 0;padding:10px;background:rgba(212,168,67,.06);border:1px solid var(--border);border-radius:10px;">
+  <div style="font-family:'Oswald',sans-serif;font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px;">Импорт содержимого в HH-1-1</div>
+  <div style="font-size:11px;color:var(--muted);line-height:1.35;margin-bottom:8px;">Переносит содержимое из WMS в «Числится»: ЕО/HU, УТ, наименование и количество по системе. Если автомат не сработал — вставь список ниже.</div>
+  <div style="display:flex;gap:6px;align-items:stretch;">
+    <input class="calc-inp" id="hh11-wms-cell" value="HH-1-1" placeholder="HH-1-1 / SH-... / G8A" style="margin-bottom:0;flex:1;min-width:0;" type="text"/>
+    <button class="exi-btn primary" onclick="hh11PullFromWmsCell()" style="flex-shrink:0;">Подтянуть</button>
+  </div>
+  <details style="margin-top:8px;">
+    <summary style="font-family:'Oswald',sans-serif;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;cursor:pointer;">Вставить список из WMS</summary>
+    <textarea class="calc-inp" id="hh11-wms-import-text" placeholder="УТ-00008635 — Малина 125 г — 3 шт — до 2026-07-01 — HU 012200554897 — RESERVED_FOR_ORDER" style="min-height:130px;resize:vertical;font-family:'JetBrains Mono',monospace;font-size:11px;margin-top:8px;"></textarea>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+      <button class="exi-btn" onclick="hh11PasteWmsImport()">Вставить</button>
+      <button class="exi-btn primary" onclick="hh11ImportWmsText()">Импортировать в «Числится»</button>
+      <button class="exi-btn" onclick="hh11ClearWmsImport()">Очистить</button>
+    </div>
+  </details>
+  <div id="hh11-import-status" style="margin-top:8px;font-size:11px;color:var(--muted);"></div>
+</div>
 <label class="modal-lbl">ЕО</label>
 <div style="display:flex;gap:6px;align-items:stretch;">
 <input autocomplete="off" class="calc-inp" id="hh11-eo-code" inputmode="numeric" onblur="eoNormalizeInput('hh11-eo-code')" placeholder="012200…" style="margin-bottom:0;flex:1;min-width:0;" type="text"/>
@@ -579,6 +668,11 @@
 <button class="add-btn" onclick="hh11Add()" style="width:100%;margin-top:12px;">+ Добавить в HH 1-1</button>
 </div>
 <div id="hh11-board" style="margin-top:12px;position:sticky;top:0;z-index:35;background:var(--bg);padding-top:6px;padding-bottom:6px;"></div>
+<div class="smart-search-box" style="margin-top:8px;">
+<input autocomplete="off" class="calc-inp" id="hh11-list-search" oninput="hh11ListSearch()" placeholder="Поиск в списке: УТ, название, ЕО/HU, срок, статус…" spellcheck="false" style="margin-bottom:0;" type="text"/>
+<button class="search-clear-btn" onclick="hh11ClearListSearch()">×</button>
+</div>
+<div id="hh11-list-search-status" style="min-height:16px;margin-top:4px;font-size:11px;color:var(--muted);"></div>
 <div style="display:flex;gap:8px;margin-top:6px;">
 <button class="exi-btn" onclick="hh11Share()">📤 Экспорт</button>
 <button class="exi-btn" onclick="hh11CopyTSV()">📋 TSV</button>
@@ -717,6 +811,18 @@
 <div class="section-title">Отчёт · <span id="report-date" style="color:var(--text);"></span></div>
 <button class="add-btn" onclick="openReportAdd()">+ Задача</button>
 </div>
+
+<!-- WMS recounting → report prototype -->
+<div class="gen-box" id="report-wms-prototype" style="margin-bottom:14px;border-left:3px solid var(--gold);">
+  <div style="font-family:'Oswald',sans-serif;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--gold);margin-bottom:5px;">WMS · пересчёты в отчёт</div>
+  <div style="font-size:12px;line-height:1.35;color:var(--muted);margin-bottom:10px;">Подтягивает завершённые задания из WMS за дату и раскладывает их по двум строкам отчёта: пересчёт по заданиям и плановый пересчёт.</div>
+  <div style="display:flex;gap:8px;align-items:end;">
+    <div style="flex:1;"><label class="modal-lbl">Дата WMS</label><input class="calc-inp" id="report-wms-date" type="date" style="margin-bottom:0;"/></div>
+    <button class="exi-btn primary" onclick="reportWmsLoad()" style="min-height:44px;">Подтянуть</button>
+  </div>
+  <div id="report-wms-status" style="font-size:11px;color:var(--muted);margin-top:9px;line-height:1.35;">Пока ничего не загружено.</div>
+  <div id="report-wms-result" style="margin-top:10px;"></div>
+</div>
 <div id="report-list"></div>
 <div id="report-actions" style="display:none;gap:8px;margin-top:12px;">
 <button class="exi-btn" onclick="shareReport()">📤 Отправить</button>
@@ -743,9 +849,9 @@
 <button class="fab" onclick="openModal('item-modal')">+</button>
 <nav class="bottomnav">
 <button class="navbtn active" data-tab="cells" onclick="switchTab('cells')"><span class="ico">📍</span><span class="lbl">Ячейки</span></button>
-<button class="navbtn" data-tab="wms" onclick="switchTab('wms')"><span class="ico">🐈‍⬛</span><span class="lbl">ВМС</span></button>
-<button class="navbtn" data-tab="problems" onclick="switchTab('problems')"><span class="ico">⚠️</span><span class="lbl">Проблемы</span></button>
-<button class="navbtn" data-tab="report" onclick="switchTab('report')"><span class="ico">📋</span><span class="lbl">Отчёт</span></button>
+<button class="navbtn" data-tab="wms" onclick="switchTab('wms')"><span class="ico">🐈‍⬛</span><span class="lbl">WMS</span></button>
+<button class="navbtn" data-tab="catalog" onclick="switchTab('catalog')"><span class="ico">📦</span><span class="lbl">Товары</span></button>
+<button class="navbtn" data-tab="rk" onclick="switchTab('rk')"><span class="ico">🔎</span><span class="lbl">РК</span></button>
 <button class="navbtn" data-tab="more" onclick="openMoreMenu()"><span class="ico">☰</span><span class="lbl">Ещё</span></button>
 </nav>
 <div class="more-sheet-overlay" id="more-sheet" onclick="if(event.target===this)closeMoreMenu()" style="display:none">
@@ -753,10 +859,10 @@
     <div class="more-sheet-handle"></div>
     <div class="more-sheet-title">Ещё</div>
     <div class="more-grid">
-      <button onclick="moreGo('catalog')"><span>📦</span><b>Товары</b><small>Каталог и ШК</small></button>
+      <button onclick="moreGo('problems')"><span>⚠️</span><b>Проблемы</b><small>Редко, но нужно</small></button>
+      <button onclick="moreGo('report')"><span>📋</span><b>Отчёт</b><small>Сводка смены</small></button>
       <button onclick="moreGo('calc')"><span>🧮</span><b>Счёт</b><small>Пересчёт ряда</small></button>
       <button onclick="moreGo('hh11')"><span>🧾</span><b>HH 1-1</b><small>Проверка HH</small></button>
-      <button onclick="moreGo('rk')"><span>🔎</span><b>РК</b><small>Проверка РК</small></button>
       <button onclick="moreGo('eo')"><span>🏷️</span><b>ЕО</b><small>Коды и печать</small></button>
       <button onclick="moreGo('notes')"><span>📝</span><b>Заметки</b><small>Быстрые записи</small></button>
       <button onclick="moreGo('creds')"><span>🔑</span><b>Доступы</b><small>Локально</small></button>
@@ -899,6 +1005,6 @@
 </div>
 </div>
 </div>
-<script src="./assets/data/static-data.js?v=20260615-v46-android-ui"></script><script src="./assets/js/app.js?v=20260615-v46-android-ui"></script>
+<script src="./assets/data/static-data.js?v=20260619-v61-upper-losses"></script><script src="./assets/js/app.js?v=20260619-v61-upper-losses"></script><script src="./assets/js/report-wms-prototype.js?v=20260619-v61-upper-losses"></script>
 </body>
 </html>
