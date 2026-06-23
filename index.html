@@ -12,7 +12,7 @@
 <meta content="L'Enfer" name="apple-mobile-web-app-title"/>
 <link href="./icons/icon-192.png" rel="apple-touch-icon"/>
 <title>L'Enfer</title>
-<!-- build: pwa-json-barcodes-v62-upper-rows-issues-products -->
+<!-- build: pwa-json-barcodes-v65-tier1-multirow -->
 <script src="./assets/js/vendor/zxing.min.js?v=20260618-v57-wms-report"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
@@ -20,7 +20,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
 <script id="auth-gate-v43" src="./assets/js/auth-gate.js?v=20260618-v57-wms-report"></script>
 <link href="./assets/css/app.css?v=20260618-v57-wms-report" rel="stylesheet"/>
-<meta content="modular-files-sync-v57-wms-report" name="lenfer-build"/></head>
+<meta content="notes-report-sync-v67" name="lenfer-build"/></head>
 <body>
 <div class="app-error-banner" id="app-error-banner"></div>
 <script src="./assets/js/error-banner.js?v=20260618-v57-wms-report"></script>
@@ -53,7 +53,7 @@
 </header>
 <main>
 <!-- CATALOG -->
-<div id="tab-catalog"><div id="results"></div></div>
+<div id="tab-catalog" style="display:none"><div id="results"></div></div>
 <!-- CELLS -->
 <div id="tab-cells" style="display:none">
 <div class="section-head">
@@ -94,8 +94,8 @@
 <button class="exi-btn wms-mode-btn wms-mode-changes" id="wms-mode-changes" onclick="wmsSetLookupKind('changes')">История изменений</button>
 <button class="exi-btn wms-mode-btn wms-mode-recounting" id="wms-mode-recounting" onclick="wmsSetLookupKind('recounting')">Пересчёты</button>
 <button class="exi-btn wms-mode-btn wms-mode-analysis" id="wms-mode-analysis" onclick="wmsSetLookupKind('analysis')">Разбор</button>
-<button class="exi-btn wms-mode-btn wms-mode-picking" id="wms-mode-picking" onclick="wmsSetLookupKind('picking')">Отбор</button>
-<details class="wms-tools-more"><summary>Инструменты хранения</summary><div class="wms-tools-more-actions"><button class="exi-btn wms-mode-btn" id="wms-mode-upper" onclick="wmsSetLookupKind('upper')">Верхние ярусы</button><button class="exi-btn wms-mode-btn" id="wms-mode-losses" onclick="wmsSetLookupKind('losses')">Крупные минусы</button></div></details>
+<button class="exi-btn wms-mode-btn wms-mode-picking" id="wms-mode-picking" onclick="wmsSetLookupKind('picking')">Резерв ячейки</button>
+<details class="wms-tools-more"><summary>Инструменты хранения</summary><div class="wms-tools-more-actions"><button class="exi-btn wms-mode-btn" id="wms-mode-upper" onclick="wmsSetLookupKind('upper')">Верхние ярусы</button><button class="exi-btn wms-mode-btn" id="wms-mode-tier1" onclick="wmsSetLookupKind('tier1')">Единички</button><button class="exi-btn wms-mode-btn" id="wms-mode-losses" onclick="wmsSetLookupKind('losses')">Крупные минусы</button></div></details>
 </div>
 <div class="wms-search-row">
 <input class="calc-inp" id="wms-query" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="УТ-10547087 / святой источник / SH-11-62-2-1 / 022200231322" style="margin-bottom:0;" type="text"/>
@@ -111,11 +111,28 @@
   <div class="wms-recounting-grid">
     <label><span>Статус / итог</span><select class="wms-select" id="wms-rc-status"><option value="all">Все статусы</option><option value="COMPLETED">Завершён</option><option value="COMPLETED_WITH_DISCREPANCY">Подтверждено с расхождением</option><option value="AWAITING_CONFIRMATION">Ждёт подтверждения</option><option value="IN_PROGRESS">В работе</option><option value="CREATED">Создан</option><option value="REJECTED">Отклонён</option><option value="CANCELLED">Отменён</option><option value="DISCREPANCY">С расхождениями</option></select></label>
     <label><span>Тип</span><select class="wms-select" id="wms-rc-scope"><option value="all">Любой</option><option value="FULL">Полный</option><option value="PARTIAL">Частичный</option></select></label>
-    <label><span>Причина</span><select class="wms-select" id="wms-rc-reason"><option value="all">Любая</option><option value="CREATED_ON_PDT">Создано на ТСД</option><option value="STOCKS_MISSING_DURING_PICKING_SELECTION">Нет товара при отборе</option><option value="UNEXPECTED_STOCK_DISCREPANCY_CONFIRMATION">Излишек / расхождение</option><option value="NOT_FOUND_STOCK_DISCREPANCY_CONFIRMATION">Недостача / не найдено</option></select></label>
+    <label><span>Причины</span><div class="wms-static-note">Выбираются ниже</div></label>
     <label><span>Дата завершения</span><input class="calc-inp" id="wms-rc-date" placeholder="2026-06-18" type="date"/></label>
     <label><span>Исполнитель</span><input class="calc-inp" id="wms-rc-executor" placeholder="Фамилия / имя" type="text"/></label>
     <label><span>Ячейка / зона</span><input class="calc-inp" id="wms-rc-cell" placeholder="HH-2 / Холод / SH" type="text"/></label>
   </div>
+  <details class="wms-import-fold wms-rc-advanced" open>
+    <summary>Причины WMS · 10 активны</summary>
+    <div class="wms-reason-toolbar"><button class="exi-btn" type="button" onclick="wmsSetRecountReasons(true)">Все</button><button class="exi-btn" type="button" onclick="wmsSetRecountReasons(false)">Снять все</button></div>
+    <div class="wms-reason-checks" id="wms-rc-reasons">
+      <label><input type="checkbox" data-wms-rc-reason value="STOCKS_MISSING_DURING_DEFECTIVE_STOCK_PICKING" checked/> Нет товара при подборе брака</label>
+      <label><input type="checkbox" data-wms-rc-reason value="CREATED_ON_PDT" checked/> Создано на ТСД</label>
+      <label><input type="checkbox" data-wms-rc-reason value="STOCKS_MISSING_DURING_PICKING_SELECTION" checked/> Нет товара при отборе</label>
+      <label><input type="checkbox" data-wms-rc-reason value="STOCKS_MISSING_DURING_PBL_ORDER_ASSEMBLY" checked/> Нет товара при сборке PBL-заказа</label>
+      <label><input type="checkbox" data-wms-rc-reason value="STOCKS_MISSING_DURING_BY_PRODUCT_CONSOLIDATION" checked/> Нет товара при консолидации</label>
+      <label><input type="checkbox" data-wms-rc-reason value="MOVEMENT_TO_PBL_BUFFER" checked/> Перемещение в PBL-буфер</label>
+      <label><input type="checkbox" data-wms-rc-reason value="UNEXPECTED_STOCKS_FOUND" checked/> Найдены неожиданные остатки</label>
+      <label><input type="checkbox" data-wms-rc-reason value="HANDLING_UNIT_MISSING_DURING_MOVEMENT_TO_PICKING" checked/> Нет ЕО при перемещении на отбор</label>
+      <label><input type="checkbox" data-wms-rc-reason value="INVALID_PRODUCTION_DATE" checked/> Неверная дата производства</label>
+      <label><input type="checkbox" data-wms-rc-reason value="PIECE_WEIGHT_STOCK_INACCURACY" checked/> Некорректный штучно-весовой остаток</label>
+    </div>
+    <div class="wms-warning" style="margin-top:8px;">Эти причины уходят в WMS повторяющимися параметрами <code>reason=...</code>, как в её штатном экране. Если снять все — приложение запросит пересчёты без фильтра по причине.</div>
+  </details>
   <details class="wms-import-fold wms-rc-advanced"><summary>ExecutorId / точный фильтр</summary><input class="calc-inp" id="wms-rc-executor-id" placeholder="be5e697b-3666-4799-b7d4-f1327def6551" type="text"/></details>
   <div class="wms-actions wms-rc-actions">
     <button class="exi-btn primary" onclick="wmsLoadRecountingTasks()">Показать пересчёты</button>
@@ -138,32 +155,35 @@
   </div>
 </div>
 <div class="wms-picking-panel" id="wms-picking-controls" style="display:none;">
-  <div class="wms-filter-title">Отбор сейчас</div>
-  <div class="wms-picking-help">Загружает заказы WMS со статусами «Ждёт комплектацию» и «Идёт комплектация», подтягивает ЕО по товарам и показывает текущие ячейки отбора.</div>
-  <div class="wms-recounting-grid">
-    <label><span>Дата отгрузки</span><input class="calc-inp" id="wms-picking-date" type="date"/></label>
-    <label><span>Статус заказа</span><select class="wms-select" id="wms-picking-status"><option value="both">Ждёт + идёт</option><option value="WAITING_FOR_PICKING">Ждёт комплектацию</option><option value="PICKING">Идёт комплектация</option></select></label>
-    <label><span>Температура</span><select class="wms-select" id="wms-picking-temp"><option value="all">Все</option><option value="ORDINARY">Сухой / ordinary</option><option value="COLD">Холод</option></select></label>
-    <label><span>Проверить ячейку</span><input class="calc-inp" id="wms-picking-cell" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="SH-4-54-3-2" type="text"/></label>
-  </div>
+  <div class="wms-filter-title">Резерв / отбор в ячейке</div>
+  <div class="wms-picking-help">Введи ячейку хранения. Приложение запросит её остатки в WMS и покажет <b>только ЕО со статусом резерва под заказ или отбора</b>. Заказы здесь не выводятся: вопрос один — есть в этой ячейке отбор или нет.</div>
+  <label><span>Ячейка хранения</span><input class="calc-inp" id="wms-picking-cell" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="HH-2-4-3-1" type="text" onkeydown="if(event.key==='Enter'){event.preventDefault();wmsCheckPickingCell();}"/></label>
   <div class="wms-actions wms-picking-actions">
-    <button class="exi-btn primary" onclick="wmsLoadPickingOrders()">Загрузить отбор</button>
-    <button class="exi-btn" onclick="wmsCheckPickingCell()">Проверить ячейку</button>
-    <button class="exi-btn" onclick="wmsClearObservedPicking()">Очистить</button>
+    <button class="exi-btn primary" onclick="wmsCheckPickingCell()">Проверить резерв</button>
+    <button class="exi-btn" onclick="wmsClearPickingCellCheck()">Очистить</button>
   </div>
 </div>
 <div class="wms-upper-panel" id="wms-upper-controls" style="display:none;">
-  <div class="wms-filter-title">Сверка верхних ярусов</div>
-  <div class="wms-upper-help">Адрес: <b>SH-4-54-3-2</b> → ряд 4 · секция 54 · место 3 · ярус 2. Чётность считается по секции. Карточка = ячейка, внутри можно открыть товары и отметить факт.</div>
+  <div class="wms-filter-title">Верхние ярусы хранения</div>
+  <div class="wms-upper-help">Сначала грузится полный справочник <b>/topology/cells</b> без скрытых WMS-фильтров; затем приложение оставляет HH/SH и ярусы 2+. Адрес: <b>SH-4-54-3-2</b> → ряд 4 · секция 54 · место 3 · ярус 2.</div>
   <div class="wms-recounting-grid">
     <label><span>Зона</span><select class="wms-select" id="wms-upper-zone" onchange="wmsUpperFilterChanged()"><option value="all">Холод и Сухой</option><option value="cold">Холод · HH</option><option value="dry">Сухой · SH</option></select></label>
     <label><span>Ряд</span><input class="calc-inp" id="wms-upper-row" list="wms-upper-row-list" autocapitalize="characters" autocomplete="off" spellcheck="false" inputmode="numeric" placeholder="Напр. 4" oninput="wmsUpperFilterChanged()" type="text"/><datalist id="wms-upper-row-list"></datalist></label>
     <label><span>Чётность секции</span><select class="wms-select" id="wms-upper-parity" onchange="wmsUpperFilterChanged()"><option value="all">Все секции</option><option value="even">Чётные секции</option><option value="odd">Нечётные секции</option></select></label>
-    <label><span>Ярус</span><input class="calc-inp" id="wms-upper-tier" inputmode="numeric" placeholder="2" oninput="wmsUpperFilterChanged()" type="text"/></label>
     <label><span>Система</span><select class="wms-select" id="wms-upper-state" onchange="wmsUpperFilterChanged()"><option value="all">Все</option><option value="occupied">Только занятые</option><option value="empty">Только пустые</option></select></label>
-    <label><span>Факт</span><select class="wms-select" id="wms-upper-mark-filter" onchange="wmsUpperFilterChanged()"><option value="all">Все</option><option value="unchecked">Не проверено</option><option value="ok">Всё на месте</option><option value="empty">Физически пусто</option><option value="discrepancy">Есть расхождение</option></select></label>
   </div>
-  <div class="wms-actions wms-upper-actions"><button class="exi-btn primary" onclick="wmsLoadUpperStorageCells()">Загрузить ячейки</button><button class="exi-btn" onclick="wmsCheckUpperOccupancy()">Подтянуть товары</button></div>
+  <div class="wms-actions wms-upper-actions"><button class="exi-btn primary" onclick="wmsLoadUpperStorageCells()">Загрузить ячейки</button><button class="exi-btn" onclick="wmsCheckUpperOccupancy()">Проверить остатки</button></div>
+</div>
+<div class="wms-tier1-panel wms-upper-panel" id="wms-tier1-controls" style="display:none;">
+  <div class="wms-filter-title">Единички хранения</div>
+  <div class="wms-upper-help">Справочник берётся из полного <b>/topology/cells</b>; здесь остаются только ячейки, у которых последняя цифра адреса — <b>1</b>: <b>SH-4-54-3-1</b>. В поле «Ряд» можно указать несколько рядов через запятую: <b>4, 7, 12</b>.</div>
+  <div class="wms-recounting-grid">
+    <label><span>Зона</span><select class="wms-select" id="wms-tier1-zone" onchange="wmsTier1FilterChanged()"><option value="all">Холод и Сухой</option><option value="cold">Холод · HH</option><option value="dry">Сухой · SH</option></select></label>
+    <label><span>Ряд</span><input class="calc-inp" id="wms-tier1-row" list="wms-tier1-row-list" autocapitalize="characters" autocomplete="off" spellcheck="false" inputmode="text" pattern="[0-9,; ]*" placeholder="Напр. 4, 7, 12" oninput="wmsTier1FilterChanged()" type="text"/><datalist id="wms-tier1-row-list"></datalist></label>
+    <label><span>Чётность секции</span><select class="wms-select" id="wms-tier1-parity" onchange="wmsTier1FilterChanged()"><option value="all">Все секции</option><option value="even">Чётные секции</option><option value="odd">Нечётные секции</option></select></label>
+    <label><span>Система</span><select class="wms-select" id="wms-tier1-state" onchange="wmsTier1FilterChanged()"><option value="all">Все</option><option value="occupied">Только занятые</option><option value="empty">Только пустые</option></select></label>
+  </div>
+  <div class="wms-actions wms-upper-actions"><button class="exi-btn primary" onclick="wmsLoadUpperStorageCells()">Загрузить ячейки</button><button class="exi-btn" onclick="wmsCheckUpperOccupancy()">Проверить остатки</button></div>
 </div>
 <div class="wms-losses-panel" id="wms-losses-controls" style="display:none;">
   <div class="wms-filter-title">Крупные недостачи и списания</div>
@@ -319,9 +339,9 @@
 <label class="modal-lbl">Диапазон (от / до)</label>
 <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:stretch;">
 <input class="bc-input" id="eo-range-from" inputmode="numeric" onblur="eoNormalizeInput('eo-range-from')" placeholder="от 012200533043" style="min-width:0;" type="text"/>
-<button class="eo-prefix-btn" onclick="eoPrefixInput('eo-range-from')">012200</button>
+
 <input class="bc-input" id="eo-range-to" inputmode="numeric" onblur="eoNormalizeInput('eo-range-to')" placeholder="до 012200533050" style="min-width:0;" type="text"/>
-<button class="eo-prefix-btn" onclick="eoPrefixInput('eo-range-to')">012200</button>
+
 </div>
 <button class="add-btn" onclick="genEORange()" style="width:100%;margin-top:8px;">Создать диапазон</button>
 <button class="exi-btn" onclick="clearEORange()" style="width:100%;margin-top:8px;">🗑 Очистить диапазон</button>
@@ -586,7 +606,7 @@
 </div>
 </div>
 <!-- HH 1-1 -->
-<div id="tab-hh11" style="display:none">
+<div id="tab-hh11">
 <div class="section-head">
 <div class="section-title">HH 1-1</div>
 <span id="hh11-count" style="font-family:'Spectral',serif;font-weight:600;font-size:16px;color:var(--gold);">0</span>
@@ -616,7 +636,7 @@
 <label class="modal-lbl">ЕО</label>
 <div style="display:flex;gap:6px;align-items:stretch;">
 <input autocomplete="off" class="calc-inp" id="hh11-eo-code" inputmode="numeric" onblur="eoNormalizeInput('hh11-eo-code')" placeholder="012200…" style="margin-bottom:0;flex:1;min-width:0;" type="text"/>
-<button class="eo-prefix-btn" onclick="eoPrefixInput('hh11-eo-code')" style="flex-shrink:0;">012200</button>
+
 <button class="add-btn" onclick="pasteInto('hh11-eo-code')" style="flex-shrink:0;background:var(--surface2);color:var(--muted);border:1px solid var(--border);">📋</button>
 <button class="add-btn" onclick="startScan('hh11-eo-code')" style="flex-shrink:0;background:var(--surface2);color:var(--muted);border:1px solid var(--border);">📷</button>
 </div>
@@ -697,7 +717,7 @@
 <label class="modal-lbl">ЕО</label>
 <div style="display:flex;gap:6px;align-items:stretch;">
 <input autocomplete="off" class="calc-inp" id="rk-eo" inputmode="numeric" onblur="eoNormalizeInput('rk-eo');rkRefreshEOState()" oninput="rkRefreshEOState()" placeholder="012200…" style="margin-bottom:0;flex:1;min-width:0;" type="text"/>
-<button class="eo-prefix-btn" onclick="eoPrefixInput('rk-eo');rkRefreshEOState()" style="flex-shrink:0;">012200</button>
+
 <button class="add-btn" onclick="pasteInto('rk-eo')" style="flex-shrink:0;background:var(--surface2);color:var(--muted);border:1px solid var(--border);">📋</button>
 </div>
 <div id="rk-eo-state" style="display:none;margin-top:8px;font-size:11px;color:var(--muted);line-height:1.35;background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:8px 10px;"></div>
@@ -848,7 +868,7 @@
 </main>
 <button class="fab" onclick="openModal('item-modal')">+</button>
 <nav class="bottomnav">
-<button class="navbtn active" data-tab="cells" onclick="switchTab('cells')"><span class="ico">📍</span><span class="lbl">Ячейки</span></button>
+<button class="navbtn active" data-tab="hh11" onclick="switchTab('hh11')"><span class="ico">🧾</span><span class="lbl">HH-1</span></button>
 <button class="navbtn" data-tab="wms" onclick="switchTab('wms')"><span class="ico">🐈‍⬛</span><span class="lbl">WMS</span></button>
 <button class="navbtn" data-tab="catalog" onclick="switchTab('catalog')"><span class="ico">📦</span><span class="lbl">Товары</span></button>
 <button class="navbtn" data-tab="rk" onclick="switchTab('rk')"><span class="ico">🔎</span><span class="lbl">РК</span></button>
@@ -860,9 +880,9 @@
     <div class="more-sheet-title">Ещё</div>
     <div class="more-grid">
       <button onclick="moreGo('problems')"><span>⚠️</span><b>Проблемы</b><small>Редко, но нужно</small></button>
+      <button onclick="moreGo('cells')"><span>📍</span><b>Ячейки</b><small>Справочник ячеек</small></button>
       <button onclick="moreGo('report')"><span>📋</span><b>Отчёт</b><small>Сводка смены</small></button>
       <button onclick="moreGo('calc')"><span>🧮</span><b>Счёт</b><small>Пересчёт ряда</small></button>
-      <button onclick="moreGo('hh11')"><span>🧾</span><b>HH 1-1</b><small>Проверка HH</small></button>
       <button onclick="moreGo('eo')"><span>🏷️</span><b>ЕО</b><small>Коды и печать</small></button>
       <button onclick="moreGo('notes')"><span>📝</span><b>Заметки</b><small>Быстрые записи</small></button>
       <button onclick="moreGo('creds')"><span>🔑</span><b>Доступы</b><small>Локально</small></button>
@@ -1005,6 +1025,6 @@
 </div>
 </div>
 </div>
-<script src="./assets/data/static-data.js?v=20260619-v61-upper-losses"></script><script src="./assets/js/app.js?v=20260619-v61-upper-losses"></script><script src="./assets/js/report-wms-prototype.js?v=20260619-v61-upper-losses"></script>
+<script src="./assets/data/static-data.js?v=20260622-v67-notes-report-sync"></script><script src="./assets/js/app.js?v=20260622-v67-notes-report-sync"></script><script src="./assets/js/report-wms-prototype.js?v=20260622-v67-notes-report-sync"></script>
 </body>
 </html>

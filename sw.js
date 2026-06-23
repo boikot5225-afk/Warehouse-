@@ -1,6 +1,6 @@
-/* L'Enfer PWA service worker — v62 upper rows and large losses
+/* L'Enfer PWA service worker — v65 tier1 multirow
    Network-first worker: old cached index.html should not haunt the app. */
-const SW_VERSION = 'lenfer-v63-upper-losses';
+const SW_VERSION = 'lenfer-v65-tier1-multirow';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
