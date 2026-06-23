@@ -156,6 +156,10 @@
   }
 
   function saveDayForDate(date, all, day) {
+    if (typeof window.saveReportDayForDate === 'function') {
+      window.saveReportDayForDate(date, day, all);
+      return;
+    }
     all[date] = day;
     localStorage.setItem('report', JSON.stringify(all));
   }
@@ -217,7 +221,10 @@
     const day = data.day;
     const applied = snapshot.appliedCounts;
     (day.tasks || []).forEach((task) => {
-      if (Object.prototype.hasOwnProperty.call(applied, task.name)) task.qty = Number(applied[task.name]) || 0;
+      if (Object.prototype.hasOwnProperty.call(applied, task.name)) {
+        task.qty = Number(applied[task.name]) || 0;
+        task.updatedAt = Date.now();
+      }
     });
     day.wmsRecounting = snapshot;
     saveDayForDate(stats.date, data.all, day);
