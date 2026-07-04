@@ -4,7 +4,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport"/>
-<meta content="#2a0a0a" name="theme-color"/>
+<meta content="var(--bg2)" name="theme-color"/>
 <link href="./manifest.webmanifest" rel="manifest"/>
 <meta content="yes" name="mobile-web-app-capable"/>
 <meta content="yes" name="apple-mobile-web-app-capable"/>
@@ -14,6 +14,7 @@
 <title>L'Enfer</title>
 <!-- build: pwa-json-barcodes-v65-tier1-multirow -->
 <script src="./assets/js/vendor/zxing.min.js?v=20260618-v57-wms-report"></script>
+<script src="./assets/js/vendor/pdf.min.js?v=20260630-v93-pdf"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
@@ -32,7 +33,7 @@
 <span class="brand-sub">Entrepôt<br/>Révolutionnaire</span>
 </div>
 <div class="header-btns">
-<button class="hbtn" id="theme-btn" onclick="toggleTheme()">☾</button>
+<button class="hbtn" id="theme-btn" onclick="toggleTheme()">🌙</button>
 <button class="hbtn" id="pwa-install-btn" onclick="installPWA()" title="Установить как приложение">PWA</button>
 <button class="hbtn" onclick="location.reload()">↻</button>
 </div>
@@ -95,10 +96,12 @@
 <button class="exi-btn wms-mode-btn wms-mode-recounting" id="wms-mode-recounting" onclick="wmsSetLookupKind('recounting')">Пересчёты</button>
 <button class="exi-btn wms-mode-btn wms-mode-analysis" id="wms-mode-analysis" onclick="wmsSetLookupKind('analysis')">Разбор</button>
 <button class="exi-btn wms-mode-btn wms-mode-picking" id="wms-mode-picking" onclick="wmsSetLookupKind('picking')">Резерв ячейки</button>
-<details class="wms-tools-more"><summary>Инструменты хранения</summary><div class="wms-tools-more-actions"><button class="exi-btn wms-mode-btn" id="wms-mode-upper" onclick="wmsSetLookupKind('upper')">Верхние ярусы</button><button class="exi-btn wms-mode-btn" id="wms-mode-tier1" onclick="wmsSetLookupKind('tier1')">Единички</button><button class="exi-btn wms-mode-btn" id="wms-mode-losses" onclick="wmsSetLookupKind('losses')">Крупные минусы</button></div></details>
+<button class="exi-btn wms-mode-btn wms-mode-shipment" id="wms-mode-shipment" onclick="wmsSetLookupKind('shipment')">Отгрузка</button>
 </div>
+<details class="wms-tools-more"><summary>Инструменты хранения</summary><div class="wms-tools-more-actions"><button class="exi-btn wms-mode-btn" id="wms-mode-upper" onclick="wmsSetLookupKind('upper')">Верхние ярусы</button><button class="exi-btn wms-mode-btn" id="wms-mode-tier1" onclick="wmsSetLookupKind('tier1')">Первый ярус</button><button class="exi-btn wms-mode-btn" id="wms-mode-cellbc" onclick="wmsSetLookupKind('cellbc')">Ячейки склада</button><button class="exi-btn wms-mode-btn" id="wms-mode-losses" onclick="wmsSetLookupKind('losses')">Крупные минусы</button></div></details>
 <div class="wms-search-row">
 <input class="calc-inp" id="wms-query" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="УТ-10547087 / святой источник / SH-11-62-2-1 / 022200231322" style="margin-bottom:0;" type="text"/>
+<button class="exi-btn" style="padding:0 10px;font-size:16px;" onclick="var q=document.getElementById('wms-query');if(q){q.value='';q.focus();}">×</button>
 <button class="exi-btn primary" onclick="wmsLookupFromApp()">Найти</button>
 </div>
 <div class="wms-actions">
@@ -107,37 +110,74 @@
 </div>
 </div>
 <div class="wms-recounting-panel" id="wms-recounting-controls" style="display:none;">
-  <div class="wms-filter-title">Фильтры пересчётов</div>
-  <div class="wms-recounting-grid">
-    <label><span>Статус / итог</span><select class="wms-select" id="wms-rc-status"><option value="all">Все статусы</option><option value="COMPLETED">Завершён</option><option value="COMPLETED_WITH_DISCREPANCY">Подтверждено с расхождением</option><option value="AWAITING_CONFIRMATION">Ждёт подтверждения</option><option value="IN_PROGRESS">В работе</option><option value="CREATED">Создан</option><option value="REJECTED">Отклонён</option><option value="CANCELLED">Отменён</option><option value="DISCREPANCY">С расхождениями</option></select></label>
-    <label><span>Тип</span><select class="wms-select" id="wms-rc-scope"><option value="all">Любой</option><option value="FULL">Полный</option><option value="PARTIAL">Частичный</option></select></label>
-    <label><span>Причины</span><div class="wms-static-note">Выбираются ниже</div></label>
-    <label><span>Дата завершения</span><input class="calc-inp" id="wms-rc-date" placeholder="2026-06-18" type="date"/></label>
-    <label><span>Исполнитель</span><input class="calc-inp" id="wms-rc-executor" placeholder="Фамилия / имя" type="text"/></label>
-    <label><span>Ячейка / зона</span><input class="calc-inp" id="wms-rc-cell" placeholder="HH-2 / Холод / SH" type="text"/></label>
+  <div style="display:flex;gap:6px;margin-bottom:10px;flex-wrap:wrap;">
+    <button id="wms-rc-tab-tasks" class="exi-btn primary" onclick="wmsSetRcSubTab('tasks')">Пересчёты</button>
+    <button id="wms-rc-tab-surplus" class="exi-btn" onclick="wmsSetRcSubTab('surplus')">Излишки ↑</button>
+    <button id="wms-rc-tab-deficit" class="exi-btn" onclick="wmsSetRcSubTab('deficit')">Минусы ↓</button>
   </div>
-  <details class="wms-import-fold wms-rc-advanced" open>
-    <summary>Причины WMS · 10 активны</summary>
-    <div class="wms-reason-toolbar"><button class="exi-btn" type="button" onclick="wmsSetRecountReasons(true)">Все</button><button class="exi-btn" type="button" onclick="wmsSetRecountReasons(false)">Снять все</button></div>
-    <div class="wms-reason-checks" id="wms-rc-reasons">
-      <label><input type="checkbox" data-wms-rc-reason value="STOCKS_MISSING_DURING_DEFECTIVE_STOCK_PICKING" checked/> Нет товара при подборе брака</label>
-      <label><input type="checkbox" data-wms-rc-reason value="CREATED_ON_PDT" checked/> Создано на ТСД</label>
-      <label><input type="checkbox" data-wms-rc-reason value="STOCKS_MISSING_DURING_PICKING_SELECTION" checked/> Нет товара при отборе</label>
-      <label><input type="checkbox" data-wms-rc-reason value="STOCKS_MISSING_DURING_PBL_ORDER_ASSEMBLY" checked/> Нет товара при сборке PBL-заказа</label>
-      <label><input type="checkbox" data-wms-rc-reason value="STOCKS_MISSING_DURING_BY_PRODUCT_CONSOLIDATION" checked/> Нет товара при консолидации</label>
-      <label><input type="checkbox" data-wms-rc-reason value="MOVEMENT_TO_PBL_BUFFER" checked/> Перемещение в PBL-буфер</label>
-      <label><input type="checkbox" data-wms-rc-reason value="UNEXPECTED_STOCKS_FOUND" checked/> Найдены неожиданные остатки</label>
-      <label><input type="checkbox" data-wms-rc-reason value="HANDLING_UNIT_MISSING_DURING_MOVEMENT_TO_PICKING" checked/> Нет ЕО при перемещении на отбор</label>
-      <label><input type="checkbox" data-wms-rc-reason value="INVALID_PRODUCTION_DATE" checked/> Неверная дата производства</label>
-      <label><input type="checkbox" data-wms-rc-reason value="PIECE_WEIGHT_STOCK_INACCURACY" checked/> Некорректный штучно-весовой остаток</label>
+  <div id="wms-rc-tasks-panel">
+    <div class="wms-filter-title">Фильтры пересчётов</div>
+    <div class="wms-recounting-grid">
+      <label><span>Статус / итог</span><select class="wms-select" id="wms-rc-status"><option value="all">Все статусы</option><option value="COMPLETED">Завершён</option><option value="COMPLETED_WITH_DISCREPANCY">Подтверждено с расхождением</option><option value="AWAITING_CONFIRMATION">Ждёт подтверждения</option><option value="IN_PROGRESS">В работе</option><option value="CREATED">Создан</option><option value="REJECTED">Отклонён</option><option value="CANCELLED">Отменён</option><option value="DISCREPANCY">С расхождениями</option></select></label>
+      <label><span>Тип</span><select class="wms-select" id="wms-rc-scope"><option value="all">Любой</option><option value="FULL">Полный</option><option value="PARTIAL">Частичный</option></select></label>
+      <label><span>Причины</span><div class="wms-static-note">Выбираются ниже</div></label>
+      <label><span>Дата с</span><input class="calc-inp" id="wms-rc-date-from" type="date"/></label>
+      <label><span>Дата по</span><input class="calc-inp" id="wms-rc-date-to" type="date"/></label>
+      <label><span>Исполнитель</span><input class="calc-inp" id="wms-rc-executor" placeholder="Фамилия / имя" type="text" oninput="wmsRecountExecutorInput()"/></label>
+      <label><span>Ячейка / зона</span><input class="calc-inp" id="wms-rc-cell" placeholder="HH-2 / Холод / SH" type="text"/></label>
     </div>
-    <div class="wms-warning" style="margin-top:8px;">Эти причины уходят в WMS повторяющимися параметрами <code>reason=...</code>, как в её штатном экране. Если снять все — приложение запросит пересчёты без фильтра по причине.</div>
-  </details>
-  <details class="wms-import-fold wms-rc-advanced"><summary>ExecutorId / точный фильтр</summary><input class="calc-inp" id="wms-rc-executor-id" placeholder="be5e697b-3666-4799-b7d4-f1327def6551" type="text"/></details>
+    <details class="wms-import-fold wms-rc-advanced" open>
+      <summary>Причины WMS · 10 активны</summary>
+      <div class="wms-reason-toolbar"><button class="exi-btn" type="button" onclick="wmsSetRecountReasons(true)">Все</button><button class="exi-btn" type="button" onclick="wmsSetRecountReasons(false)">Снять все</button></div>
+      <div class="wms-reason-checks" id="wms-rc-reasons">
+        <label><input type="checkbox" data-wms-rc-reason value="STOCKS_MISSING_DURING_DEFECTIVE_STOCK_PICKING" checked/> Нет товара при подборе брака</label>
+        <label><input type="checkbox" data-wms-rc-reason value="CREATED_ON_PDT" checked/> Создано на ТСД</label>
+        <label><input type="checkbox" data-wms-rc-reason value="STOCKS_MISSING_DURING_PICKING_SELECTION" checked/> Нет товара при отборе</label>
+        <label><input type="checkbox" data-wms-rc-reason value="STOCKS_MISSING_DURING_PBL_ORDER_ASSEMBLY" checked/> Нет товара при сборке PBL-заказа</label>
+        <label><input type="checkbox" data-wms-rc-reason value="STOCKS_MISSING_DURING_BY_PRODUCT_CONSOLIDATION" checked/> Нет товара при консолидации</label>
+        <label><input type="checkbox" data-wms-rc-reason value="MOVEMENT_TO_PBL_BUFFER" checked/> Перемещение в PBL-буфер</label>
+        <label><input type="checkbox" data-wms-rc-reason value="UNEXPECTED_STOCKS_FOUND" checked/> Найдены неожиданные остатки</label>
+        <label><input type="checkbox" data-wms-rc-reason value="HANDLING_UNIT_MISSING_DURING_MOVEMENT_TO_PICKING" checked/> Нет ЕО при перемещении на отбор</label>
+        <label><input type="checkbox" data-wms-rc-reason value="INVALID_PRODUCTION_DATE" checked/> Неверная дата производства</label>
+        <label><input type="checkbox" data-wms-rc-reason value="PIECE_WEIGHT_STOCK_INACCURACY" checked/> Некорректный штучно-весовой остаток</label>
+      </div>
+      <div class="wms-warning" style="margin-top:8px;">Эти причины уходят в WMS повторяющимися параметрами <code>reason=...</code>, как в её штатном экране. Если снять все — приложение запросит пересчёты без фильтра по причине.</div>
+    </details>
+    <details class="wms-import-fold wms-rc-advanced"><summary>ExecutorId / точный фильтр</summary><input class="calc-inp" id="wms-rc-executor-id" placeholder="be5e697b-3666-4799-b7d4-f1327def6551" type="text"/></details>
+    <div class="wms-actions wms-rc-actions">
+      <button class="exi-btn primary" onclick="wmsLoadRecountingTasks()">Показать пересчёты</button>
+      <button class="exi-btn" onclick="wmsRecountingToday()">Сегодня</button>
+      <button class="exi-btn" onclick="wmsClearRecountingFilters()">Сбросить</button>
+    </div>
+  </div>
+  <div id="wms-rc-disc-panel" style="display:none;">
+    <div class="wms-filter-title" id="wms-rc-disc-title">Излишки</div>
+    <div class="wms-loss-help">Загружает завершённые пересчёты исполнителя, находит позиции с расхождениями. Холод и Сухой переносятся в отчёт раздельно.</div>
+    <div class="wms-recounting-grid">
+      <label><span>Исполнитель 1</span><input class="calc-inp" id="wms-rc-disc-exec1" autocomplete="off" spellcheck="false" placeholder="Фамилия" type="text"/></label>
+      <label><span>Исполнитель 2 (опц.)</span><input class="calc-inp" id="wms-rc-disc-exec2" autocomplete="off" spellcheck="false" placeholder="Фамилия" type="text"/></label>
+      <label><span>Дата</span><input class="calc-inp" id="wms-rc-disc-date" type="date"/></label>
+      <label><span>Зона</span><select class="wms-select" id="wms-rc-disc-zone"><option value="all">Холод + Сухой</option><option value="cold">Холод · HH</option><option value="dry">Сухой · SH</option></select></label>
+    </div>
+    <div class="wms-actions wms-rc-actions">
+      <button class="exi-btn primary" onclick="wmsLoadDiscrepancyPositions()">Найти</button>
+      <button class="exi-btn" onclick="wmsDiscrepancyToday()">Сегодня</button>
+      <button class="exi-btn" onclick="wmsClearDiscrepancyFilters()">Сбросить</button>
+    </div>
+  </div>
+</div>
+<div class="wms-changes-panel wms-recounting-panel" id="wms-changes-controls" style="display:none;">
+  <div class="wms-filter-title">Поиск изменений по исполнителю и/или дате</div>
+  <div class="wms-loss-help">Отдельный поиск истории изменений остатков за период. Фамилия исполнителя не обязательна — можно искать только по датам, только по фамилии, или вместе. Для поиска по товару, УТ, ШК, ячейке или ЕО используй поле выше.</div>
+  <div class="wms-recounting-grid">
+    <label><span>Фамилия исполнителя (необязательно)</span><input class="calc-inp" id="wms-ch-exec-name" autocomplete="off" spellcheck="false" placeholder="Калимуллин — или оставь пусто" type="text" onkeydown="if(event.key==='Enter'){event.preventDefault();wmsSearchExecutorChanges();}"/></label>
+    <label><span>Дата с</span><input class="calc-inp" id="wms-ch-exec-from" type="date"/></label>
+    <label><span>Дата по</span><input class="calc-inp" id="wms-ch-exec-to" type="date"/></label>
+  </div>
   <div class="wms-actions wms-rc-actions">
-    <button class="exi-btn primary" onclick="wmsLoadRecountingTasks()">Показать пересчёты</button>
-    <button class="exi-btn" onclick="wmsRecountingToday()">Сегодня</button>
-    <button class="exi-btn" onclick="wmsClearRecountingFilters()">Сбросить</button>
+    <button class="exi-btn primary" onclick="wmsSearchExecutorChanges()">Найти изменения</button>
+    <button class="exi-btn" onclick="wmsChangesExecToday()">Сегодня</button>
+    <button class="exi-btn" onclick="wmsClearExecutorChanges()">Сбросить</button>
   </div>
 </div>
 <div class="wms-analysis-panel" id="wms-analysis-controls" style="display:none;">
@@ -175,7 +215,7 @@
   <div class="wms-actions wms-upper-actions"><button class="exi-btn primary" onclick="wmsLoadUpperStorageCells()">Загрузить ячейки</button><button class="exi-btn" onclick="wmsCheckUpperOccupancy()">Проверить остатки</button></div>
 </div>
 <div class="wms-tier1-panel wms-upper-panel" id="wms-tier1-controls" style="display:none;">
-  <div class="wms-filter-title">Единички хранения</div>
+  <div class="wms-filter-title">Первый ярус хранения</div>
   <div class="wms-upper-help">Справочник берётся из полного <b>/topology/cells</b>; здесь остаются только ячейки, у которых последняя цифра адреса — <b>1</b>: <b>SH-4-54-3-1</b>. В поле «Ряд» можно указать несколько рядов через запятую: <b>4, 7, 12</b>.</div>
   <div class="wms-recounting-grid">
     <label><span>Зона</span><select class="wms-select" id="wms-tier1-zone" onchange="wmsTier1FilterChanged()"><option value="all">Холод и Сухой</option><option value="cold">Холод · HH</option><option value="dry">Сухой · SH</option></select></label>
@@ -184,6 +224,43 @@
     <label><span>Система</span><select class="wms-select" id="wms-tier1-state" onchange="wmsTier1FilterChanged()"><option value="all">Все</option><option value="occupied">Только занятые</option><option value="empty">Только пустые</option></select></label>
   </div>
   <div class="wms-actions wms-upper-actions"><button class="exi-btn primary" onclick="wmsLoadUpperStorageCells()">Загрузить ячейки</button><button class="exi-btn" onclick="wmsCheckUpperOccupancy()">Проверить остатки</button></div>
+</div>
+<div class="wms-cellbc-panel wms-shipment-panel" id="wms-cellbc-controls" style="display:none;">
+  <div class="wms-filter-title">Ячейки склада · ШК · остатки</div>
+  <div class="wms-loss-help">Загрузи весь справочник ячеек склада и фильтруй по зоне (холод / сухой / ворота). Для каждой ячейки — штрихкод и переход к её остаткам. Жми ★ на нужных ячейках — попадут в «Избранное»; поиск и фильтр зоны работают и внутри него.</div>
+  <div class="wms-search-row">
+    <input class="calc-inp" id="wms-cellbc-query" autocapitalize="characters" autocomplete="off" spellcheck="false" placeholder="SH-4-54-3-2" style="margin-bottom:0;" type="text" oninput="wmsCellbcOnInput()" onkeydown="if(event.key==='Enter'){event.preventDefault();wmsLoadCellBarcodes();}"/>
+    <button class="exi-btn" style="padding:0 10px;font-size:16px;" onclick="var q=document.getElementById('wms-cellbc-query');if(q){q.value='';q.focus();wmsCellbcOnInput();}">×</button>
+  </div>
+  <div class="wms-recounting-grid" style="margin-top:8px;">
+    <label><span>Зона</span><select class="wms-select" id="wms-cellbc-zone" onchange="wmsRenderCellsView()">
+      <option value="all">Все зоны</option>
+      <option value="cold">Холод · HH</option>
+      <option value="dry">Сухой · SH</option>
+      <option value="gate">Ворота</option>
+      <option value="other">Прочее</option>
+    </select></label>
+  </div>
+  <div class="wms-actions wms-sh-actions">
+    <button class="exi-btn primary" onclick="wmsLoadAllCells()">Загрузить все ячейки</button>
+    <button class="exi-btn" onclick="wmsLoadCellBarcodes()">Найти в ВМС</button>
+    <button class="exi-btn" onclick="wmsCellBcDirectBarcode()">ШК по коду</button>
+    <button class="exi-btn" style="border-color:var(--gold);color:var(--gold);" onclick="wmsShowFavCells()">★ Избранное</button>
+  </div>
+</div>
+<div class="wms-shipment-panel" id="wms-shipment-controls" style="display:none;">
+  <div class="wms-filter-title">Маршруты отгрузки</div>
+  <div class="wms-loss-help">Введи любые слова из адреса магазина — порядок неважен, поиск гибкий.</div>
+  <div class="wms-recounting-grid">
+    <label><span>Адрес магазина</span><input class="calc-inp" id="wms-sh-query" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="Макс ЦФЗ красный текстильщик" type="text" onkeydown="if(event.key==='Enter'){event.preventDefault();wmsLoadShipmentRoutes();}"/></label>
+    <label><span>Дата с</span><input class="calc-inp" id="wms-sh-date-from" type="date"/></label>
+    <label><span>Дата по</span><input class="calc-inp" id="wms-sh-date-to" type="date"/></label>
+  </div>
+  <div class="wms-actions wms-sh-actions">
+    <button class="exi-btn primary" onclick="wmsLoadShipmentRoutes()">Найти маршрут</button>
+    <button class="exi-btn" onclick="wmsShipmentToday()">Сегодня</button>
+    <button class="exi-btn" onclick="wmsClearShipmentSearch()">Сбросить</button>
+  </div>
 </div>
 <div class="wms-losses-panel" id="wms-losses-controls" style="display:none;">
   <div class="wms-filter-title">Крупные недостачи и списания</div>
@@ -256,6 +333,13 @@
 <div class="supa-warning" style="margin-bottom:10px;">База по умолчанию остаётся личной. Чтобы несколько аккаунтов видели одни данные, введите одинаковый код общей базы и подключитесь. Старые данные не переносятся сами — это специально, чтобы ничего не затереть.</div>
 <label class="modal-lbl">Твоё имя в журнале</label>
 <div class="collab-row"><input class="calc-inp" id="profile-name-input" autocomplete="name" placeholder="Например: Булат" type="text"/><button class="exi-btn" onclick="saveUserProfileName()">Сохранить имя</button></div>
+<label class="modal-lbl">Аватарка (видят все в общей базе)</label>
+<div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;">
+<span id="profile-avatar-preview"></span>
+<button class="exi-btn" onclick="document.getElementById('profile-avatar-file').click()" style="flex:1;">📷 Выбрать фото</button>
+<button class="exi-btn" onclick="profileAvatarClear()" style="flex:0 0 auto;">Убрать</button>
+</div>
+<input accept="image/*" id="profile-avatar-file" onchange="profileAvatarFileChanged(this)" style="display:none" type="file"/>
 <label class="modal-lbl">Код общей базы</label>
 <div class="collab-row"><input class="calc-inp" id="workspace-id-input" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="например main или smena-2" type="text"/><button class="exi-btn primary" onclick="workspaceUseShared()">Подключить</button></div>
 <div class="collab-mode" id="workspace-mode-label">Личная база</div>
@@ -318,14 +402,27 @@
 <!-- NOTES -->
 <div id="tab-notes" style="display:none">
 <div class="section-head">
-<div class="section-title">Заметки</div>
-<button class="add-btn" onclick="openModal('note-modal')">+ Заметка</button>
+<div><div class="section-title">Заметки</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">Общий форум — пишут все, видно кто. Синхронизируется в общей базе.</div></div>
+<button class="add-btn" onclick="openModal('note-modal')">+ Написать</button>
 </div>
 <div id="notes-list"></div>
 </div>
 <!-- EO -->
 <div id="tab-eo" style="display:none">
 <div class="section-title" style="margin-bottom:14px;">Единица обработки</div>
+<div class="gen-box" style="border-left:3px solid var(--gold);">
+<label class="modal-lbl">Создать ЕО в ВМС (реальный штрихкод)</label>
+<div style="display:flex;gap:8px;">
+<input class="calc-inp" id="eo-wms-qty" inputmode="numeric" placeholder="Кол-во" style="flex:1;min-width:0;margin-bottom:0;" type="number" value="1"/>
+<select class="wms-select" id="eo-wms-type" style="flex:1;min-width:0;" onchange="eoWmsTypeChanged()">
+<option value="EUR">EUR (европаллета)</option>
+<option value="custom">Другой тип…</option>
+</select>
+</div>
+<input class="calc-inp" id="eo-wms-type-custom" placeholder="Тип, например BLOCK" style="display:none;margin-top:8px;margin-bottom:0;" type="text"/>
+<button class="add-btn" onclick="createEOInWms()" style="width:100%;margin-top:8px;">Создать в ВМС</button>
+<div id="eo-wms-result" style="margin-top:10px;"></div>
+</div>
 <div class="gen-box">
 <label class="modal-lbl">Один штрихкод (сохранить в список)</label>
 <div style="display:flex;gap:8px;">
@@ -364,8 +461,45 @@
 </div>
 <!-- CALC -->
 <div id="tab-calc" style="display:none">
-<div class="section-title" style="margin-bottom:14px;">Счётчик</div>
-<div class="calc-top-result">
+<div class="screen-head"><div><div class="screen-h1">Счёт</div><div class="screen-sub">Пересчёт ряда · короба и россыпь</div></div></div>
+<div id="calc-from-cell-banner" style="display:none;margin-bottom:12px;"></div>
+<details id="calc-quick" class="gen-box" open style="border-left:3px solid var(--gold);margin-bottom:12px;padding:12px;">
+<summary style="cursor:pointer;font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:12px;letter-spacing:1px;color:var(--gold);list-style:none;">⚡ Счёт</summary>
+<div style="text-align:center;margin:10px 0 6px;">
+<div style="font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:10px;color:var(--muted);letter-spacing:1px;">Факт</div>
+<div id="qc-fact" style="font-family:'Spectral',serif;font-weight:700;font-size:44px;line-height:1;color:var(--gold);">0</div>
+<div id="qc-diff" style="font-size:12px;font-weight:700;margin-top:2px;"></div>
+</div>
+<div style="display:flex;gap:10px;align-items:center;justify-content:center;margin-bottom:12px;font-size:12px;color:var(--muted);">
+<label style="display:flex;align-items:center;gap:5px;">шт/короб<input id="qc-perbox" inputmode="numeric" oninput="qcSetPerBox(this.value)" style="width:56px;text-align:center;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px;font-family:'JetBrains Mono',monospace;font-size:15px;color:var(--text);" type="number"/></label>
+<label style="display:flex;align-items:center;gap:5px;">система<input id="qc-sys" inputmode="numeric" oninput="qcSetSys(this.value)" placeholder="—" style="width:56px;text-align:center;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:6px;font-family:'JetBrains Mono',monospace;font-size:15px;color:var(--text);" type="number"/></label>
+</div>
+<div style="font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:10px;color:var(--muted);letter-spacing:1px;margin-bottom:5px;">Короба</div>
+<div style="display:flex;gap:5px;align-items:center;justify-content:center;flex-wrap:wrap;margin-bottom:6px;">
+<button class="quick-btn" style="min-width:44px;" onclick="qcStep('calc-boxes-main',-5)">−5</button>
+<button class="cnt-pm" onclick="qcStep('calc-boxes-main',-1)">−</button>
+<span id="qc-boxes" style="min-width:56px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:700;color:var(--gold);">0</span>
+<button class="cnt-pm plus" onclick="qcStep('calc-boxes-main',1)">+</button>
+<button class="quick-btn" style="min-width:44px;" onclick="qcStep('calc-boxes-main',5)">+5</button>
+<button class="quick-btn" style="min-width:56px;background:var(--gold-dim);color:#fff;" onclick="qcAddRow()">+ряд</button>
+</div>
+<div style="font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:10px;color:var(--muted);letter-spacing:1px;margin:10px 0 5px;">Россыпь (штук)</div>
+<div style="display:flex;gap:5px;align-items:center;justify-content:center;flex-wrap:wrap;margin-bottom:6px;">
+<button class="quick-btn" style="min-width:44px;" onclick="qcStep('calc-extra-pcs',-5)">−5</button>
+<button class="cnt-pm" onclick="qcStep('calc-extra-pcs',-1)">−</button>
+<span id="qc-pcs" style="min-width:56px;text-align:center;font-family:'JetBrains Mono',monospace;font-size:26px;font-weight:700;color:var(--gold);">0</span>
+<button class="cnt-pm plus" onclick="qcStep('calc-extra-pcs',1)">+</button>
+<button class="quick-btn" style="min-width:44px;" onclick="qcStep('calc-extra-pcs',5)">+5</button>
+<button class="quick-btn" style="min-width:44px;" onclick="qcStep('calc-extra-pcs',10)">+10</button>
+</div>
+<div style="display:flex;gap:8px;margin-top:12px;">
+<button class="add-btn" style="flex:2;" onclick="counterRecord(event)">Записать</button>
+<button class="exi-btn" style="flex:1;" onclick="resetCalc()">Очистить</button>
+<button class="exi-btn" style="flex:1;" onclick="nextCell()">След.</button>
+</div>
+<div style="font-size:10px;color:var(--muted);text-align:center;margin-top:8px;">Полный счёт (конструктор, 3D, размеры) — ниже.</div>
+</details>
+<div class="calc-top-result" style="display:none;">
 <div class="calc-result-lbl">Факт</div>
 <div class="big" id="calc-result-top">0</div>
 <div class="sub" id="calc-formula-top"></div>
@@ -379,7 +513,7 @@
 <div class="gen-box" id="calc-cell-box" style="margin-bottom:12px;border-left:3px solid var(--gold);overflow:visible;position:relative;z-index:45;">
 <label class="modal-lbl">Ячейка (необязательно)</label>
 <div style="position:relative;">
-<input autocapitalize="characters" autocomplete="off" id="calc-cell" inputmode="text" onfocus="calcCellSearch(this.value)" oninput="calcCellInput(this)" placeholder="Можно не вводить — запишется как: Ячейка" spellcheck="false" style="width:100%;background:var(--paper);border:2px solid var(--line);border-radius:10px;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:16px;color:var(--paper-ink);outline:none;-webkit-appearance:none;margin-bottom:8px;" type="text"/>
+<input autocapitalize="characters" autocomplete="off" id="calc-cell" inputmode="text" onfocus="calcCellSearch(this.value)" oninput="calcCellInput(this)" placeholder="Можно не вводить — запишется как: Ячейка" spellcheck="false" style="width:100%;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px 14px;font-family:'JetBrains Mono',monospace;font-size:16px;color:var(--text);outline:none;-webkit-appearance:none;margin-bottom:8px;" type="text"/>
 <div id="calc-cell-results" style="display:none;position:absolute;left:0;right:0;top:calc(100% + 2px);z-index:200;background:var(--surface);border:2px solid var(--gold);border-radius:10px;max-height:260px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.5);"></div>
 </div>
 <div style="display:flex;gap:6px;flex-wrap:wrap;">
@@ -390,7 +524,7 @@
 </div>
 <div id="calc-cell-bc" style="margin-top:10px;display:none;text-align:center;background:#fff;border-radius:8px;padding:8px;">
 <canvas id="calc-cell-bc-canvas" style="max-width:100%;"></canvas>
-<div id="calc-cell-bc-code" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:#666;margin-top:4px;"></div>
+<div id="calc-cell-bc-code" style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);margin-top:4px;"></div>
 </div>
 <div id="calc-cell-items" style="margin-top:12px;"></div>
 </div>
@@ -409,8 +543,8 @@
 </div>
 <!-- СЧЁТЧИК -->
 <div class="gen-box" style="padding:14px;">
-<button class="main-calc-toggle" onclick="toggleMainCalc()" type="button">▾ Ручной ввод</button>
-<div id="main-calc-fields">
+<button class="main-calc-toggle" onclick="toggleMainCalc()" type="button">▸ Ручной ввод (дополнительно)</button>
+<div id="main-calc-fields" class="collapsed">
 <!-- вложенность + система компактно -->
 <div style="display:flex;gap:8px;margin-bottom:14px;">
 <div style="flex:1;"><label class="modal-lbl">Шт/короб</label><input class="calc-inp" id="calc-per-box" inputmode="numeric" oninput="doCalc();savePackFromCalc(this.value)" placeholder="0" style="margin-bottom:0;" type="number"/></div>
@@ -421,7 +555,7 @@
 <div style="display:flex;gap:8px;align-items:stretch;margin-bottom:8px;">
 <button class="cnt-pm" onclick="stepField('calc-boxes-main',-1)">−</button>
 <input class="calc-inp cnt-field" id="calc-boxes-main" inputmode="numeric" oninput="doCalc()" placeholder="0" style="margin-bottom:0;text-align:center;font-size:24px;" type="number"/>
-<button class="cnt-pm" onclick="stepField('calc-boxes-main',1)">+</button>
+<button class="cnt-pm plus" onclick="stepField('calc-boxes-main',1)">+</button>
 </div>
 <div style="display:flex;gap:6px;margin-bottom:6px;">
 <button class="quick-btn" onclick="stepField('calc-boxes-main',1)">+1</button>
@@ -430,16 +564,16 @@
 <button class="quick-btn" onclick="addRowToBoxes()" style="background:var(--gold-dim);color:#fff;">+ряд</button>
 </div>
 <div style="display:flex;gap:6px;align-items:center;margin-bottom:16px;">
-<span style="font-family:'Oswald',sans-serif;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;">Ряд =</span>
-<input id="calc-row-size" inputmode="numeric" placeholder="кор" style="width:70px;background:var(--paper);border:2px solid var(--line);border-radius:8px;padding:7px;font-family:'JetBrains Mono',monospace;font-size:15px;color:var(--paper-ink);text-align:center;outline:none;-webkit-appearance:none;" type="number" value="8"/>
-<span style="font-family:'Oswald',sans-serif;font-size:10px;color:var(--muted);">коробок</span>
+<span style="font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:10px;color:var(--muted);letter-spacing:0.5px;">Ряд =</span>
+<input id="calc-row-size" inputmode="numeric" placeholder="кор" style="width:70px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px;font-family:'JetBrains Mono',monospace;font-size:15px;color:var(--text);text-align:center;outline:none;-webkit-appearance:none;" type="number" value="8"/>
+<span style="font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:10px;color:var(--muted);">коробок</span>
 </div>
 <!-- РОССЫПЬ крупно -->
 <label class="modal-lbl">Россыпь (штук)</label>
 <div style="display:flex;gap:8px;align-items:stretch;margin-bottom:8px;">
 <button class="cnt-pm" onclick="stepField('calc-extra-pcs',-1)">−</button>
 <input class="calc-inp cnt-field" id="calc-extra-pcs" inputmode="numeric" oninput="doCalc()" placeholder="0" style="margin-bottom:0;text-align:center;font-size:24px;" type="number"/>
-<button class="cnt-pm" onclick="stepField('calc-extra-pcs',1)">+</button>
+<button class="cnt-pm plus" onclick="stepField('calc-extra-pcs',1)">+</button>
 </div>
 <div style="display:flex;gap:6px;margin-bottom:4px;">
 <button class="quick-btn" onclick="stepField('calc-extra-pcs',1)">+1</button>
@@ -448,15 +582,15 @@
 </div>
 </div>
 <!-- раскладка под кнопкой -->
-<button id="layout-toggle" onclick="toggleLayout()" style="width:100%;margin-top:14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--muted);font-family:'Oswald',sans-serif;font-size:11px;font-weight:600;letter-spacing:0.8px;text-transform:uppercase;cursor:pointer;">▦ Конструктор паллеты</button>
+<button id="layout-toggle" onclick="toggleLayout()" style="width:100%;margin-top:14px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--muted);font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:11px;font-weight:600;letter-spacing:0.8px;cursor:pointer;">▦ Конструктор паллеты</button>
 <div id="layout-panel" style="display:none;margin-top:12px;">
-<div style="font-family:'Oswald',sans-serif;font-size:10px;color:var(--muted);letter-spacing:0.7px;text-transform:uppercase;margin-bottom:6px;">Режим</div>
+<div style="font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:10px;color:var(--muted);letter-spacing:0.7px;margin-bottom:6px;">Режим</div>
 <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-bottom:8px;">
 <button class="quick-btn" id="lm-block" onclick="chooseLayoutMode('block')">▦ 3D схема</button>
 <button class="quick-btn" id="lm-layer" onclick="chooseLayoutMode('layer')">▤ Слой</button>
 </div>
 <details style="margin-bottom:10px;">
-<summary style="font-family:'Oswald',sans-serif;font-size:11px;color:var(--gold);letter-spacing:0.7px;text-transform:uppercase;cursor:pointer;padding:8px 4px;">Дополнительно</summary>
+<summary style="font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:11px;color:var(--gold);letter-spacing:0.7px;cursor:pointer;padding:8px 4px;">Дополнительно</summary>
 <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:6px;margin-top:6px;">
 <button class="quick-btn" id="lm-cut" onclick="chooseLayoutMode('cut')">− Убрать блок</button>
 <button class="quick-btn" id="lm-tray" onclick="chooseLayoutMode('tray')">+ Лотки</button>
@@ -514,7 +648,7 @@
 </div>
 <div id="piece-preview" style="margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--gold);text-align:center;">+ Блок: 0×0×1 = 0 мест</div>
 <div id="piece-correction-wrap" style="margin-top:10px;background:rgba(0,0,0,0.14);border:1px dashed var(--border);border-radius:8px;padding:8px;">
-<div style="font-family:'Oswald',sans-serif;font-size:10px;color:var(--gold);letter-spacing:0.7px;text-transform:uppercase;margin-bottom:6px;">Поправка</div>
+<div style="font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:10px;color:var(--gold);letter-spacing:0.7px;margin-bottom:6px;">Поправка</div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:8px;">
 <div>
 <label class="modal-lbl" style="font-size:9px;">+ Коробки / места</label>
@@ -565,11 +699,11 @@
 <div style="flex:1;">
 <div class="calc-result-lbl">Действия</div>
 <div class="calc-result-num" id="calc-result" style="display:none;">0</div>
-<div id="calc-result-mini" style="font-family:'JetBrains Mono',monospace;font-size:12px;color:#7b6448;margin-top:6px;line-height:1.35;"></div>
+<div id="calc-result-mini" style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);margin-top:6px;line-height:1.35;"></div>
 </div>
 <div id="calc-diff-wrap" style="display:none;">
 <div class="calc-result-lbl">Расхожд.</div>
-<div id="calc-diff" style="font-family:'Spectral',serif;font-weight:600;font-size:34px;color:var(--paper-ink);">0</div>
+<div id="calc-diff" style="font-family:'Spectral',serif;font-weight:600;font-size:34px;color:var(--text);">0</div>
 </div>
 </div>
 <div style="display:flex;gap:8px;margin-top:18px;">
@@ -605,25 +739,51 @@
 </div>
 </div>
 </div>
+<!-- МОНИТОРИНГ -->
+<div id="tab-monitor" style="display:none">
+<div class="screen-head">
+<div><div class="screen-h1">Мониторинг</div><div class="screen-sub">КДК и штучный отбор на смене</div></div>
+<button class="exi-btn" style="flex:0 0 auto;min-height:34px;padding:6px 12px;font-size:10px;" onclick="renderMonitor()">↻ Обновить</button>
+</div>
+
+<div id="mon-summary"></div>
+<div id="mon-cards"></div>
+
+<div class="gen-box" style="border-left:3px solid var(--gold);padding:13px;margin-top:4px;">
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
+<div style="font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:12px;font-weight:700;color:var(--gold);">Сейчас в отборе</div>
+<span id="mon-live-count" style="font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);"></span>
+</div>
+<div id="monitor-live"><div class="no-results">Загружаю…</div></div>
+</div>
+</div>
 <!-- HH 1-1 -->
 <div id="tab-hh11">
-<div class="section-head">
-<div class="section-title">HH 1-1</div>
-<span id="hh11-count" style="font-family:'Spectral',serif;font-weight:600;font-size:16px;color:var(--gold);">0</span>
+<div class="screen-head">
+<div><div class="screen-h1">HH 1-1</div><div class="screen-sub">Буферная ячейка · ЕО + фиксация</div></div>
+<span id="hh11-count" class="screen-count">0</span>
 </div>
 <div class="gen-box" style="border-left:3px solid var(--gold);overflow:visible;position:relative;z-index:45;">
-<div style="font-family:'Oswald',sans-serif;font-size:11px;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Буферная ячейка · HH 1-1 · ЕО + фиксация</div>
-<div style="font-size:11px;color:var(--muted);line-height:1.45;margin-bottom:12px;">Сначала ЕО, потом товар. Товар можно выбрать из каталога или добавить прямо здесь — он сохранится в каталог и сразу попадёт в строку HH 1-1.</div>
+<label class="modal-lbl">Дата (своя доска HH 1-1 на каждый день, старые сохраняются)</label>
+<div style="display:flex;gap:6px;align-items:stretch;">
+<button class="add-btn" onclick="hh11DateShift(-1)" style="flex:0 0 auto;background:var(--surface2);color:var(--muted);border:1px solid var(--border);padding:0 12px;">‹</button>
+<input class="calc-inp" id="hh11-date" onchange="hh11OnDateChange()" style="margin-bottom:0;flex:1;min-width:0;" type="date"/>
+<button class="add-btn" onclick="hh11DateShift(1)" style="flex:0 0 auto;background:var(--surface2);color:var(--muted);border:1px solid var(--border);padding:0 12px;">›</button>
+</div>
+<div style="display:flex;gap:6px;margin-top:6px;margin-bottom:14px;">
+<button class="exi-btn" onclick="hh11DateToday()" style="flex:1;">Сегодня</button>
+<button class="exi-btn" id="hh11-alldays-btn" onclick="hh11ToggleAllDates()" style="flex:1;">Все дни</button>
+</div>
+<div style="font-size:12px;color:var(--muted);line-height:1.4;margin-bottom:14px;">Сначала ЕО, потом товар — из каталога или добавить новый тут же.</div>
 
-<div class="hh11-import-panel" style="margin:12px 0;padding:10px;background:rgba(212,168,67,.06);border:1px solid var(--border);border-radius:10px;">
-  <div style="font-family:'Oswald',sans-serif;font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:7px;">Импорт содержимого в HH-1-1</div>
-  <div style="font-size:11px;color:var(--muted);line-height:1.35;margin-bottom:8px;">Переносит содержимое из WMS в «Числится»: ЕО/HU, УТ, наименование и количество по системе. Если автомат не сработал — вставь список ниже.</div>
+<div class="hh11-import-panel" style="margin:4px 0 14px;padding:14px 0 0;border-top:1px solid var(--border);">
+  <div style="font-size:11px;font-weight:600;color:var(--gold);margin-bottom:8px;">Импорт содержимого из WMS в «Числится»</div>
   <div style="display:flex;gap:6px;align-items:stretch;">
     <input class="calc-inp" id="hh11-wms-cell" value="HH-1-1" placeholder="HH-1-1 / SH-... / G8A" style="margin-bottom:0;flex:1;min-width:0;" type="text"/>
     <button class="exi-btn primary" onclick="hh11PullFromWmsCell()" style="flex-shrink:0;">Подтянуть</button>
   </div>
   <details style="margin-top:8px;">
-    <summary style="font-family:'Oswald',sans-serif;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.8px;cursor:pointer;">Вставить список из WMS</summary>
+    <summary style="font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:11px;color:var(--muted);letter-spacing:.8px;cursor:pointer;">Вставить список из WMS</summary>
     <textarea class="calc-inp" id="hh11-wms-import-text" placeholder="УТ-00008635 — Малина 125 г — 3 шт — до 2026-07-01 — HU 012200554897 — RESERVED_FOR_ORDER" style="min-height:130px;resize:vertical;font-family:'JetBrains Mono',monospace;font-size:11px;margin-top:8px;"></textarea>
     <div style="display:flex;gap:6px;flex-wrap:wrap;">
       <button class="exi-btn" onclick="hh11PasteWmsImport()">Вставить</button>
@@ -658,7 +818,7 @@
 <div id="hh11-picked" style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg2);border-radius:8px;font-size:12px;color:var(--text);"></div>
 <button class="exi-btn" onclick="hh11ToggleNewItemForm()" style="width:100%;margin-top:10px;">+ Новый товар сразу в каталог</button>
 <div id="hh11-new-item-form" style="display:none;margin-top:10px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;">
-<div style="font-family:'Oswald',sans-serif;font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;"></div>
+<div style="font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:10px;color:var(--gold);letter-spacing:1px;margin-bottom:8px;"></div>
 <label class="modal-lbl">УТ / артикул</label>
 <div style="display:flex;gap:6px;align-items:stretch;">
 <input class="calc-inp" id="hh11-new-ut" placeholder="например EO 01220051-4364" style="margin-bottom:0;flex:1;min-width:0;" type="text"/>
@@ -681,8 +841,8 @@
 <div id="hh11-system-wrap" style="flex:1;"><label class="modal-lbl">Кол-во по системе</label><input class="calc-inp" id="hh11-system-qty" inputmode="numeric" placeholder="0" style="margin-bottom:0;" type="number"/></div>
 <div style="flex:1;"><label class="modal-lbl">Факт / найдено</label><input class="calc-inp" id="hh11-fact-qty" inputmode="numeric" placeholder="0" style="margin-bottom:0;" type="number"/></div>
 </div>
-<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-family:'Oswald',sans-serif;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;">
-<input id="hh11-mismatch" style="width:18px;height:18px;accent-color:#c0392b;" type="checkbox"/> Пометка: пересорт
+<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:11px;color:var(--muted);letter-spacing:0.8px;">
+<input id="hh11-mismatch" style="width:18px;height:18px;accent-color:var(--red);" type="checkbox"/> Пометка: пересорт
     </label>
 <input id="hh11-comment" type="hidden" value=""/>
 <button class="add-btn" onclick="hh11Add()" style="width:100%;margin-top:12px;">+ Добавить в HH 1-1</button>
@@ -704,6 +864,24 @@
 </div>
 <div id="hh11-list" style="margin-top:14px;"></div>
 </div>
+<!-- ЕСТЬ В НАЛИЧИИ (из отгрузки) -->
+<div id="tab-instock" style="display:none">
+<div class="section-head">
+<div class="section-title">Есть в наличии</div>
+<span id="instock-count" style="font-family:'Spectral',serif;font-weight:600;font-size:16px;color:var(--ok);">0</span>
+</div>
+<div class="supa-warning" style="margin-bottom:12px;">Сюда переносятся подтверждённые позиции из содержимого ЕО в разделе «Отгрузка». Это накопительный список по всем проверенным ЕО.</div>
+<div id="instock-summary" style="margin-bottom:12px;"></div>
+<div class="smart-search-box" style="margin-bottom:10px;">
+<input autocapitalize="off" autocomplete="off" class="calc-inp" id="instock-search" oninput="renderInstock()" placeholder="Поиск: товар / УТ / ШК / ЕО…" spellcheck="false" style="margin-bottom:0;" type="text"/>
+</div>
+<div class="exi-bar" style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap;">
+<button class="exi-btn primary" onclick="instockCopyTSV()">📋 Копировать TSV</button>
+<button class="exi-btn" onclick="instockExportToReport()">В отчёт</button>
+<button class="exi-btn" onclick="instockClear()">Очистить</button>
+</div>
+<div id="instock-list"></div>
+</div>
 <!-- RK CHECK JOURNAL -->
 <div id="tab-rk" style="display:none">
 <div class="section-head">
@@ -711,9 +889,17 @@
 <span id="rk-count" style="font-family:'Spectral',serif;font-weight:600;font-size:16px;color:var(--gold);">0</span>
 </div>
 <div class="gen-box" style="border-left:3px solid var(--red);overflow:visible;position:relative;z-index:44;">
-<div style="font-family:'Oswald',sans-serif;font-size:11px;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Проверка РК</div>
-<label class="modal-lbl">Дата</label>
-<input class="calc-inp" id="rk-date" onchange="rkRefreshEOState()" style="margin-bottom:10px;" type="date"/>
+<div style="font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:11px;font-weight:600;color:var(--gold);letter-spacing:1px;margin-bottom:6px;">Проверка РК</div>
+<label class="modal-lbl">Дата (своя РК на каждый день, старые сохраняются)</label>
+<div style="display:flex;gap:6px;align-items:stretch;">
+<button class="add-btn" onclick="rkDateShift(-1)" style="flex:0 0 auto;background:var(--surface2);color:var(--muted);border:1px solid var(--border);padding:0 12px;">‹</button>
+<input class="calc-inp" id="rk-date" onchange="rkOnDateChange()" style="margin-bottom:0;flex:1;min-width:0;" type="date"/>
+<button class="add-btn" onclick="rkDateShift(1)" style="flex:0 0 auto;background:var(--surface2);color:var(--muted);border:1px solid var(--border);padding:0 12px;">›</button>
+</div>
+<div style="display:flex;gap:6px;margin-top:6px;margin-bottom:10px;">
+<button class="exi-btn" onclick="rkDateToday()" style="flex:1;">Сегодня</button>
+<button class="exi-btn" id="rk-alldays-btn" onclick="rkToggleAllDates()" style="flex:1;">Все дни</button>
+</div>
 <label class="modal-lbl">ЕО</label>
 <div style="display:flex;gap:6px;align-items:stretch;">
 <input autocomplete="off" class="calc-inp" id="rk-eo" inputmode="numeric" onblur="eoNormalizeInput('rk-eo');rkRefreshEOState()" oninput="rkRefreshEOState()" placeholder="012200…" style="margin-bottom:0;flex:1;min-width:0;" type="text"/>
@@ -735,7 +921,7 @@
 <div id="rk-picked" style="display:none;margin-top:10px;padding:10px 12px;background:var(--bg2);border-radius:8px;font-size:12px;color:var(--text);"></div>
 <button class="exi-btn" onclick="rkToggleNewItemForm()" style="width:100%;margin-top:10px;">+ Новый товар сразу в каталог</button>
 <div id="rk-new-item-form" style="display:none;margin-top:10px;background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:10px;">
-<div style="font-family:'Oswald',sans-serif;font-size:10px;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;"></div>
+<div style="font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:10px;color:var(--gold);letter-spacing:1px;margin-bottom:8px;"></div>
 <label class="modal-lbl">УТ / артикул</label>
 <div style="display:flex;gap:6px;align-items:stretch;">
 <input class="calc-inp" id="rk-new-ut" placeholder="например УТ-00000000" style="margin-bottom:0;flex:1;min-width:0;" type="text"/>
@@ -785,7 +971,7 @@
 <span id="problems-count" style="font-family:'Spectral',serif;font-weight:600;font-size:16px;color:var(--gold);">0</span>
 </div>
 <div class="gen-box" style="border-left:3px solid var(--gold);overflow:visible;position:relative;z-index:44;">
-<div style="font-family:'Oswald',sans-serif;font-size:11px;font-weight:600;color:var(--gold);text-transform:uppercase;letter-spacing:1px;margin-bottom:6px;">Фиксируем только исключения</div>
+<div style="font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:11px;font-weight:600;color:var(--gold);letter-spacing:1px;margin-bottom:6px;">Фиксируем только исключения</div>
 <label class="modal-lbl">Тип проблемы</label>
 <select class="calc-inp" id="problem-type">
 <option>пустая ячейка</option>
@@ -814,8 +1000,8 @@
 <div><label class="modal-lbl">Системно</label><input class="calc-inp" id="problem-sys" inputmode="numeric" placeholder="0" style="margin-bottom:0;text-align:center;" type="number"/></div>
 <div><label class="modal-lbl">Факт</label><input class="calc-inp" id="problem-fact" inputmode="numeric" placeholder="0" style="margin-bottom:0;text-align:center;" type="number"/></div>
 </div>
-<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-family:'Oswald',sans-serif;font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:0.8px;">
-<input id="problem-wms" style="width:18px;height:18px;accent-color:#c0392b;" type="checkbox"/> Нужно проверить в ВМС
+<label style="display:flex;align-items:center;gap:8px;margin-top:10px;font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:11px;color:var(--muted);letter-spacing:0.8px;">
+<input id="problem-wms" style="width:18px;height:18px;accent-color:var(--red);" type="checkbox"/> Нужно проверить в ВМС
 </label>
 <label class="modal-lbl" style="margin-top:10px;">Комментарий</label>
 <textarea class="calc-inp" id="problem-comment" rows="3" placeholder="что случилось / что сделать" style="resize:vertical;"></textarea>
@@ -834,7 +1020,7 @@
 
 <!-- WMS recounting → report prototype -->
 <div class="gen-box" id="report-wms-prototype" style="margin-bottom:14px;border-left:3px solid var(--gold);">
-  <div style="font-family:'Oswald',sans-serif;font-size:12px;letter-spacing:1px;text-transform:uppercase;color:var(--gold);margin-bottom:5px;">WMS · пересчёты в отчёт</div>
+  <div style="font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:12px;letter-spacing:1px;color:var(--gold);margin-bottom:5px;">WMS · пересчёты в отчёт</div>
   <div style="font-size:12px;line-height:1.35;color:var(--muted);margin-bottom:10px;">Подтягивает завершённые задания из WMS за дату и раскладывает их по двум строкам отчёта: пересчёт по заданиям и плановый пересчёт.</div>
   <div style="display:flex;gap:8px;align-items:end;">
     <div style="flex:1;"><label class="modal-lbl">Дата WMS</label><input class="calc-inp" id="report-wms-date" type="date" style="margin-bottom:0;"/></div>
@@ -868,8 +1054,9 @@
 </main>
 <button class="fab" onclick="openModal('item-modal')">+</button>
 <nav class="bottomnav">
+<button class="navbtn" data-tab="monitor" onclick="switchTab('monitor')"><span class="ico">📡</span><span class="lbl">Мониторинг</span></button>
 <button class="navbtn active" data-tab="hh11" onclick="switchTab('hh11')"><span class="ico">🧾</span><span class="lbl">HH-1</span></button>
-<button class="navbtn" data-tab="wms" onclick="switchTab('wms')"><span class="ico">🐈‍⬛</span><span class="lbl">WMS</span></button>
+<button class="navbtn" data-tab="wms" onclick="switchTab('wms')"><span class="ico">🗄️</span><span class="lbl">WMS</span></button>
 <button class="navbtn" data-tab="catalog" onclick="switchTab('catalog')"><span class="ico">📦</span><span class="lbl">Товары</span></button>
 <button class="navbtn" data-tab="rk" onclick="switchTab('rk')"><span class="ico">🔎</span><span class="lbl">РК</span></button>
 <button class="navbtn" data-tab="more" onclick="openMoreMenu()"><span class="ico">☰</span><span class="lbl">Ещё</span></button>
@@ -879,8 +1066,9 @@
     <div class="more-sheet-handle"></div>
     <div class="more-sheet-title">Ещё</div>
     <div class="more-grid">
+      <button onclick="moreGo('instock')"><span>✅</span><b>Есть в наличии</b><small>Подтверждено из отгрузки</small></button>
       <button onclick="moreGo('problems')"><span>⚠️</span><b>Проблемы</b><small>Редко, но нужно</small></button>
-      <button onclick="moreGo('cells')"><span>📍</span><b>Ячейки</b><small>Справочник ячеек</small></button>
+      <button onclick="moreGoCellsWms()"><span>📍</span><b>Ячейки</b><small>Ячейки склада (из ВМС)</small></button>
       <button onclick="moreGo('report')"><span>📋</span><b>Отчёт</b><small>Сводка смены</small></button>
       <button onclick="moreGo('calc')"><span>🧮</span><b>Счёт</b><small>Пересчёт ряда</small></button>
       <button onclick="moreGo('eo')"><span>🏷️</span><b>ЕО</b><small>Коды и печать</small></button>
