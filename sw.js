@@ -1,6 +1,6 @@
-/* L'Enfer PWA service worker — v65 tier1 multirow
+/* L'Enfer PWA service worker — v137: починен выбор файла в приложении (аватарка, фото к заметкам) — onShowFileChooser в WebView
    Network-first worker: old cached index.html should not haunt the app. */
-const SW_VERSION = 'lenfer-v65-tier1-multirow';
+const SW_VERSION = 'lenfer-v137-file-chooser';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();
