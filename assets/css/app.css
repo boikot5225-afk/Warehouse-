@@ -231,15 +231,75 @@ main{padding:14px 16px;max-width:680px;margin:0 auto;}
 .exi-btn.primary:active{background:var(--gold-dim);}
 .exi-btn:active{background:var(--surface2);}
 
-/* ── NOTES ── */
-.note-card{background:var(--surface);border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:14px;padding:14px;margin-bottom:10px;box-shadow:var(--shadow);}
+/* ── NOTES (чат-пузыри) ── */
+.chat-row{display:flex;align-items:flex-end;gap:8px;margin-bottom:8px;}
+.chat-row.mine{flex-direction:row-reverse;}
+.chat-row .note-card{max-width:80%;}
+.note-card{background:var(--surface);border:1px solid var(--border);border-radius:16px 16px 16px 4px;padding:9px 12px;box-shadow:var(--shadow);}
+.chat-row.mine .note-card{background:rgba(227,180,82,0.14);border-color:var(--gold);border-radius:16px 16px 4px 16px;}
+.note-author{font-size:11.5px;font-weight:700;color:var(--gold);margin-bottom:3px;}
 .note-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:9px;}
-.note-date{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--faint);}
-.note-actions{display:flex;gap:6px;}
-.note-btn{background:none;border:1px solid var(--border);border-radius:5px;padding:3px 9px;color:var(--muted);font-size:11px;cursor:pointer;}
+.note-foot{display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-top:4px;}
+.note-date{font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--faint);}
+.note-actions{display:flex;gap:2px;}
+.note-btn{background:none;border:none;border-radius:5px;padding:2px 5px;color:var(--muted);font-size:12px;cursor:pointer;}
 .note-btn.del{color:var(--red-bright);}
-.note-text{font-size:13px;color:var(--text);line-height:1.6;white-space:pre-wrap;margin-bottom:8px;}
-.note-img{width:100%;border-radius:8px;object-fit:cover;max-height:220px;display:block;margin-top:8px;border:1px solid var(--border);}
+.note-text{font-size:13.5px;color:var(--text);line-height:1.5;white-space:pre-wrap;}
+.note-img{max-width:100%;max-height:320px;border-radius:8px;object-fit:contain;background:var(--bg2);display:block;margin-top:6px;border:1px solid var(--border);cursor:zoom-in;}
+.chat-img-viewer{display:none;position:fixed;inset:0;z-index:900;background:rgba(0,0,0,0.92);align-items:center;justify-content:center;padding:18px;}
+.chat-img-viewer img{max-width:100%;max-height:100%;object-fit:contain;border-radius:6px;}
+.chat-reactions{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px;}
+.chat-reaction-pill{background:var(--bg2);border:1px solid var(--border);border-radius:999px;padding:3px 9px;font-family:-apple-system,'Segoe UI',Roboto,Inter,system-ui,sans-serif;font-size:12px;color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;gap:4px;}
+.chat-reaction-pill b{color:var(--text);font-size:11px;font-weight:700;}
+.chat-reaction-pill.mine{border-color:var(--gold);background:rgba(212,168,67,.14);color:var(--gold);}
+.chat-reaction-pill.mine b{color:var(--gold);}
+.chat-reaction-add{background:none;border:1px dashed var(--border);border-radius:999px;padding:3px 8px;font-size:12px;color:var(--muted);cursor:pointer;}
+.chat-reaction-overlay{display:none;position:fixed;inset:0;z-index:850;background:rgba(0,0,0,0.5);align-items:flex-end;justify-content:center;padding:0 0 96px;}
+.chat-reaction-picker{display:flex;gap:12px;background:var(--surface);border:1px solid var(--border);border-radius:999px;padding:10px 18px;box-shadow:var(--shadow);}
+.chat-reaction-picker button{background:none;border:none;font-size:26px;cursor:pointer;line-height:1;padding:2px;}
+.chat-reaction-picker button:active{transform:scale(1.2);}
+
+/* ── ЧАТ: список тем (экран 1) ── */
+.chat-topics-list{display:flex;flex-direction:column;}
+.chat-list-item{display:flex;align-items:center;gap:12px;padding:11px 4px;border-bottom:1px solid var(--border);cursor:pointer;}
+.chat-list-item:active{background:var(--bg2);}
+.chat-list-avatar{width:44px;height:44px;border-radius:50%;background:var(--surface2);display:flex;align-items:center;justify-content:center;font-size:19px;flex:0 0 auto;color:var(--gold);font-weight:700;}
+.chat-list-body{flex:1;min-width:0;}
+.chat-list-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px;}
+.chat-list-name{font-size:14px;font-weight:700;color:var(--text);}
+.chat-list-time{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--faint);flex:0 0 auto;}
+.chat-list-preview{font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px;}
+.chat-list-add{width:100%;margin-top:12px;background:none;border:1px dashed var(--border);border-radius:10px;padding:11px;color:var(--gold);font-weight:700;font-size:13px;cursor:pointer;}
+
+/* ── ЧАТ: тред одной темы (экран 2) — на весь экран, поверх нижней панели,
+   чтобы список сообщений всегда занимал всю высоту, а поле ввода не зависело
+   от отступа под нижнюю панель. Кнопка «←» возвращает к обычной раскладке. ── */
+#chat-thread-screen{position:fixed;inset:0;z-index:200;background:var(--bg);flex-direction:column;padding:10px 14px 0;}
+.chat-thread-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;flex:0 0 auto;}
+.chat-back-btn{background:none;border:1px solid var(--border);border-radius:8px;width:34px;height:34px;flex:0 0 auto;color:var(--text);font-size:16px;cursor:pointer;}
+.chat-thread-title{font-family:'Spectral',serif;font-size:17px;font-weight:700;color:var(--text);}
+.chat-messages{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;padding-bottom:6px;-webkit-overflow-scrolling:touch;}
+.chat-composer{flex:0 0 auto;display:flex;align-items:flex-end;gap:8px;background:var(--bg);border-top:1px solid var(--border);padding:8px 0 calc(8px + env(safe-area-inset-bottom));}
+.chat-composer-photo{flex:0 0 auto;width:38px;height:38px;border-radius:10px;background:var(--surface2);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:16px;cursor:pointer;overflow:hidden;}
+.chat-composer-photo img{width:100%;height:100%;object-fit:cover;}
+.chat-composer-input{flex:1;min-width:0;resize:none;max-height:110px;background:var(--surface2);border:1px solid var(--border);border-radius:18px;padding:9px 14px;color:var(--text);font-size:13.5px;font-family:inherit;line-height:1.4;}
+.chat-composer-send{flex:0 0 auto;width:38px;height:38px;border-radius:50%;background:var(--gold);border:none;color:var(--on-accent);font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.chat-composer-send:active{background:var(--gold-dim);}
+
+/* ── ЧАТ: закреп, ответы, бейджи ── */
+.chat-pinned-strip{margin-bottom:10px;padding:8px;border:1px solid var(--gold);border-radius:12px;background:rgba(212,168,67,0.08);}
+.chat-pinned-strip .chat-row{margin-bottom:6px;}
+.chat-pinned-strip .chat-row:last-child{margin-bottom:0;}
+.chat-pin-flag{font-size:10px;color:var(--gold);font-weight:700;margin-bottom:5px;letter-spacing:.4px;}
+.note-card.chat-pinned-msg{border-color:var(--gold);}
+.chat-reply-quote{background:var(--bg2);border-left:3px solid var(--gold);border-radius:6px;padding:5px 8px;margin-bottom:6px;font-size:11px;color:var(--muted);cursor:pointer;}
+.chat-reply-quote b{color:var(--gold);display:block;font-size:10.5px;}
+.chat-reply-preview{display:flex;align-items:center;gap:8px;background:var(--bg2);border:1px solid var(--border);border-left:3px solid var(--gold);border-radius:8px;padding:7px 9px;margin-bottom:6px;}
+@keyframes chatFlash{0%,100%{outline-color:transparent;}50%{outline-color:var(--gold);}}
+.chat-flash{outline:2px solid var(--gold);outline-offset:2px;animation:chatFlash 0.5s ease 2;}
+.chat-badge{display:inline-flex;align-items:center;justify-content:center;min-width:16px;height:16px;padding:0 4px;margin-left:5px;border-radius:999px;background:var(--red-bright);color:#fff;font-size:9.5px;font-weight:800;vertical-align:middle;}
+.navbtn .ico{position:relative;display:inline-block;}
+.chat-badge-dot{position:absolute;top:-3px;right:-8px;min-width:14px;height:14px;padding:0 3px;border-radius:999px;background:var(--red-bright);color:#fff;font-size:8.5px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;line-height:1;}
 
 /* ── EO ── */
 .gen-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:16px;margin-bottom:16px;box-shadow:var(--shadow);}
@@ -965,6 +1025,9 @@ html.auth-gate-error::before{
 .tier-tile-meta{font-size:10px;color:var(--muted);margin-top:5px;overflow-wrap:anywhere;line-height:1.35;}
 .tier-tile-system{font-size:10px;color:var(--text);margin-top:5px;overflow-wrap:anywhere;}
 .tier-mark-chip{display:inline-block;font-size:9px;font-weight:700;padding:3px 8px;border-radius:999px;white-space:nowrap;}
+.tier-tile-return{outline:2px solid var(--gold);outline-offset:2px;}
+.wms-stop-btn{display:inline-block;margin-left:8px;background:none;border:1px solid var(--red-bright);border-radius:999px;color:var(--red-bright);font-size:10px;font-weight:700;padding:3px 10px;cursor:pointer;vertical-align:middle;}
+.wms-stop-btn:active{background:var(--red-bright);color:#fff;}
 .tier-mark-chip.problem{color:var(--red-bright);border:1px solid var(--red-bright);}
 .tier-mark-chip.fixed{color:var(--ok);border:1px solid var(--ok);}
 .tier-tile-comment{display:block;width:100%;margin-top:7px;background:var(--surface2);border:1px solid var(--border);border-radius:8px;padding:7px 9px;font-size:11px;color:var(--text);resize:vertical;min-height:40px;font-family:inherit;}

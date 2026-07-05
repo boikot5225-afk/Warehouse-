@@ -133,6 +133,27 @@ function eoSetChecked(eo,on){
   set('eo_checked',m);
 }
 function eoToggleChecked(eo){ eoSetChecked(eo,!eoIsChecked(eo)); }
+// Пометки позиций внутри ЕО отгрузки (В наличии/Недостача/Излишек/Брак).
+// Общие для всех устройств: ключ = ЕО|УТ|ШК, снятие — tombstone {off:1,ts},
+// слияние поштучное по ts (SYNC_TS_MAP_KEYS), как у eo_checked/tier_cell_marks.
+const getEoPosMarksMap = () => getObj('eo_pos_marks');
+function eoPosKey(eo,ut,barcode){return String(eo||'').trim()+'|'+String(ut||'').trim()+'|'+String(barcode||'').trim();}
+function eoPosGet(eo,ut,barcode){
+  const e=getEoPosMarksMap()[eoPosKey(eo,ut,barcode)];
+  if(!e||e.off||!e.cat)return null;
+  return e;
+}
+function eoPosWrite(eo,list){
+  // list: [{ut,barcode,cat,qty}], cat=null снимает пометку
+  const m=getEoPosMarksMap(); const a=currentActor(); const ts=Date.now();
+  (list||[]).forEach(x=>{
+    const k=eoPosKey(eo,x.ut,x.barcode);
+    m[k]=x.cat?{cat:x.cat,qty:x.qty,ts:ts,by:a.name,byUid:a.uid}:{off:1,ts:ts};
+  });
+  set('eo_pos_marks',m);
+  // Напарник должен увидеть пометку сразу — не ждём дебаунс общего канала.
+  try{ if(window.fbPushNow)window.fbPushNow(); }catch(_){}
+}
 // Избранные ячейки склада (локально на устройстве)
 const getFavCellsMap = () => getObj('fav_cells');
 function isFavCell(addr){ return !!getFavCellsMap()[String(addr||'').trim().toUpperCase()]; }
@@ -146,15 +167,25 @@ function toggleFavCell(addr){ setFavCell(addr,!isFavCell(addr)); }
 // Пометки ячеек при обходе (Верхние ярусы / Первый ярус): проверено / проблема / исправлено.
 // Синхронизируются между устройствами; сброс хранится как {off:1,ts} — tombstone против «воскрешения» при слиянии.
 const getTierMarksMap = () => getObj('tier_cell_marks');
+// Рабочая дата обхода: НЕ живое «сегодня» (иначе у ночной смены отметки сами
+// гаснут прямо посреди работы, как только часы перевалят за полночь), а
+// «липкая» дата, которая обновляется только явным действием — нажатием
+// «Обновить ячейки»/«Загрузить ячейки» (см. wmsLoadUpperStorageCells). Это и
+// есть тот момент, который человек называет «выгрузкой» — новая выгрузка,
+// новая доска.
+function tierWorkDate(){ return getStickyDate('tier_work_date')||rkTodayISO(); }
 function tierGetMark(cellId){
   const m=getTierMarksMap()[String(cellId||'')];
   if(!m || m.off || !m.status)return null;
+  // Каждая выгрузка ячеек — чистая доска: пометки «проверено»/«исправлено» с прошлой
+  // выгрузки не показываем. Нерешённая «проблема» висит, пока её не исправят/не снимут.
+  if(m.status!=='problem' && String(m.date||'')!==tierWorkDate())return null;
   return m;
 }
 function tierSetMark(cellId, mark){
   cellId=String(cellId||''); if(!cellId)return;
   const m=getTierMarksMap();
-  if(mark)m[cellId]=mark; else m[cellId]={off:1,ts:Date.now()};
+  if(mark)m[cellId]={...mark,date:mark.date||tierWorkDate()}; else m[cellId]={off:1,ts:Date.now(),date:tierWorkDate()};
   set('tier_cell_marks',m);
 }
 function tierMarkChecked(cellId){ const a=currentActor(); tierSetMark(cellId,{status:'checked',comment:'',ts:Date.now(),by:a.name,byUid:a.uid}); }
@@ -407,17 +438,19 @@ function catalogFocusSearch(){const el=document.getElementById('search');if(!el.
 // ── MODAL ──
 function openModal(id){document.getElementById(id).style.display='flex';const f=document.querySelector('#'+id+' input, #'+id+' textarea');if(f)setTimeout(()=>f.focus(),100);}
 function closeModal(id){document.getElementById(id).style.display='none';}
-function previewPhoto(previewId, input){
+function previewPhoto(previewId, input, opts){
   const file=input.files[0]; if(!file) return;
+  const maxDim=(opts&&opts.maxDim)||1000;
+  const quality=(opts&&opts.quality)||0.7;
   const reader=new FileReader();
   reader.onload=e=>{
     const img=new Image();
     img.onload=()=>{
-      const maxDim=1000; let w=img.width,h=img.height;
+      let w=img.width,h=img.height;
       if(w>maxDim||h>maxDim){ if(w>h){h=h*maxDim/w;w=maxDim;}else{w=w*maxDim/h;h=maxDim;} }
       const canvas=document.createElement('canvas'); canvas.width=w; canvas.height=h;
       canvas.getContext('2d').drawImage(img,0,0,w,h);
-      const c=canvas.toDataURL('image/jpeg',0.7);
+      const c=canvas.toDataURL('image/jpeg',quality);
       const el=document.getElementById(previewId); el.innerHTML='<img src="'+c+'">'; el.dataset.img=c;
     };
     img.onerror=()=>{const el=document.getElementById(previewId);el.innerHTML='<img src="'+e.target.result+'">';el.dataset.img=e.target.result;};
@@ -425,6 +458,9 @@ function previewPhoto(previewId, input){
   };
   reader.readAsDataURL(file);
 }
+// Фото в чате читают, чтобы разглядеть детали (брак, накладную) — качество выше,
+// чем у карточек товара, где важнее компактность и объём каталога.
+function previewPhotoChat(previewId, input){ previewPhoto(previewId, input, {maxDim:1600, quality:0.85}); }
 
 // ── BARCODE (Code128) ──
 function code128(text){
@@ -474,7 +510,7 @@ function switchTab(tab){
   document.querySelector('.fab').style.display = (tab==='catalog' && !document.querySelector('.card.open'))?'flex':'none';
   if(tab==='cells')renderCells('');
   if(tab==='wms')renderWms();
-  if(tab==='notes')renderNotes();
+  if(tab==='notes'){renderNotes();chatMarkSeen();}
   if(tab==='creds')renderCreds();
   if(tab==='eo'){renderEO();renderEORange();}
   if(tab==='hh11')renderHH11();
@@ -503,6 +539,10 @@ let wmsShipmentEoState = null;
 let wmsCellBcLast = null;
 let wmsAllCells = [];
 let wmsCountReturnCell = '';
+// Если в «Счёт» ушли с плитки обхода яруса — запоминаем режим, чтобы «← В ячейку»
+// вернул не просто в общий поиск «Остатки сейчас», а в тот же контекст обхода,
+// где снова доступна кнопка «← Назад к обходу ярусов» (см. wmsBackToTier).
+let wmsCountReturnKind = '';
 let wmsUpperCells = [];
 let wmsUpperOccupancy = {};
 let wmsUpperPageV64 = {};
@@ -550,10 +590,23 @@ function wmsStorageToggleButton(){
   return '<button class="exi-btn '+(wmsStorageOnly?'primary':'')+'" onclick="wmsToggleStorageOnly()">Хранение HH/SH</button>';
 }
 
+let wmsStopRequested=false;
+function wmsRequestStop(){
+  wmsStopRequested=true;
+  try{ if(window.LenferAndroidWms && typeof LenferAndroidWms.cancelWmsWork==='function')LenferAndroidWms.cancelWmsWork(); }catch(_){}
+  const el=document.getElementById('wms-status');
+  if(el){el.textContent='Останавливаю…';el.className='wms-status wms-status-wait';}
+}
+window.wmsRequestStop=wmsRequestStop;
 function wmsSetStatus(text, kind){
   const el=document.getElementById('wms-status');
   if(!el)return;
-  el.textContent=String(text||'');
+  if(kind==='wait'){
+    // Пока крутится длинная операция — рядом со статусом живёт кнопка «Стоп».
+    el.innerHTML='<span>'+escHtml(String(text||''))+'</span> <button class="wms-stop-btn" onclick="wmsRequestStop()">⛔ Стоп</button>';
+  }else{
+    el.textContent=String(text||'');
+  }
   el.className='wms-status '+(kind?('wms-status-'+kind):'');
 }
 
@@ -671,6 +724,11 @@ function wmsSetLookupKind(kind){
     wmsSetStatus('Отгрузка: введи слова из адреса магазина и выбери дату.', '');
     const box=document.getElementById('wms-result');
     if(box&&!wmsShipmentLastRoutes)box.innerHTML='<div class="hint" style="padding:24px 12px;"><span class="mark">↗</span><span class="txt">Введи адрес магазина и дату, нажми «Найти маршрут»</span></div>';
+    // После перезагрузки WebView (например, ночью в фоне) поля дат пустеют —
+    // подставляем дату последнего реального поиска, а не сегодняшнюю.
+    const fEl=document.getElementById('wms-sh-date-from'),tEl=document.getElementById('wms-sh-date-to');
+    const lastDate=getStickyDate('wms_ship_work_date');
+    if(lastDate&&fEl&&!fEl.value&&tEl&&!tEl.value){fEl.value=lastDate;tEl.value=lastDate;}
   }else if(wmsLookupKind==='cellbc'){
     wmsSetStatus('Ячейки склада: загрузи справочник или найди ячейку. ШК и остатки по каждой.', '');
     if(wmsAllCells&&wmsAllCells.length){wmsRenderCellsView();}
@@ -2520,6 +2578,7 @@ function wmsRenderUpperStorage(){
   box.innerHTML='<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">Верхние ярусы</div><div class="wms-meta">В фильтре «Ряд» используется адрес без двух последних сегментов, например <b>SH-11-65</b>. Чётность — по последнему номеру адреса.</div></div></div><div class="wms-upper-summary"><b>'+escHtml(rows.length)+'</b><span>в выборке</span><b>'+escHtml(occ)+'</b><span>занято</span><b>'+escHtml(empty)+'</b><span>пусто</span></div><div class="wms-actions wms-upper-result-actions"><button class="exi-btn primary" onclick="wmsCheckUpperOccupancy()">Проверить остатки</button><button class="exi-btn" onclick="wmsLoadUpperStorageCells()">Обновить ячейки</button></div><div class="wms-upper-list">'+(cards||'<div class="no-results">Нет ячеек по выбранному фильтру</div>')+'</div>'+tail;
 }
 async function wmsLoadUpperStorageCells(){
+  wmsStopRequested=false;
   wmsSetStatus('Загружаю все активные верхние ячейки хранения…','wait');
   try{
     const raw=await wmsCallNative('lookupWmsUpperStorageCells',[JSON.stringify({})],120000);
@@ -2685,9 +2744,11 @@ const WMS_CELL_ZONES={cold:{label:'Холод',color:'var(--blue)'},dry:{label:'
 async function wmsLoadAllCells(){
   wmsCellbcFavOnly=false;
   wmsAllCells=[];
+  wmsStopRequested=false;
   wmsSetStatus('Загружаю все ячейки склада…','wait');
   try{
     const raw=await wmsCallNative('lookupWmsUpperStorageCells',[JSON.stringify({})],120000,(progress)=>{
+      if(wmsStopRequested)return;
       const chunk=wmsUpperItems({value:{items:(progress&&progress.items)||[]}});
       if(!chunk.length)return;
       wmsAllCells=wmsAllCells.concat(chunk);
@@ -2843,6 +2904,7 @@ function wmsCountFromCell(cellAddr, ut, name, sysQty){
     }
   }
   wmsCountReturnCell=cellAddr;
+  wmsCountReturnKind=(wmsLookupKind==='tier1'||wmsLookupKind==='upper')?wmsLookupKind:'';
   switchTab('calc');
   const cellEl=document.getElementById('calc-cell'); if(cellEl)cellEl.value=cellAddr;
   if(ut){ pickCalcProd(ut, name||''); }
@@ -2873,7 +2935,10 @@ function wmsBackToCountedCell(){
   const cell=wmsCountReturnCell;
   if(!cell){switchTab('wms');return;}
   switchTab('wms');
-  wmsSetLookupKind('stocks');
+  // Пришли считать с плитки обхода яруса — возвращаемся в тот же режим, а не в общие
+  // «Остатки сейчас», иначе на карточке баланса пропадает «← Назад к обходу ярусов»
+  // и приходится заново грузить справочник ячеек, хотя он всё ещё в памяти.
+  wmsSetLookupKind(wmsCountReturnKind||'stocks');
   const inp=document.getElementById('wms-query'); if(inp)inp.value=cell;
   wmsSetStatus('Возврат к ячейке '+cell+'…','wait');
   wmsLookupFromApp();
@@ -3179,6 +3244,7 @@ async function wmsLoadShipmentRoutes(){
   if(!dateFrom)dateFrom=dateTo;
   if(!dateTo)dateTo=dateFrom;
   if(dateFrom>dateTo){const t=dateFrom;dateFrom=dateTo;dateTo=t;}
+  setStickyDate('wms_ship_work_date',dateFrom);
   const bFrom=wmsMoscowDayBounds(dateFrom);
   const bTo=wmsMoscowDayBounds(dateTo);
   const rangeLabel=dateFrom===dateTo?dateFrom:(dateFrom+' — '+dateTo);
@@ -3228,7 +3294,10 @@ async function wmsShipmentViewEo(barcode){
       qty:Number(r.quantity)||0,
       bestBefore:r.bestBeforeDate||''
     }));
-    const date=(wmsShipmentRenderState&&wmsShipmentRenderState.dateStr)||rkTodayISO();
+    // Если состояние поиска потеряно (перезагрузка WebView за ночь) — берём дату
+    // последнего реального поиска маршрутов, а не текущую календарную: иначе ЕО,
+    // открытая по смене за 4-е, после полуночи записалась бы задним числом в 5-е.
+    const date=(wmsShipmentRenderState&&wmsShipmentRenderState.dateStr)||getStickyDate('wms_ship_work_date')||rkTodayISO();
     // Восстанавливаем прежние отметки этой ЕО из РК и «Есть в наличии»
     const outcome={};
     const findIdx=(ut,bc)=>rows.findIndex(r=>(ut&&r.ut===ut)||(bc&&r.barcode&&r.barcode===bc));
@@ -3243,6 +3312,11 @@ async function wmsShipmentViewEo(barcode){
       if(x.eo!==barcode||x.date!==date)return;
       const i=findIdx(x.ut,x.barcode); if(i<0)return;
       outcome[rows[i].idx]={cat:'instock',qty:(Number(x.qty)||rows[i].qty)};
+    });
+    // Общий стор пометок (свои + чужие, с именем автора) авторитетнее восстановленного из РК.
+    rows.forEach(r=>{
+      const pm=eoPosGet(barcode,r.ut,r.barcode);
+      if(pm)outcome[r.idx]={cat:pm.cat,qty:pm.qty,by:pm.by,byUid:pm.byUid};
     });
     wmsShipmentEoState={barcode:barcode,rows:rows,selected:new Set(),outcome:outcome,query:'',date:date};
     wmsRenderShipmentEoContent();
@@ -3320,14 +3394,15 @@ function wmsShipmentEoAssign(cat){
     const cur=(st.outcome[r.idx]&&st.outcome[r.idx].cat===cat)?st.outcome[r.idx].qty:r.qty;
     const ans=prompt(WMS_EO_CATS[cat].label+' — фактическое количество для «'+r.name+'» (по системе '+r.qty+'):', cur);
     if(ans===null)return;
-    st.outcome[r.idx]={cat:cat,qty:Math.max(0,parseInt(ans)||0)};
+    st.outcome[r.idx]={cat:cat,qty:Math.max(0,parseInt(ans)||0),by:currentActor().name};
   }else{
-    sel.forEach(r=>{st.outcome[r.idx]={cat:cat,qty:r.qty};});
+    sel.forEach(r=>{st.outcome[r.idx]={cat:cat,qty:r.qty,by:currentActor().name};});
   }
   st.selected.clear();
+  eoPosWrite(st.barcode,sel.map(r=>({ut:r.ut,barcode:r.barcode,cat:st.outcome[r.idx].cat,qty:st.outcome[r.idx].qty})));
   wmsShipmentEoSync();
   wmsRenderShipmentEoContent();
-  wmsSetStatus('Отмечено '+sel.length+' → '+WMS_EO_CATS[cat].label+'. Синхронизировано с '+(cat==='instock'?'«Есть в наличии»':'РК')+'.','ok');
+  wmsSetStatus('Отмечено '+sel.length+' → '+WMS_EO_CATS[cat].label+'. Видно всем, кто откроет эту ЕО.','ok');
 }
 function wmsShipmentEoEditQty(idx){
   const st=wmsShipmentEoState; if(!st)return;
@@ -3335,6 +3410,7 @@ function wmsShipmentEoEditQty(idx){
   const ans=prompt(WMS_EO_CATS[o.cat].label+' — фактическое количество для «'+r.name+'» (по системе '+r.qty+'):', o.qty);
   if(ans===null)return;
   o.qty=Math.max(0,parseInt(ans)||0);
+  eoPosWrite(st.barcode,[{ut:r.ut,barcode:r.barcode,cat:o.cat,qty:o.qty}]);
   wmsShipmentEoSync();
   wmsRenderShipmentEoContent();
   wmsSetStatus('Количество обновлено: '+o.qty+' шт.','ok');
@@ -3343,6 +3419,8 @@ function wmsShipmentEoUnmark(idx){
   const st=wmsShipmentEoState; if(!st)return;
   if(!st.outcome[idx])return;
   delete st.outcome[idx];
+  const r=st.rows[idx];
+  if(r)eoPosWrite(st.barcode,[{ut:r.ut,barcode:r.barcode,cat:null}]);
   wmsShipmentEoSync();
   wmsRenderShipmentEoContent();
   wmsSetStatus('Отметка снята.','ok');
@@ -3353,6 +3431,7 @@ function wmsShipmentEoClearSelected(){
   if(!sel.length){wmsSetStatus('Выбери позиции, с которых снять отметку.','err');return;}
   sel.forEach(r=>delete st.outcome[r.idx]);
   st.selected.clear();
+  eoPosWrite(st.barcode,sel.map(r=>({ut:r.ut,barcode:r.barcode,cat:null})));
   wmsShipmentEoSync();
   wmsRenderShipmentEoContent();
   wmsSetStatus('Отметки сняты с '+sel.length+' поз.','ok');
@@ -3370,6 +3449,7 @@ function wmsShipmentEoNoDiff(){
   const marked=st.rows.filter(r=>{const o=st.outcome[r.idx];return o&&o.cat&&o.cat!=='instock';});
   if(marked.length && !confirm('У этой ЕО уже отмечено расхождений: '+marked.length+' поз. Всё равно записать «Без расхождений»? Отметки расхождений будут сняты.'))return;
   marked.forEach(r=>delete st.outcome[r.idx]);
+  if(marked.length)eoPosWrite(st.barcode,marked.map(r=>({ut:r.ut,barcode:r.barcode,cat:null})));
   const eo=st.barcode, date=st.date, key=rkKey(date,eo);
   let rk=getRK().filter(x=>{
     if(rkKey(x.date,x.eo)===key){
@@ -3406,6 +3486,32 @@ function wmsShipmentEoToCatalog(idx){
   logAction('product','Добавлен товар из ЕО: '+(r.ut||r.name),{ut:r.ut});
   wmsSetStatus('Товар «'+(r.name||r.ut)+'» добавлен в каталог.','ok');
 }
+// Пришёл синк с чужими пометками — обновляем открытый экран содержимого ЕО.
+// Не дёргаем экран, пока человек печатает в поиске.
+function wmsShipmentEoMarksRefresh(){
+  const st=wmsShipmentEoState; if(!st)return;
+  const listEl=document.getElementById('wms-eo-list');
+  if(!listEl)return;
+  let changed=false;
+  st.rows.forEach(r=>{
+    const pm=eoPosGet(st.barcode,r.ut,r.barcode);
+    const cur=st.outcome[r.idx]||null;
+    const next=pm?{cat:pm.cat,qty:pm.qty,by:pm.by,byUid:pm.byUid}:null;
+    if(JSON.stringify(cur)!==JSON.stringify(next)){
+      if(next)st.outcome[r.idx]=next; else delete st.outcome[r.idx];
+      changed=true;
+    }
+  });
+  if(!changed)return;
+  const ae=document.activeElement;
+  if(ae&&(ae.tagName==='INPUT'||ae.tagName==='TEXTAREA')){
+    // Фокус в поле (например, поиск) — обновляем только список позиций:
+    // поле живёт вне #wms-eo-list, фокус и текст не пострадают.
+    listEl.innerHTML=wmsShipmentEoListHtml();
+  }else{
+    wmsRenderShipmentEoContent();
+  }
+}
 // Тумблер «Проверено» для ЕО из шапки содержимого
 function wmsShipmentEoToggleChecked(){
   const st=wmsShipmentEoState; if(!st)return;
@@ -3427,7 +3533,8 @@ function wmsShipmentEoListHtml(){
     let badge='';
     if(c){
       const diff=(oc.cat!=='instock'&&Number(oc.qty)!==Number(r.qty))?(' · сист '+r.qty):'';
-      badge='<span style="display:inline-flex;align-items:center;gap:4px;font-family:-apple-system,\'Segoe UI\',Roboto,Inter,system-ui,sans-serif;font-size:9px;letter-spacing:.5px;color:'+c.color+';border:1px solid '+c.color+';border-radius:5px;padding:1px 5px;white-space:nowrap;">'+c.label+' · '+oc.qty+' шт'+diff+
+      const who=oc.by?(' · '+escHtml(oc.by)):'';
+      badge='<span style="display:inline-flex;align-items:center;gap:4px;font-family:-apple-system,\'Segoe UI\',Roboto,Inter,system-ui,sans-serif;font-size:9px;letter-spacing:.5px;color:'+c.color+';border:1px solid '+c.color+';border-radius:5px;padding:1px 5px;white-space:nowrap;">'+c.label+' · '+oc.qty+' шт'+diff+who+
         '<button onclick="event.stopPropagation();wmsShipmentEoEditQty('+r.idx+')" style="background:none;border:none;color:'+c.color+';cursor:pointer;font-size:11px;padding:0;">✎</button>'+
         '<button onclick="event.stopPropagation();wmsShipmentEoUnmark('+r.idx+')" style="background:none;border:none;color:var(--red-bright);cursor:pointer;font-size:11px;padding:0;">✕</button>'+
       '</span>';
@@ -3531,7 +3638,7 @@ window.wmsShipmentToggleChecked=wmsShipmentToggleChecked;
 function wmsShipmentImportToRk(barcodes,dateStr,address){
   if(typeof barcodes==='string')barcodes=barcodes.split(',').map(s=>s.trim()).filter(Boolean);
   if(!barcodes||!barcodes.length){wmsSetStatus('Нет ЕО для переноса.','err');return;}
-  const date=dateStr||rkTodayISO();
+  const date=dateStr||getStickyDate('wms_ship_work_date')||rkTodayISO();
   const existing=getRK();
   let added=0;
   barcodes.forEach(bc=>{
@@ -3552,6 +3659,7 @@ function wmsShipmentToday(){
   const now=new Date();const moscow=new Date(now.getTime()+3*60*60*1000);const iso=moscow.toISOString().slice(0,10);
   const f=document.getElementById('wms-sh-date-from');const t=document.getElementById('wms-sh-date-to');
   if(f)f.value=iso;if(t)t.value=iso;
+  setStickyDate('wms_ship_work_date',iso);
 }
 function wmsClearShipmentSearch(){
   const q=document.getElementById('wms-sh-query');const f=document.getElementById('wms-sh-date-from');const t=document.getElementById('wms-sh-date-to');
@@ -3651,6 +3759,10 @@ async function wmsLookupProductId(productId){
 }
 async function wmsLookupCellId(cellId, address){
   if(!cellId){wmsSetStatus('Нет cellId','err');return;}
+  // Уходим в балансы с доски обхода — запоминаем место, чтобы «Назад» вернул точно туда же.
+  if(wmsLookupKind==='tier1'||wmsLookupKind==='upper'){
+    window.wmsTierReturnState={scrollY:window.scrollY||0,cellId:String(cellId)};
+  }
   wmsSetStatus('Тяну содержимое ячейки '+(address||'')+'…','wait');
   try{
     const raw=await wmsCallNative('lookupWmsByCellId',[cellId,address||''],30000);
@@ -4352,76 +4464,357 @@ function openCalcForCell(idx){
 }
 function addCellNote(idx){
   const c=renderedCells[idx];if(!c)return;
+  switchTab('notes');
+  chatSetActiveTopic(CHAT_GENERAL_TOPIC);
   const t=document.getElementById('note-text');
-  if(t)t.value='Ячейка '+c.addr+(c.name?' — '+c.name:'')+': ';
-  openModal('note-modal');
+  if(t){ t.value='Ячейка '+c.addr+(c.name?' — '+c.name:'')+': '; t.focus(); }
 }
 
-// ── NOTES ──
+// ── ЧАТ (бывшие «Заметки») ──
 function newNoteId(){return Date.now()+Math.floor(Math.random()*1000);}
+// Сообщения идут ДВУМЯ каналами сразу: realtime-чат Firebase (мгновенно) и
+// старый проверенный sync-канал 'notes' (страховка — работает при любых
+// правилах базы). Список на экране — объединение обоих, дубли по id схлопываются.
+const CHAT_GENERAL_TOPIC='general';
+const getChatTopics=()=>get('chat_topics');
+function chatTopicName(id){
+  id=String(id||CHAT_GENERAL_TOPIC);
+  if(id===CHAT_GENERAL_TOPIC)return 'Общее';
+  const t=getChatTopics().find(x=>String(x.id)===id);
+  return t?t.name:'Тема';
+}
+let chatActiveTopicId=getStickyDate('chat_active_topic')||CHAT_GENERAL_TOPIC;
+// 'topics' — список тем (экран 1), 'thread' — переписка внутри одной темы (экран 2).
+let chatScreen='topics';
+function chatSetActiveTopic(id){
+  chatActiveTopicId=String(id||CHAT_GENERAL_TOPIC);
+  setStickyDate('chat_active_topic',chatActiveTopicId);
+  chatClearReplyDraft();
+  chatScreen='thread';
+  renderNotes();
+  chatMarkSeen();
+}
+function chatBackToTopics(){
+  chatScreen='topics';
+  renderNotes();
+}
+function chatAddTopic(){
+  const name=(prompt('Название темы:')||'').trim();
+  if(!name)return;
+  const topics=getChatTopics();
+  const t=createMeta({id:Date.now()+Math.floor(Math.random()*1000),name:name});
+  topics.unshift(t);
+  set('chat_topics',topics);
+  try{ if(window.fbPushNow)window.fbPushNow(); }catch(_){}
+  chatSetActiveTopic(t.id);
+}
+function chatListItemTime(ts){
+  if(!ts)return '';
+  const d=new Date(Number(ts));
+  const now=new Date();
+  return d.toDateString()===now.toDateString()
+    ? d.toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'})
+    : d.toLocaleDateString('ru-RU',{day:'2-digit',month:'2-digit'});
+}
+function renderChatTopicsList(){
+  const box=document.getElementById('chat-topics-list');if(!box)return;
+  const topics=[{id:CHAT_GENERAL_TOPIC,name:'Общее'}].concat(getChatTopics().filter(t=>!t.archived));
+  const all=chatListLocal();
+  box.innerHTML=topics.map(t=>{
+    const last=all.find(m=>String(m.topicId||CHAT_GENERAL_TOPIC)===String(t.id));
+    const preview=last
+      ? (chatMsgIsMine(last)?'Ты: ':(last.name?escHtml(last.name)+': ':''))+escHtml(String(last.text||(last.img?'📷 Фото':'')).slice(0,60))
+      : 'Пока нет сообщений';
+    const when=last?chatListItemTime(last.ts):'';
+    return '<div class="chat-list-item" onclick="chatSetActiveTopic(\''+jsStr(String(t.id))+'\')">'+
+      '<div class="chat-list-avatar">'+(t.id===CHAT_GENERAL_TOPIC?'💬':escHtml((t.name||'?').charAt(0).toUpperCase()))+'</div>'+
+      '<div class="chat-list-body">'+
+        '<div class="chat-list-top"><span class="chat-list-name">'+escHtml(t.name)+'</span><span class="chat-list-time">'+when+'</span></div>'+
+        '<div class="chat-list-preview">'+preview+'</div>'+
+      '</div>'+
+    '</div>';
+  }).join('')+'<button class="chat-list-add" onclick="chatAddTopic()">+ Новая тема</button>';
+}
+function chatLegacyAsMsg(n){
+  return {id:String(n.id),text:String(n.text||''),img:String(n.img||''),uid:String(n.createdByUid||''),name:n.createdByName||n.createdByEmail||'',ts:Number(new Date(n.createdAtIso||0).getTime()||0)||Number(n.id)||0,dateRu:String(n.date||''),editedAt:0,topicId:String(n.topicId||CHAT_GENERAL_TOPIC),replyTo:n.replyTo||null,pinned:n.pinned||null,reactions:n.reactions||null};
+}
+function chatListLocal(){
+  const out=new Map();
+  (getNotes()||[]).forEach(n=>{ if(n&&n.id!=null)out.set(String(n.id),chatLegacyAsMsg(n)); });
+  let chat=[];
+  if(typeof window.lenferChatList==='function')chat=window.lenferChatList();
+  else{
+    const c=getObj('chat_cache');
+    const m=(c&&c.msgs&&typeof c.msgs==='object')?c.msgs:{};
+    chat=Object.keys(m).map(k=>m[k]);
+  }
+  // Поле за полем: чат-версия перекрывает легаси, но поле, которого в чате ещё нет
+  // (не успело/не смогло долететь), берётся из легаси-копии — ничего не теряется.
+  chat.forEach(m=>{
+    if(!m||m.id==null)return;
+    const k=String(m.id);
+    const prev=out.get(k);
+    out.set(k, prev?{...prev,...m}:m);
+  });
+  return [...out.values()].sort((a,b)=>Number(b.ts||0)-Number(a.ts||0));
+}
+function chatFiltered(){
+  const topic=String(chatActiveTopicId||CHAT_GENERAL_TOPIC);
+  return chatListLocal().filter(m=>String(m.topicId||CHAT_GENERAL_TOPIC)===topic);
+}
+function chatPinned(list){
+  return (list||[]).filter(m=>m.pinned).sort((a,b)=>Number((b.pinned&&b.pinned.ts)||0)-Number((a.pinned&&a.pinned.ts)||0));
+}
+function chatMsgIsMine(m){
+  const meUid=String((window.lenferCurrentUserProfile||getUserProfileLocal()||{}).uid||'');
+  // Старые мигрированные заметки без uid считаем своими, чтобы их можно было править.
+  return !m.uid || (meUid && String(m.uid)===meUid);
+}
+function chatWhen(m){
+  const base=m.dateRu||(m.ts?new Date(Number(m.ts)).toLocaleString('ru-RU',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'');
+  return base+(m.editedAt?' · ред.':'');
+}
+// ── Ответ на сообщение ──
+let chatReplyDraft=null;
+function chatStartReply(id){
+  const m=chatListLocal().find(x=>String(x.id)===String(id));if(!m)return;
+  chatReplyDraft={id:String(m.id),name:m.name||'Без имени',uid:m.uid||'',text:String(m.text||'').slice(0,140)};
+  renderChatReplyPreview();
+  const ta=document.getElementById('note-text');if(ta)ta.focus();
+}
+function chatClearReplyDraft(){ chatReplyDraft=null; renderChatReplyPreview(); }
+function renderChatReplyPreview(){
+  const box=document.getElementById('note-reply-preview');if(!box)return;
+  if(!chatReplyDraft){box.style.display='none';box.innerHTML='';return;}
+  box.style.display='flex';
+  box.innerHTML='<div style="flex:1;min-width:0;"><b style="color:var(--gold);">↩ '+escHtml(chatReplyDraft.name)+'</b><div style="font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'+escHtml(chatReplyDraft.text)+'</div></div><button onclick="chatClearReplyDraft()" style="background:none;border:none;color:var(--red-bright);font-size:16px;cursor:pointer;flex:0 0 auto;">✕</button>';
+}
+function chatComposeNew(){ chatClearReplyDraft(); const ta=document.getElementById('note-text');if(ta)ta.focus(); }
+// Автоувеличение поля ввода сообщения по мере набора текста, до потолка в CSS (max-height).
+function chatAutoGrow(el){ if(!el)return; el.style.height='auto'; el.style.height=el.scrollHeight+'px'; }
+// ── Закрепить сообщение ──
+function chatTogglePin(id){
+  const m=chatListLocal().find(x=>String(x.id)===String(id));if(!m)return;
+  const a=currentActor();
+  const pinned=m.pinned?null:{by:a.name,byUid:a.uid,ts:Date.now()};
+  try{ if(typeof window.lenferChatPatch==='function')window.lenferChatPatch(id,{pinned:pinned}); }catch(_){}
+  set('notes',getNotes().map(n=>String(n.id)!==String(id)?n:touchMeta({...n,pinned:pinned})));
+  try{ if(window.fbPushNow)window.fbPushNow(); }catch(_){}
+  renderNotes();
+}
+// Полноэкранный просмотр фото по тапу — картинка целиком, без обрезки.
+function chatOpenImage(src){
+  if(!src)return;
+  let ov=document.getElementById('chat-img-viewer');
+  if(!ov){
+    ov=document.createElement('div');
+    ov.id='chat-img-viewer';
+    ov.className='chat-img-viewer';
+    ov.onclick=()=>{ov.style.display='none';};
+    ov.innerHTML='<img id="chat-img-viewer-img" src="" alt=""/>';
+    document.body.appendChild(ov);
+  }
+  document.getElementById('chat-img-viewer-img').src=src;
+  ov.style.display='flex';
+}
+window.chatOpenImage=chatOpenImage;
+// ── Реакции-эмодзи ──
+const CHAT_REACTION_EMOJIS=['👍','❤️','😂','🔥','👀','✅'];
+function chatMyReaction(m,emoji){
+  const meUid=String((window.lenferCurrentUserProfile||getUserProfileLocal()||{}).uid||'');
+  return !!(m.reactions && m.reactions[emoji] && m.reactions[emoji][meUid]);
+}
+function chatReactionCounts(m){
+  const r=m.reactions||{};
+  return CHAT_REACTION_EMOJIS.map(e=>({emoji:e,count:r[e]?Object.keys(r[e]).length:0,mine:chatMyReaction(m,e),names:r[e]?Object.values(r[e]):[]})).filter(x=>x.count>0);
+}
+function chatToggleReaction(id,emoji){
+  const me=window.lenferCurrentUserProfile||getUserProfileLocal()||{};
+  const meUid=String(me.uid||''),meName=String(me.name||'Пользователь');
+  if(!meUid){alert('Сначала войди в аккаунт.');return;}
+  try{ if(typeof window.lenferChatToggleReaction==='function')window.lenferChatToggleReaction(id,emoji); }catch(_){}
+  // Страховка — тот же легаси-канал, что у пометок и закрепления.
+  const notes=getNotes();
+  const idx=notes.findIndex(n=>String(n.id)===String(id));
+  if(idx>=0){
+    const n=notes[idx];
+    const reactions=n.reactions&&typeof n.reactions==='object'?{...n.reactions}:{};
+    const cur=reactions[emoji]&&typeof reactions[emoji]==='object'?{...reactions[emoji]}:{};
+    if(cur[meUid])delete cur[meUid]; else cur[meUid]=meName;
+    if(Object.keys(cur).length)reactions[emoji]=cur; else delete reactions[emoji];
+    notes[idx]=touchMeta({...n,reactions});
+    set('notes',notes);
+  }
+  try{ if(window.fbPushNow)window.fbPushNow(); }catch(_){}
+  renderNotes();
+}
+function chatOpenReactionPicker(id){
+  let ov=document.getElementById('chat-reaction-overlay');
+  if(!ov){
+    ov=document.createElement('div');
+    ov.id='chat-reaction-overlay';
+    ov.className='chat-reaction-overlay';
+    ov.addEventListener('click',e=>{ if(e.target===ov)chatClosePicker(); });
+    document.body.appendChild(ov);
+  }
+  ov.innerHTML='<div class="chat-reaction-picker">'+CHAT_REACTION_EMOJIS.map(e=>'<button onclick="chatToggleReaction(\''+jsStr(String(id))+'\',\''+e+'\');chatClosePicker()">'+e+'</button>').join('')+'</div>';
+  ov.style.display='flex';
+}
+function chatClosePicker(){ const ov=document.getElementById('chat-reaction-overlay'); if(ov)ov.style.display='none'; }
+function chatReactionsHtml(n){
+  const counts=chatReactionCounts(n);
+  const sid=jsStr(String(n.id));
+  const pills=counts.map(c=>'<button class="chat-reaction-pill'+(c.mine?' mine':'')+'" title="'+escHtml(c.names.join(', '))+'" onclick="chatToggleReaction(\''+sid+'\',\''+c.emoji+'\')">'+c.emoji+' <b>'+c.count+'</b></button>').join('');
+  return '<div class="chat-reactions">'+pills+'<button class="chat-reaction-add" onclick="chatOpenReactionPicker(\''+sid+'\')">+😊</button></div>';
+}
+function chatScrollTo(id){
+  const el=document.getElementById('chat-msg-'+id);if(!el)return;
+  el.scrollIntoView({behavior:'smooth',block:'center'});
+  el.classList.add('chat-flash');
+  setTimeout(()=>{try{el.classList.remove('chat-flash');}catch(_){}},1500);
+}
+// ── Непрочитанное: бейдж + звук, пока приложение открыто ──
+function chatUnreadCount(){
+  const seen=Number(getStickyDate('chat_last_seen_ts')||0);
+  const meUid=String((window.lenferCurrentUserProfile||getUserProfileLocal()||{}).uid||'');
+  return chatListLocal().filter(m=>Number(m.ts||0)>seen && String(m.uid||'')!==meUid).length;
+}
+function chatUpdateBadge(){
+  const n=chatUnreadCount();
+  ['chat-badge-menu','chat-badge-nav'].forEach(id=>{
+    const el=document.getElementById(id);if(!el)return;
+    if(n>0){el.style.display='inline-flex';el.textContent=n>99?'99+':String(n);}
+    else{el.style.display='none';el.textContent='';}
+  });
+}
+function chatMarkSeen(){
+  const maxTs=chatListLocal().reduce((m,x)=>Math.max(m,Number(x.ts)||0),0);
+  if(maxTs)setStickyDate('chat_last_seen_ts',String(maxTs));
+  chatUpdateBadge();
+}
+let chatAudioCtx=null;
+function chatBeep(){
+  try{
+    if(!chatAudioCtx)chatAudioCtx=new (window.AudioContext||window.webkitAudioContext)();
+    const ctx=chatAudioCtx;
+    if(ctx.state==='suspended')ctx.resume();
+    const o=ctx.createOscillator(),g=ctx.createGain();
+    o.type='sine';o.frequency.value=880;
+    g.gain.setValueAtTime(0.0001,ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.18,ctx.currentTime+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.22);
+    o.connect(g);g.connect(ctx.destination);
+    o.start();o.stop(ctx.currentTime+0.24);
+  }catch(_){}
+}
+function chatNotifyNew(msg){
+  const meUid=String((window.lenferCurrentUserProfile||getUserProfileLocal()||{}).uid||'');
+  if(!msg||String(msg.uid||'')===meUid)return; // не пищим на своё же сообщение
+  chatBeep();
+  try{ if(navigator.vibrate)navigator.vibrate(60); }catch(_){}
+}
 function saveNote(){
   const text=document.getElementById('note-text').value.trim();
   if(!text){alert('Введите текст');return;}
   const img=document.getElementById('note-photo').dataset.img||'';
+  const id=Date.now()+Math.floor(Math.random()*1000);
+  const topicId=chatActiveTopicId||CHAT_GENERAL_TOPIC;
+  const replyTo=chatReplyDraft?{id:chatReplyDraft.id,name:chatReplyDraft.name,uid:chatReplyDraft.uid,text:chatReplyDraft.text}:null;
+  // Канал 1: мгновенный чат Firebase (если доступен).
+  try{ if(typeof window.lenferChatSend==='function')window.lenferChatSend(text,img,id,{topicId:topicId,replyTo:replyTo}); }catch(_){}
+  // Канал 2: страховка — обычные заметки через общий sync (дубль схлопнется по id).
   const notes=getNotes();
-  notes.unshift(createMeta({id:newNoteId(),text,img,date:new Date().toLocaleString('ru',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}));
+  notes.unshift(createMeta({id:id,text,img,topicId:topicId,replyTo:replyTo,date:new Date().toLocaleString('ru',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}));
   try{set('notes',notes);}catch(e){alert('Фото слишком большое, не хватает места.');return;}
-  closeModal('note-modal');
-  document.getElementById('note-text').value='';
-  const p=document.getElementById('note-photo');p.innerHTML='📷 Добавить фото';p.dataset.img='';
+  try{ if(window.fbPushNow)window.fbPushNow(); }catch(_){}
+  const ta=document.getElementById('note-text');ta.value='';ta.style.height='auto';
+  const p=document.getElementById('note-photo');p.innerHTML='📷';p.dataset.img='';
+  chatClearReplyDraft();
   renderNotes();
 }
 function editNote(id){
-  const note=getNotes().find(n=>n.id===id);if(!note)return;
-  if(!noteIsMine(note)){alert('Это заметка другого пользователя — править может только автор.');return;}
-  document.getElementById('edit-note-id').value=id;
-  document.getElementById('edit-note-text').value=note.text;
+  const note=chatListLocal().find(n=>String(n.id)===String(id));if(!note)return;
+  if(!chatMsgIsMine(note)){alert('Это сообщение другого пользователя — править может только автор.');return;}
+  document.getElementById('edit-note-id').value=String(id);
+  document.getElementById('edit-note-text').value=note.text||'';
   const p=document.getElementById('edit-note-photo');
   if(note.img){p.innerHTML='<img src="'+note.img+'">';p.dataset.img=note.img;}else{p.innerHTML='📷 Изменить фото';p.dataset.img='';}
   openModal('edit-note-modal');
 }
 function updateNote(){
-  const id=parseInt(document.getElementById('edit-note-id').value);
+  const id=String(document.getElementById('edit-note-id').value||'');
   const text=document.getElementById('edit-note-text').value.trim();
   if(!text){alert('Введите текст');return;}
   const img=document.getElementById('edit-note-photo').dataset.img||'';
-  try{set('notes',getNotes().map(n=>{if(n.id!==id)return n;const next={...n,text,img};touchMeta(next);return next;}));}catch(e){alert('Фото слишком большое.');return;}
-  closeModal('edit-note-modal');renderNotes();
+  try{ if(typeof window.lenferChatEdit==='function')window.lenferChatEdit(id,text,img); }catch(_){}
+  // Правим и в страховочном канале, чтобы у всех сошлось при любых правилах базы.
+  try{set('notes',getNotes().map(n=>String(n.id)!==id?n:touchMeta({...n,text,img})));}catch(e){alert('Фото слишком большое.');return;}
+  try{ if(window.fbPushNow)window.fbPushNow(); }catch(_){}
+  closeModal('edit-note-modal');
+  renderNotes();
 }
 function delNote(id){
-  const note=getNotes().find(n=>n.id===id);if(!note)return;
-  if(!noteIsMine(note)){alert('Это заметка другого пользователя — удалить может только автор.');return;}
-  if(!confirm('Удалить заметку?'))return;
-  set('notes',getNotes().filter(n=>n.id!==id));renderNotes();
+  const note=chatListLocal().find(n=>String(n.id)===String(id));if(!note)return;
+  if(!chatMsgIsMine(note)){alert('Это сообщение другого пользователя — удалить может только автор.');return;}
+  if(!confirm('Удалить сообщение?'))return;
+  try{ if(typeof window.lenferChatDelete==='function')window.lenferChatDelete(id); }catch(_){}
+  set('notes',getNotes().filter(n=>String(n.id)!==String(id)));
+  try{ if(window.fbPushNow)window.fbPushNow(); }catch(_){}
+  renderNotes();
 }
-function noteIsMine(n){
-  const meUid=String((window.lenferCurrentUserProfile||getUserProfileLocal()||{}).uid||'');
-  // Старые заметки без uid считаем своими, чтобы их можно было править.
-  return !n.createdByUid || (meUid && String(n.createdByUid)===meUid);
+function chatMessageCard(n){
+  const author=n.name||'Без имени';
+  const mine=chatMsgIsMine(n);
+  const sid=jsStr(String(n.id));
+  const isPinned=!!n.pinned;
+  const shareArg=String(n.text||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\r?\n/g,'\\n');
+  const replyHtml=n.replyTo?('<div class="chat-reply-quote" onclick="chatScrollTo(\''+jsStr(String(n.replyTo.id))+'\')"><b>'+escHtml(n.replyTo.name||'')+'</b><div>'+escHtml(n.replyTo.text||'')+'</div></div>'):'';
+  const actions='<div class="note-actions">'+
+    '<button class="note-btn" onclick="chatStartReply(\''+sid+'\')" title="Ответить">↩</button>'+
+    '<button class="note-btn" onclick="chatTogglePin(\''+sid+'\')" title="'+(isPinned?'Открепить':'Закрепить')+'">'+(isPinned?'📌':'📍')+'</button>'+
+    '<button class="note-btn" onclick="shareText(\''+shareArg+'\')" title="Поделиться">📤</button>'+
+    (mine?'<button class="note-btn" onclick="editNote(\''+sid+'\')" title="Изменить">✏</button><button class="note-btn del" onclick="delNote(\''+sid+'\')" title="Удалить">✕</button>':'')+
+  '</div>';
+  return '<div class="chat-row '+(mine?'mine':'theirs')+'">'+
+    (mine?'':avatarHtml(n.uid,author,32))+
+    '<div class="note-card'+(isPinned?' chat-pinned-msg':'')+'" id="chat-msg-'+sid+'">'+
+      (isPinned?'<div class="chat-pin-flag">📌'+(n.pinned&&n.pinned.by?' '+escHtml(n.pinned.by):'')+'</div>':'')+
+      (mine?'':'<div class="note-author">'+escHtml(author)+'</div>')+
+      replyHtml+
+      '<div class="note-text">'+escHtml(String(n.text||''))+'</div>'+
+      (n.img?'<img class="note-img" src="'+n.img+'" onclick="chatOpenImage(this.src)"/>':'')+
+      chatReactionsHtml(n)+
+      '<div class="note-foot"><span class="note-date">'+escHtml(chatWhen(n))+'</span>'+actions+'</div>'+
+    '</div>'+
+  '</div>';
 }
 function renderNotes(){
+  renderChatTopicsList();
+  const topicsScreen=document.getElementById('chat-topics-screen');
+  const threadScreen=document.getElementById('chat-thread-screen');
+  if(!topicsScreen||!threadScreen)return;
+  if(chatScreen!=='thread'){
+    topicsScreen.style.display='';
+    threadScreen.style.display='none';
+    return;
+  }
+  topicsScreen.style.display='none';
+  threadScreen.style.display='flex';
+  const titleEl=document.getElementById('chat-thread-title');
+  if(titleEl)titleEl.textContent=chatTopicName(chatActiveTopicId);
   const el=document.getElementById('notes-list');if(!el)return;
-  const notes=getNotes();
-  if(!notes.length){el.innerHTML='<div class="no-results">Пока пусто. Напиши первым — увидят все, кто в общей базе.</div>';return;}
-  el.innerHTML=notes.map(n=>{
-    const author=n.createdByName||n.createdByEmail||'Без имени';
-    const mine=noteIsMine(n);
-    const shareArg=String(n.text||'').replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\r?\n/g,'\\n');
-    const edited=(n.updatedByName&&n.createdByName&&n.updatedByName!==n.createdByName)?(' · изм.: '+escHtml(n.updatedByName)):'';
-    const actions='<div class="note-actions"><button class="note-btn" onclick="shareText(\''+shareArg+'\')">📤</button>'+
-      (mine?'<button class="note-btn" onclick="editNote('+n.id+')">✏</button><button class="note-btn del" onclick="delNote('+n.id+')">✕</button>':'')+'</div>';
-    return '<div class="note-card">'+
-      '<div class="note-head" style="display:flex;align-items:center;gap:9px;">'+
-        avatarHtml(n.createdByUid,author,30)+
-        '<div style="flex:1;min-width:0;">'+
-          '<div style="font-size:12.5px;font-weight:700;color:'+(mine?'var(--gold)':'var(--text)')+';">'+escHtml(author)+(mine?' <span style="font-weight:400;color:var(--muted);">(ты)</span>':'')+'</div>'+
-          '<span class="note-date">'+escHtml(n.date||n.updatedAtRu||'')+edited+'</span>'+
-        '</div>'+actions+
-      '</div>'+
-      '<div class="note-text">'+escHtml(String(n.text||''))+'</div>'+
-      (n.img?'<img class="note-img" src="'+n.img+'">':'')+
-    '</div>';
-  }).join('');
+  const allDesc=chatFiltered();
+  const pinned=chatPinned(allDesc);
+  const pinnedBox=document.getElementById('chat-pinned');
+  if(pinnedBox){
+    pinnedBox.style.display=pinned.length?'block':'none';
+    pinnedBox.innerHTML=pinned.map(chatMessageCard).join('');
+  }
+  if(!allDesc.length){el.innerHTML='<div class="no-results">Пока пусто в теме «'+escHtml(chatTopicName(chatActiveTopicId))+'». Напиши первым — сообщение мгновенно увидят все.</div>';return;}
+  // В мессенджере старые сообщения сверху, новые снизу — переворачиваем и после
+  // отрисовки прокручиваем ленту вниз, к последнему сообщению.
+  el.innerHTML=allDesc.slice().reverse().map(chatMessageCard).join('');
+  requestAnimationFrame(()=>{ el.scrollTop=el.scrollHeight; });
 }
 
 // ── EO ──
@@ -5495,9 +5888,9 @@ let hh11Picked=null;
 let hh11Mode='listed';
 let hh11View='active';
 let hh11ShowAllDates=false;
-function hh11EnsureDate(){const el=document.getElementById('hh11-date');if(el&&!el.value)el.value=rkTodayISO();}
+function hh11EnsureDate(){const el=document.getElementById('hh11-date');if(el&&!el.value)el.value=getStickyDate('hh11_work_date')||rkTodayISO();}
 function hh11CurrentDate(){hh11EnsureDate();const el=document.getElementById('hh11-date');return el?el.value:rkTodayISO();}
-function hh11OnDateChange(){hh11ShowAllDates=false;renderHH11();}
+function hh11OnDateChange(){hh11ShowAllDates=false;setStickyDate('hh11_work_date',hh11CurrentDate());renderHH11();}
 function hh11DateShift(delta){
   hh11EnsureDate();
   const el=document.getElementById('hh11-date');if(!el)return;
@@ -5506,11 +5899,13 @@ function hh11DateShift(delta){
   d.setDate(d.getDate()+delta);
   el.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   hh11ShowAllDates=false;
+  setStickyDate('hh11_work_date',el.value);
   renderHH11();
 }
 function hh11DateToday(){
   const el=document.getElementById('hh11-date');if(el)el.value=rkTodayISO();
   hh11ShowAllDates=false;
+  setStickyDate('hh11_work_date',el?el.value:rkTodayISO());
   renderHH11();
 }
 function hh11ToggleAllDates(){hh11ShowAllDates=!hh11ShowAllDates;renderHH11();}
@@ -6204,7 +6599,7 @@ const getRK = () => get('rk_log');
 let rkView='active';
 let rkShowAllDates=false;
 function rkSetView(v){rkView=v;renderRK();}
-function rkOnDateChange(){rkShowAllDates=false;rkRefreshEOState();renderRK();}
+function rkOnDateChange(){rkShowAllDates=false;setStickyDate('rk_work_date',document.getElementById('rk-date')&&document.getElementById('rk-date').value||'');rkRefreshEOState();renderRK();}
 function rkDateShift(delta){
   rkEnsureDate();
   const el=document.getElementById('rk-date');if(!el)return;
@@ -6213,19 +6608,27 @@ function rkDateShift(delta){
   d.setDate(d.getDate()+delta);
   el.value=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
   rkShowAllDates=false;
+  setStickyDate('rk_work_date',el.value);
   rkRefreshEOState();renderRK();
 }
 function rkDateToday(){
   const el=document.getElementById('rk-date');if(el)el.value=rkTodayISO();
   rkShowAllDates=false;
+  setStickyDate('rk_work_date',el?el.value:rkTodayISO());
   rkRefreshEOState();renderRK();
 }
 function rkToggleAllDates(){rkShowAllDates=!rkShowAllDates;renderRK();}
 let rkPicked=null;
 function rkAllItems(){return productAllItems();}
 function rkTodayISO(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+// «Липкая» рабочая дата: переживает перезагрузку страницы (Android может убить WebView
+// в фоне за ночь) и НЕ перескакивает сама на новый день в полночь — только когда
+// человек явно нажал «Сегодня» или сдвинул дату. Раньше при потере состояния поле
+// пустело и подставлялась текущая календарная дата — так ночную смену «переносило».
+function getStickyDate(key){ try{return localStorage.getItem(key)||'';}catch(_){return '';} }
+function setStickyDate(key,val){ try{ if(val)localStorage.setItem(key,val); else localStorage.removeItem(key); }catch(_){ } }
 function rkDateRu(iso){if(!iso)return new Date().toLocaleDateString('ru-RU');const p=String(iso).split('-');return p.length===3?p[2]+'.'+p[1]+'.'+p[0]:iso;}
-function rkEnsureDate(){const el=document.getElementById('rk-date');if(el&&!el.value)el.value=rkTodayISO();}
+function rkEnsureDate(){const el=document.getElementById('rk-date');if(el&&!el.value)el.value=getStickyDate('rk_work_date')||rkTodayISO();}
 function rkKey(date,eo){return (date||'')+'||'+String(eo||'').trim();}
 function rkExistingGroup(date,eo){const key=rkKey(date,eo);return getRK().find(x=>rkKey(x.date,x.eo)===key);}
 function rkRefreshEOState(){
@@ -6879,8 +7282,11 @@ function makeBackupData(){
     action_log:getActionLog(),
     eo_checked:getEoCheckedMap(),
     tier_cell_marks:getTierMarksMap(),
+    eo_pos_marks:getEoPosMarksMap(),
     fav_cells:getFavCellsMap(),
     members_dir:getMembersDir(),
+    chat_cache:getObj('chat_cache'),
+    chat_topics:getChatTopics(),
     localStorage_snapshot:localSnapshot,
     catalog_snapshot:CATALOG,
     backup_version:23,
@@ -7275,7 +7681,7 @@ async function pasteBackupFromClipboard(){
   }
 }
 const BACKUP_STATE_KEYS=[
-  'custom_items','custom_barcodes','product_edits','cells','cell_favorites','pack_sizes','notes','credentials','eo_codes','journal','report','search_history','inventory','favorites','eo_range_saved','eo_range_used','hh11_log','rk_log','instock_log','problems_log','action_log','audit_log','user_profile','eo_checked','tier_cell_marks','fav_cells','members_dir'
+  'custom_items','custom_barcodes','product_edits','cells','cell_favorites','pack_sizes','notes','credentials','eo_codes','journal','report','search_history','inventory','favorites','eo_range_saved','eo_range_used','hh11_log','rk_log','instock_log','problems_log','action_log','audit_log','user_profile','eo_checked','tier_cell_marks','eo_pos_marks','fav_cells','members_dir','chat_cache','chat_topics'
 ];
 const BACKUP_MIRROR_KEYS=['credentials__mirror','cells__mirror','cell_favorites__mirror','credentials__saved_at','cells__saved_at','cell_favorites__saved_at'];
 function backupOwn(obj,key){return Object.prototype.hasOwnProperty.call(obj||{},key);}
@@ -7590,8 +7996,11 @@ function applyBackupData(data,opts){
   if(data.user_profile)set('user_profile', backupObj(data.user_profile));
   if(data.eo_checked)set('eo_checked', backupObj(data.eo_checked));
   if(data.tier_cell_marks)set('tier_cell_marks', backupObj(data.tier_cell_marks));
+  if(data.eo_pos_marks)set('eo_pos_marks', backupObj(data.eo_pos_marks));
   if(data.fav_cells)set('fav_cells', backupObj(data.fav_cells));
   if(data.members_dir)set('members_dir', backupObj(data.members_dir));
+  if(data.chat_cache)set('chat_cache', backupObj(data.chat_cache));
+  if(data.chat_topics)set('chat_topics', backupArr(data.chat_topics));
   set('action_log', backupArr(data.action_log).slice(0,300));
 
   try{repairCredentialsStorage();repairCellsStorage();}catch(e){}
@@ -8040,9 +8449,10 @@ function startAppStable(){
   safeStartPart('доступы', typeof renderCreds==='function' ? renderCreds : null);
   safeStartPart('РК', typeof renderRK==='function' ? renderRK : null);
   safeStartPart('отчёт', typeof renderReport==='function' ? renderReport : null);
+  safeStartPart('чат', typeof chatUpdateBadge==='function' ? chatUpdateBadge : null);
 }
 startAppStable();
-window.__APP_STABLE_BUILD__='2026-06-15-v45-smart-wms-search';
+window.__APP_STABLE_BUILD__='v143-eo-marks-live';
 
 function hideProductDropdownsOnOutsideClick(e){
   try{
@@ -8109,16 +8519,16 @@ function quickIntegrityCheck(){
   var SYNC_KEYS = [
     'custom_items','custom_barcodes','product_edits','pack_sizes',
     'cells','cell_favorites',
-    'hh11_log','rk_log','problems_log','audit_log','notes',
+    'hh11_log','rk_log','problems_log','audit_log','notes','chat_topics',
     'report',
-    'eo_checked','tier_cell_marks'
+    'eo_checked','tier_cell_marks','eo_pos_marks'
   ];
-  var SYNC_ARRAY_KEYS = ['custom_items','cells','cell_favorites','hh11_log','rk_log','problems_log','audit_log','notes'];
-  var SYNC_KEYED_ARRAYS = ['custom_items','cells','hh11_log','rk_log','problems_log','audit_log','notes'];
-  var SYNC_OBJECT_KEYS = ['custom_barcodes','product_edits','pack_sizes','report','eo_checked','tier_cell_marks'];
+  var SYNC_ARRAY_KEYS = ['custom_items','cells','cell_favorites','hh11_log','rk_log','problems_log','audit_log','notes','chat_topics'];
+  var SYNC_KEYED_ARRAYS = ['custom_items','cells','hh11_log','rk_log','problems_log','audit_log','notes','chat_topics'];
+  var SYNC_OBJECT_KEYS = ['custom_barcodes','product_edits','pack_sizes','report','eo_checked','tier_cell_marks','eo_pos_marks'];
   // Словари пометок: у каждой записи свой ts, сливаем поштучно (свежая запись побеждает),
   // снятие пометки — запись {off:1,ts}, а не удаление, иначе чужое устройство её вернёт.
-  var SYNC_TS_MAP_KEYS = ['eo_checked','tier_cell_marks'];
+  var SYNC_TS_MAP_KEYS = ['eo_checked','tier_cell_marks','eo_pos_marks'];
   var SYNC_META_KEY = '__lenfer_sync_key_versions_v3';
   var SYNC_DELETED_KEY = '__lenfer_sync_deleted_ids_v3';
 
@@ -8223,7 +8633,7 @@ function quickIntegrityCheck(){
     if(item == null) return '';
     if(key === 'custom_items') return String(item.ut || item.baseUt || '').trim();
     if(key === 'cells') return String(item.id || item.addr || item.code || '').trim();
-    if(key === 'hh11_log' || key === 'rk_log' || key === 'problems_log' || key === 'audit_log' || key === 'notes') return String(item.id || '').trim();
+    if(key === 'hh11_log' || key === 'rk_log' || key === 'problems_log' || key === 'audit_log' || key === 'notes' || key === 'chat_topics') return String(item.id || '').trim();
     return '';
   }
 
@@ -8322,7 +8732,7 @@ function quickIntegrityCheck(){
     });
     var arr = Object.keys(map).map(function(k){ return map[k]; });
     // Журналы удобнее видеть новыми сверху. Если id числовой/временной — сортируем мягко.
-    if(key === 'hh11_log' || key === 'rk_log' || key === 'problems_log' || key === 'audit_log'){
+    if(key === 'hh11_log' || key === 'rk_log' || key === 'problems_log' || key === 'audit_log' || key === 'chat_topics'){
       arr.sort(function(a,b){ return Number(b.id || 0) - Number(a.id || 0); });
     }
     return arr;
@@ -8488,7 +8898,24 @@ function quickIntegrityCheck(){
       outVersions[key] = Math.max(lv, rv, dlv);
     });
 
-    return payloadFromParts(outStore, outVersions, deleted, Date.now());
+    var payload = payloadFromParts(outStore, outVersions, deleted, Date.now());
+    // Ключи из будущих версий приложения (нет в нашем SYNC_KEYS) переносим как есть:
+    // иначе транзакция этой версии затирала бы то, что записал более новый клиент.
+    try{
+      var rawStore = remoteData && remoteData.store;
+      if(rawStore && typeof rawStore === 'object'){
+        Object.keys(rawStore).forEach(function(key){
+          if(!has(SYNC_KEYS, key) && payload.store[key] == null) payload.store[key] = rawStore[key];
+        });
+      }
+      var rawVersions = remoteData && remoteData.key_versions;
+      if(rawVersions && typeof rawVersions === 'object'){
+        Object.keys(rawVersions).forEach(function(key){
+          if(!has(SYNC_KEYS, key) && payload.key_versions[key] == null) payload.key_versions[key] = rawVersions[key];
+        });
+      }
+    }catch(_){ }
+    return payload;
   }
 
   function applyDeletedTombstonesLocally(deleted){
@@ -8920,9 +9347,11 @@ function quickIntegrityCheck(){
       try{ if(typeof renderRK    === 'function') renderRK(); }catch(_){ }
       try{ if(typeof renderProblems === 'function') renderProblems(); }catch(_){ }
       try{ if(typeof renderNotes === 'function') renderNotes(); }catch(_){ }
+      try{ if(typeof chatUpdateBadge === 'function') chatUpdateBadge(); }catch(_){ }
       try{ if(typeof renderReport === 'function') renderReport(); }catch(_){ }
       try{ if(typeof renderDiagnostics === 'function') renderDiagnostics(); }catch(_){ }
       try{ if(typeof wmsTierSyncRefresh === 'function') wmsTierSyncRefresh(); }catch(_){ }
+      try{ if(typeof wmsShipmentEoMarksRefresh === 'function') wmsShipmentEoMarksRefresh(); }catch(_){ }
     }finally{ applying = false; }
   }
 
@@ -8983,11 +9412,192 @@ function quickIntegrityCheck(){
 
   function stopRealtime(){ try{ if(realtimeRef) realtimeRef.off(); }catch(_){ } realtimeRef = null; }
 
+  // ── Чат заметок ──
+  // Отдельный узел: каждое сообщение — маленькая запись, уходит сразу set()'ом
+  // и прилетает остальным через child_added за доли секунды. Общий sync-канал
+  // (весь стор одной транзакцией с дебаунсом) для переписки слишком тяжёлый.
+  var chatRef = null;
+  var chatMessages = {};
+  var chatPathActive = '';
+  var chatRenderT = null;
+  function activeChatPath(){
+    if(!currentUser) return '';
+    var ws = getStoredWorkspaceId();
+    return ws ? ('workspaces/' + ws + '/chat') : (USER_ROOT + '/' + currentUser.uid + '/chat');
+  }
+  function chatCacheLoad(){
+    var c = parseJSON(localStorage.getItem('chat_cache'), null);
+    if(c && typeof c === 'object' && c.msgs && typeof c.msgs === 'object'){
+      chatPathActive = String(c.path || '');
+      chatMessages = c.msgs;
+    }else{
+      chatPathActive = '';
+      chatMessages = {};
+    }
+  }
+  function chatCacheSave(){
+    try{ localStorage.setItem('chat_cache', JSON.stringify({path: chatPathActive, msgs: chatMessages})); }catch(_){ }
+  }
+  function chatRender(){
+    clearTimeout(chatRenderT);
+    chatRenderT = setTimeout(function(){
+      try{ if(typeof renderNotes === 'function') renderNotes(); }catch(_){ }
+      try{ if(typeof chatUpdateBadge === 'function') chatUpdateBadge(); }catch(_){ }
+    }, 60);
+  }
+  function stopChat(){ try{ if(chatRef) chatRef.off(); }catch(_){ } chatRef = null; }
+  var chatStartupDone = false;
+  function startChat(){
+    if(!db || !currentUser) return;
+    stopChat();
+    chatStartupDone = false;
+    var path = activeChatPath(); if(!path) return;
+    if(chatPathActive !== path){ chatMessages = {}; chatPathActive = path; chatCacheSave(); }
+    chatRef = db.ref(path).limitToLast(400);
+    var onChatError = function(err){
+      // Правила базы могут не пускать в узел chat — заметки тогда идут только
+      // через общий канал (двойная запись в saveNote), медленнее, но доходят.
+      status('Firebase: канал чата недоступен (' + ((err && err.message) || err) + ') — заметки идут через общий канал.');
+    };
+    chatRef.on('child_added', function(snap){
+      var v = snap.val(); if(!v) return;
+      // Пока не прошла первая загрузка истории — не пищим и не вибрируем на своё же прошлое.
+      var isFresh = chatStartupDone && !chatMessages[snap.key];
+      chatMessages[snap.key] = v; chatCacheSave(); chatRender();
+      if(isFresh){ try{ if(typeof chatNotifyNew === 'function') chatNotifyNew(v); }catch(_){ } }
+    }, onChatError);
+    chatRef.on('child_changed', function(snap){ var v = snap.val(); if(!v) return; chatMessages[snap.key] = v; chatCacheSave(); chatRender(); });
+    chatRef.on('child_removed', function(snap){ delete chatMessages[snap.key]; chatCacheSave(); chatRender(); });
+    migrateNotesToChat();
+    backfillChatToLegacy();
+    setTimeout(function(){ chatStartupDone = true; }, 1500);
+  }
+  // Сообщения, которые успели попасть только в чат-кэш (v138), доливаем в обычные
+  // заметки: дальше их разнесёт проверенный sync-канал независимо от правил базы.
+  function backfillChatToLegacy(){
+    try{
+      var notes = parseJSON(localStorage.getItem('notes'), []) || [];
+      if(!Array.isArray(notes)) notes = [];
+      var have = {}; notes.forEach(function(n){ if(n && n.id != null) have[String(n.id)] = 1; });
+      var added = false;
+      Object.keys(chatMessages).forEach(function(k){
+        var m = chatMessages[k];
+        if(!m || m.id == null || have[String(m.id)]) return;
+        var iso = m.ts ? new Date(Number(m.ts)).toISOString() : '';
+        notes.unshift({id: (Number(m.id) || String(m.id)), text: String(m.text || ''), img: String(m.img || ''), date: m.dateRu || (m.ts ? new Date(Number(m.ts)).toLocaleString('ru', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : ''), createdByUid: String(m.uid || ''), createdByName: String(m.name || ''), createdAtIso: iso, updatedAtIso: iso});
+        added = true;
+      });
+      if(added) localStorage.setItem('notes', JSON.stringify(notes));
+    }catch(_){ }
+  }
+  function migrateNotesToChat(){
+    // Старые заметки одноразово переносятся в чат. Ключ = старый id,
+    // поэтому даже одновременная миграция с двух устройств не создаёт дублей.
+    try{
+      if(localStorage.getItem('notes_chat_migrated_v1')) return;
+      var old = parseJSON(localStorage.getItem('notes'), []) || [];
+      if(!Array.isArray(old) || !old.length){ try{localStorage.setItem('notes_chat_migrated_v1','1');}catch(_){ } return; }
+      var path = activeChatPath(); if(!path) return;
+      var updates = {};
+      old.forEach(function(n){
+        if(!n || n.id == null) return;
+        var id = String(n.id);
+        var ts = Number(new Date(n.createdAtIso || 0).getTime() || 0) || Number(n.id) || Date.now();
+        updates[id] = {id: id, text: String(n.text || ''), img: String(n.img || ''), uid: String(n.createdByUid || ''), name: String(n.createdByName || n.createdByEmail || ''), ts: ts, dateRu: String(n.date || ''), editedAt: 0};
+      });
+      db.ref(path).update(updates).then(function(){ try{localStorage.setItem('notes_chat_migrated_v1','1');}catch(_){ } });
+    }catch(_){ }
+  }
+  window.lenferChatReady = function(){ return !!(chatRef && currentUser); };
+  window.lenferChatList = function(){
+    return Object.keys(chatMessages).map(function(k){ return chatMessages[k]; })
+      .sort(function(a,b){ return Number(b.ts || 0) - Number(a.ts || 0); });
+  };
+  window.lenferChatSend = function(text, img, forceId, extra){
+    if(!db || !currentUser) return false;
+    var path = activeChatPath(); if(!path) return false;
+    var id = String(forceId != null ? forceId : (String(Date.now()) + String(Math.floor(Math.random() * 900) + 100)));
+    var a = currentProfile || actorFromFirebaseUser(currentUser);
+    var rec = {id: id, text: String(text || ''), img: String(img || ''), uid: currentUser.uid, name: a.name || '', ts: Date.now(), dateRu: '', editedAt: 0};
+    if(extra && extra.topicId) rec.topicId = String(extra.topicId);
+    if(extra && extra.replyTo) rec.replyTo = extra.replyTo;
+    chatMessages[id] = rec; chatCacheSave(); chatRender(); // мгновенно у себя, не ждём сервер
+    db.ref(path).child(id).set(rec).catch(function(e){ status('Firebase: чат не принял сообщение (' + ((e && e.message) || e) + '). Оно уйдёт через общий канал.'); });
+    return true;
+  };
+  // Точечное обновление полей сообщения (используется и правкой текста, и закреплением).
+  window.lenferChatPatch = function(id, patch){
+    id = String(id || '');
+    var m = chatMessages[id]; if(!m) return false;
+    chatMessages[id] = Object.assign({}, m, patch); chatCacheSave(); chatRender();
+    var path = activeChatPath(); if(path) db.ref(path).child(id).update(patch).catch(function(){ });
+    return true;
+  };
+  window.lenferChatEdit = function(id, text, img){
+    return window.lenferChatPatch(id, {text: String(text || ''), img: String(img || ''), editedAt: Date.now()});
+  };
+  // Реакция пишется в свой лист узла reactions/<emoji>/<uid>, а не патчем всего
+  // сообщения: так два человека, ставящих реакции одновременно, не затирают друг друга.
+  window.lenferChatToggleReaction = function(id, emoji){
+    if(!db || !currentUser) return false;
+    id = String(id || '');
+    var m = chatMessages[id]; if(!m) return false;
+    var uid = currentUser.uid;
+    var a = currentProfile || actorFromFirebaseUser(currentUser);
+    var reactions = (m.reactions && typeof m.reactions === 'object') ? JSON.parse(JSON.stringify(m.reactions)) : {};
+    var already = !!(reactions[emoji] && reactions[emoji][uid]);
+    if(already){
+      delete reactions[emoji][uid];
+      if(!Object.keys(reactions[emoji]).length) delete reactions[emoji];
+    }else{
+      if(!reactions[emoji]) reactions[emoji] = {};
+      reactions[emoji][uid] = a.name || '';
+    }
+    chatMessages[id] = Object.assign({}, m, {reactions: reactions}); chatCacheSave(); chatRender();
+    var path = activeChatPath(); if(path){
+      var leaf = db.ref(path).child(id).child('reactions').child(emoji).child(uid);
+      if(already) leaf.remove().catch(function(){ }); else leaf.set(a.name || true).catch(function(){ });
+    }
+    return true;
+  };
+  window.lenferChatDelete = function(id){
+    id = String(id || '');
+    if(!chatMessages[id]) return false;
+    delete chatMessages[id]; chatCacheSave(); chatRender();
+    var path = activeChatPath(); if(path) db.ref(path).child(id).remove().catch(function(){ });
+    return true;
+  };
+  chatCacheLoad(); // офлайн-просмотр последних сообщений до входа
+
+  // ── Push-токен (FCM) ──
+  // Токен знает только нативный слой (Android/Firebase Messaging SDK), а привязать
+  // его к пользователю и общей базе может только этот, уже вошедший, JS. Native
+  // просто зовёт window.lenferFcmTokenReceived(token) при каждом запуске приложения
+  // и при обновлении токена — здесь сохраняем в профиль и в список участников
+  // текущей общей базы, чтобы облачная функция знала, кому слать пуш.
+  var pendingFcmToken = null;
+  function trySaveFcmToken(){
+    if(!pendingFcmToken || !db || !currentUser) return;
+    var token = pendingFcmToken;
+    var uid = currentUser.uid;
+    var updates = {};
+    updates['profiles/' + uid + '/fcmTokens/' + token] = true;
+    if(currentWorkspaceId) updates['workspaces/' + currentWorkspaceId + '/members/' + uid + '/fcmTokens/' + token] = true;
+    db.ref().update(updates).catch(function(){ });
+  }
+  window.lenferFcmTokenReceived = function(token){
+    token = String(token || '').trim();
+    if(!token) return;
+    pendingFcmToken = token;
+    trySaveFcmToken();
+  };
+
   function stopSync(){
     clearTimeout(dirtyTimer);
     clearInterval(loopTimer);
     clearInterval(pushTimer);
     stopRealtime();
+    stopChat();
   }
 
   function schedulePush(ms){
@@ -9074,6 +9684,8 @@ function quickIntegrityCheck(){
     patchStorage();
     relabel();
     startRealtime();
+    startChat();
+    trySaveFcmToken(); // токен мог прийти от native ещё до входа — теперь есть uid/база
     startLoop();
     startPushLoop();
     pullAll().then(function(){ status('Firebase: синхронизация аккаунта активна.', true); try{registerWorkspaceMember();renderDiagnostics();renderAutoBackups();renderActionLogMini();renderCollabPanel();}catch(_){ } });
@@ -9228,11 +9840,16 @@ function wmsRenderUpperStorage(){
   box.innerHTML='<div class="wms-card"><div class="wms-card-body"><div class="wms-product-name">Верхние ярусы</div><div class="wms-meta">Адрес: <b>SH-4-54-3-2</b> → ряд 4 · секция 54 · место 3 · ярус 2. Чётность — по секции.</div></div></div>'+noOccHint+'<div class="wms-upper-summary"><b>'+escHtml(rows.length)+'</b><span>в выборке</span><b>'+escHtml(occ)+'</b><span>занято</span><b>'+escHtml(empty)+'</b><span>пусто</span></div><div class="wms-actions wms-upper-result-actions"><button class="exi-btn primary" onclick="wmsCheckUpperOccupancy()">Проверить остатки</button><button class="exi-btn" onclick="wmsLoadUpperStorageCells()">Обновить ячейки</button><button class="exi-btn" onclick="wmsBackFromTool()">← Назад</button></div><div class="wms-upper-list">'+(cards||'<div class="no-results">Нет ячеек по выбранному фильтру</div>')+'</div>'+tail+(loaded?'<div class="wms-upper-note">Проверено остатков: '+escHtml(loaded)+' ячеек.</div>':'');
 }
 async function wmsLoadUpperStorageCells(){
+  wmsStopRequested=false;
   wmsSetStatus('Загружаю активные верхние ячейки хранения…','wait');
   try{
     const raw=await wmsCallNative('lookupWmsUpperStorageCells',[JSON.stringify({})],120000);
-    wmsUpperCells=wmsUpperRowsFromRawV62(raw); wmsUpperOccupancy={}; wmsFillUpperRowList(); wmsRenderUpperStorage();
+    wmsUpperCells=wmsUpperRowsFromRawV62(raw); wmsUpperOccupancy={}; wmsFillUpperRowList();
     if(!wmsUpperCells.length)throw new Error('WMS вернула пустой справочник. Проверь авторизацию WMS.');
+    // Новая выгрузка ячеек = новая доска обхода: сегодняшние пометки «проверено»/«исправлено»
+    // с прошлой выгрузки скрываются (нерешённые «проблемы» остаются видны).
+    setStickyDate('tier_work_date',rkTodayISO());
+    wmsRenderUpperStorage();
     wmsSetStatus('Загружено ячеек: '+wmsUpperCells.length+'. Выбери ряд и чётность секции.','ok');
   }catch(e){wmsSetStatus((e&&e.message)||'Не смог загрузить верхние ячейки.','err');}
 }
@@ -9321,11 +9938,29 @@ function wmsRenderStocksMobileV62(result){
   // Пришли сюда кнопкой «Открыть» с плитки обхода ярусов (Верхние ярусы/Первый ярус) —
   // режим не меняется, значит можно вернуться прямо к тому же списку без перезагрузки.
   const backToTierBtn=(wmsLookupKind==='tier1'||wmsLookupKind==='upper')
-    ?'<button class="exi-btn primary" style="width:100%;margin-bottom:10px;" onclick="wmsRenderTierStorageV64(\''+wmsLookupKind+'\')">← Назад к обходу ярусов</button>'
+    ?'<button class="exi-btn primary" style="width:100%;margin-bottom:10px;" onclick="wmsBackToTier()">← Назад к обходу ярусов</button>'
     :'';
   box.innerHTML=backToTierBtn+'<div class="wms-card">'+headerImg+'<div class="wms-card-body"><div class="wms-product-name">'+escHtml(title)+'</div><div class="wms-meta">Строк: <b>'+escHtml(rows.length)+'</b> · остаток: <b>'+escHtml(rows.reduce((n,r)=>n+(Number(r.quantity)||0),0))+'</b> шт.</div></div></div><div class="wms-actions wms-result-actions">'+wmsStorageToggleButton()+'<button class="exi-btn primary" onclick="wmsImportLastStocksToCatalog()">В товары</button><button class="exi-btn" onclick="wmsImportLastStocksToHH11()">В HH 1-1</button><button class="exi-btn" onclick="wmsCopyCells()">Список</button></div><div class="wms-stock-list">'+cards+'</div>';
 }
 wmsRenderResult=wmsRenderStocksMobileV62;
+
+function wmsBackToTier(){
+  const kind=(wmsLookupKind==='tier1')?'tier1':'upper';
+  wmsRenderTierStorageV64(kind);
+  const st=window.wmsTierReturnState; window.wmsTierReturnState=null;
+  if(!st)return;
+  setTimeout(()=>{
+    window.scrollTo(0,st.scrollY||0);
+    const el=st.cellId?document.getElementById('tier-tile-'+st.cellId):null;
+    if(el){
+      const r=el.getBoundingClientRect();
+      // Если после перерисовки плитка уехала с экрана (список чуть изменился) — доводим до неё.
+      if(r.top<0||r.bottom>window.innerHeight)el.scrollIntoView({block:'center'});
+      el.classList.add('tier-tile-return');
+      setTimeout(()=>{try{el.classList.remove('tier-tile-return');}catch(_){}},1600);
+    }
+  },30);
+}
 
 function wmsIssueZoneV62(addr){const a=wmsUpperAddr(addr);if(a.startsWith('HH-'))return 'cold';if(a.startsWith('SH-'))return 'dry';return 'other';}
 function wmsIssueDateV62(r){return wmsDateIsoDay(r.completedAt||r.createdAt||r.operationStartedAt||'');}
@@ -9374,9 +10009,15 @@ async function wmsCheckUpperOccupancy(){
   const cells=wmsUpperFiltered();
   if(!cells.length){wmsSetStatus('По фильтру нет ячеек.','err');return;}
   const chunkSize=60; let done=0;
+  wmsStopRequested=false;
   wmsSetStatus('Проверяю остатки: 0 / '+cells.length+'…','wait');
   try{
     for(let i=0;i<cells.length;i+=chunkSize){
+      if(wmsStopRequested){
+        wmsRenderUpperStorage();
+        wmsSetStatus('Остановлено. Проверено '+Math.min(done,cells.length)+' из '+cells.length+' — что успело, уже на экране.','');
+        return;
+      }
       const chunk=cells.slice(i,i+chunkSize);
       const raw=await wmsCallNative('lookupWmsUpperStorageOccupancy',[JSON.stringify(chunk.map(c=>({cellId:c.cellId,address:c.address,zoneName:c.zoneName})))],180000);
       // защитный разбор: пробуем items → cells → голый массив
@@ -9694,6 +10335,7 @@ function wmsTier1FilterChanged(){wmsUpperPageV64['tier1']=0;wmsFillTierRowListV6
 wmsLoadUpperStorageCells=async function(){
   const active=wmsLookupKind==='tier1'?'tier1':'upper';
   wmsUpperCells=[];
+  wmsStopRequested=false;
   wmsSetStatus('Загружаю активные ячейки хранения HH/SH…','wait');
   try{
     const raw=await wmsCallNative('lookupWmsUpperStorageCells',[JSON.stringify({})],120000,(progress)=>{
@@ -9715,6 +10357,9 @@ wmsLoadUpperStorageCells=async function(){
     wmsFillTierRowListV64('upper');
     wmsFillTierRowListV64('tier1');
     if(!wmsUpperCells.length)throw new Error('WMS вернула пустой справочник. Проверь авторизацию WMS.');
+    // Новая выгрузка ячеек = новая доска обхода: сегодняшние «проверено»/«исправлено»
+    // с прошлой выгрузки скрываются (нерешённые «проблемы» остаются видны).
+    setStickyDate('tier_work_date',rkTodayISO());
     wmsRenderTierStorageV64(active);
     const upperCount=wmsTierCellsV64('upper').length;
     const tier1Count=wmsTierCellsV64('tier1').length;
@@ -9729,9 +10374,12 @@ wmsCheckUpperOccupancy=async function(){
   if(!cells.length){wmsSetStatus('По фильтру нет ячеек.','err');return;}
   const chunkSize=60;
   let done=0;
+  wmsStopRequested=false;
+  let sessionExpired=false,stoppedByUser=false;
   wmsSetStatus('Проверяю '+view.shortTitle.toLowerCase()+': 0 / '+cells.length+'…','wait');
   try{
     for(let i=0;i<cells.length;i+=chunkSize){
+      if(wmsStopRequested){stoppedByUser=true;break;}
       const chunk=cells.slice(i,i+chunkSize);
       const raw=await wmsCallNative('lookupWmsUpperStorageOccupancy',[JSON.stringify(chunk.map(c=>({cellId:c.cellId,address:c.address,zoneName:c.zoneName})))],180000);
       const value=raw&&raw.value?raw.value:raw||{};
@@ -9745,9 +10393,21 @@ wmsCheckUpperOccupancy=async function(){
       });
       done+=chunk.length;
       wmsRenderTierStorageV64(kind);
+      // Сессия протухла посреди пачки — Java уже начал тихо обновлять WMS в фоне.
+      // Не долбим оставшиеся ячейки тем же протухшим токеном, просим повторить чуть позже.
+      if(value.sessionExpired){sessionExpired=true;break;}
+      if(value.stopped){stoppedByUser=true;break;}
       wmsSetStatus('Проверяю '+view.shortTitle.toLowerCase()+': '+Math.min(done,cells.length)+' / '+cells.length+'…','wait');
     }
     wmsRenderTierStorageV64(kind);
+    if(sessionExpired){
+      wmsSetStatus('Сессия ВМС протухла посреди проверки — уже обновляю её в фоне. Подожди секунд 15–20 и нажми «Проверить остатки» ещё раз.','err');
+      return;
+    }
+    if(stoppedByUser){
+      wmsSetStatus('Остановлено. Проверено '+Math.min(done,cells.length)+' из '+cells.length+' — что успело, уже на экране.','');
+      return;
+    }
     const checked=cells.filter(c=>Object.prototype.hasOwnProperty.call(wmsUpperOccupancy||{},c.cellId));
     const errCount=checked.filter(c=>wmsUpperOccupancy[c.cellId].hasError).length;
     const occupied=checked.filter(c=>wmsUpperOccupancy[c.cellId].hasStock===true).length;

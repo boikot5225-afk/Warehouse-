@@ -1,6 +1,6 @@
-/* L'Enfer PWA service worker — v137: починен выбор файла в приложении (аватарка, фото к заметкам) — onShowFileChooser в WebView
+/* L'Enfer PWA service worker — v153: чат на весь экран, поверх нижней панели навигации
    Network-first worker: old cached index.html should not haunt the app. */
-const SW_VERSION = 'lenfer-v137-file-chooser';
+const SW_VERSION = 'lenfer-v153-chat-fullscreen';
 
 self.addEventListener('install', (event) => {
   self.skipWaiting();

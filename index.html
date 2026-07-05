@@ -13,19 +13,19 @@
 <link href="./icons/icon-192.png" rel="apple-touch-icon"/>
 <title>L'Enfer</title>
 <!-- build: pwa-json-barcodes-v65-tier1-multirow -->
-<script src="./assets/js/vendor/zxing.min.js?v=20260704-v137-cache-fix"></script>
+<script src="./assets/js/vendor/zxing.min.js?v=20260705-v153-cache-fix"></script>
 <script src="./assets/js/vendor/pdf.min.js?v=20260630-v93-pdf"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
-<script id="auth-gate-v43" src="./assets/js/auth-gate.js?v=20260704-v137-cache-fix"></script>
-<link href="./assets/css/app.css?v=20260704-v137-cache-fix" rel="stylesheet"/>
-<meta content="cache-fix-v137" name="lenfer-build"/></head>
+<script id="auth-gate-v43" src="./assets/js/auth-gate.js?v=20260705-v153-cache-fix"></script>
+<link href="./assets/css/app.css?v=20260705-v153-cache-fix" rel="stylesheet"/>
+<meta content="cache-fix-v153" name="lenfer-build"/></head>
 <body>
 <div class="app-error-banner" id="app-error-banner"></div>
-<script src="./assets/js/error-banner.js?v=20260704-v137-cache-fix"></script>
-<script src="./assets/js/pwa-and-search-boot.js?v=20260704-v137-cache-fix"></script>
+<script src="./assets/js/error-banner.js?v=20260705-v153-cache-fix"></script>
+<script src="./assets/js/pwa-and-search-boot.js?v=20260705-v153-cache-fix"></script>
 <header>
 <div class="header-top">
 <div class="brand">
@@ -399,13 +399,32 @@
 </div>
 </details>
 </div>
-<!-- NOTES -->
+<!-- CHAT (бывшие Заметки) -->
 <div id="tab-notes" style="display:none">
+<!-- Экран 1: список тем -->
+<div id="chat-topics-screen">
 <div class="section-head">
-<div><div class="section-title">Заметки</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">Общий форум — пишут все, видно кто. Синхронизируется в общей базе.</div></div>
-<button class="add-btn" onclick="openModal('note-modal')">+ Написать</button>
+<div><div class="section-title">Чат</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">Выбери тему — сообщения приходят всем мгновенно.</div></div>
+<button class="add-btn" onclick="chatAddTopic()">+ Тема</button>
 </div>
-<div id="notes-list"></div>
+<div id="chat-topics-list" class="chat-topics-list"></div>
+</div>
+<!-- Экран 2: переписка в теме -->
+<div id="chat-thread-screen" style="display:none">
+<div class="chat-thread-head">
+<button class="chat-back-btn" onclick="chatBackToTopics()">←</button>
+<div class="chat-thread-title" id="chat-thread-title">Общее</div>
+</div>
+<div id="chat-pinned" class="chat-pinned-strip" style="display:none"></div>
+<div id="notes-list" class="chat-messages"></div>
+<div id="note-reply-preview" class="chat-reply-preview" style="display:none"></div>
+<div class="chat-composer">
+<div class="chat-composer-photo" id="note-photo" onclick="document.getElementById('note-photo-inp').click()">📷</div>
+<input accept="image/*" capture="environment" id="note-photo-inp" onchange="previewPhotoChat('note-photo',this)" style="display:none" type="file"/>
+<textarea class="chat-composer-input" id="note-text" placeholder="Сообщение…" rows="1" oninput="chatAutoGrow(this)"></textarea>
+<button class="chat-composer-send" onclick="saveNote()">➤</button>
+</div>
+</div>
 </div>
 <!-- EO -->
 <div id="tab-eo" style="display:none">
@@ -1059,7 +1078,7 @@
 <button class="navbtn" data-tab="wms" onclick="switchTab('wms')"><span class="ico">🗄️</span><span class="lbl">WMS</span></button>
 <button class="navbtn" data-tab="catalog" onclick="switchTab('catalog')"><span class="ico">📦</span><span class="lbl">Товары</span></button>
 <button class="navbtn" data-tab="rk" onclick="switchTab('rk')"><span class="ico">🔎</span><span class="lbl">РК</span></button>
-<button class="navbtn" data-tab="more" onclick="openMoreMenu()"><span class="ico">☰</span><span class="lbl">Ещё</span></button>
+<button class="navbtn" data-tab="more" onclick="openMoreMenu()"><span class="ico">☰<span id="chat-badge-nav" class="chat-badge-dot" style="display:none"></span></span><span class="lbl">Ещё</span></button>
 </nav>
 <div class="more-sheet-overlay" id="more-sheet" onclick="if(event.target===this)closeMoreMenu()" style="display:none">
   <div class="more-sheet" role="dialog" aria-modal="true" aria-label="Ещё">
@@ -1072,7 +1091,7 @@
       <button onclick="moreGo('report')"><span>📋</span><b>Отчёт</b><small>Сводка смены</small></button>
       <button onclick="moreGo('calc')"><span>🧮</span><b>Счёт</b><small>Пересчёт ряда</small></button>
       <button onclick="moreGo('eo')"><span>🏷️</span><b>ЕО</b><small>Коды и печать</small></button>
-      <button onclick="moreGo('notes')"><span>📝</span><b>Заметки</b><small>Быстрые записи</small></button>
+      <button onclick="moreGo('notes')"><span>💬</span><b>Чат<span id="chat-badge-menu" class="chat-badge" style="display:none"></span></b><small>Обсуждение смены</small></button>
       <button onclick="moreGo('creds')"><span>🔑</span><b>Доступы</b><small>Локально</small></button>
       <button onclick="moreGo('service')"><span>⚙️</span><b>Сервис</b><small>Бэкап и база</small></button>
     </div>
@@ -1118,30 +1137,15 @@
 </div>
 </div>
 </div>
-<!-- NOTE MODAL -->
-<div class="overlay" id="note-modal" onclick="if(event.target===this)closeModal('note-modal')" style="display:none">
-<div class="modal">
-<div class="modal-title">Новая заметка</div>
-<label class="modal-lbl">Текст *</label>
-<textarea class="modal-inp" id="note-text" placeholder="Напишите заметку…" rows="5" style="resize:none;"></textarea>
-<label class="modal-lbl">Фото</label>
-<div class="modal-photo" id="note-photo" onclick="document.getElementById('note-photo-inp').click()">📷 Добавить фото</div>
-<input accept="image/*" capture="environment" id="note-photo-inp" onchange="previewPhoto('note-photo',this)" style="display:none" type="file"/>
-<div class="modal-btns">
-<button class="modal-cancel" onclick="closeModal('note-modal')">Отмена</button>
-<button class="modal-save" onclick="saveNote()">Сохранить</button>
-</div>
-</div>
-</div>
 <!-- EDIT NOTE MODAL -->
 <div class="overlay" id="edit-note-modal" onclick="if(event.target===this)closeModal('edit-note-modal')" style="display:none">
 <div class="modal">
-<div class="modal-title">Редактировать заметку</div>
+<div class="modal-title">Редактировать сообщение</div>
 <label class="modal-lbl">Текст *</label>
 <textarea class="modal-inp" id="edit-note-text" rows="5" style="resize:none;"></textarea>
 <label class="modal-lbl">Фото</label>
 <div class="modal-photo" id="edit-note-photo" onclick="document.getElementById('edit-note-photo-inp').click()">📷 Изменить фото</div>
-<input accept="image/*" capture="environment" id="edit-note-photo-inp" onchange="previewPhoto('edit-note-photo',this)" style="display:none" type="file"/>
+<input accept="image/*" capture="environment" id="edit-note-photo-inp" onchange="previewPhotoChat('edit-note-photo',this)" style="display:none" type="file"/>
 <input id="edit-note-id" type="hidden"/>
 <div class="modal-btns">
 <button class="modal-cancel" onclick="closeModal('edit-note-modal')">Отмена</button>
@@ -1213,6 +1217,6 @@
 </div>
 </div>
 </div>
-<script src="./assets/data/static-data.js?v=20260704-v137-cache-fix"></script><script src="./assets/js/app.js?v=20260704-v137-cache-fix"></script><script src="./assets/js/report-wms-prototype.js?v=20260704-v137-cache-fix"></script>
+<script src="./assets/data/static-data.js?v=20260705-v153-cache-fix"></script><script src="./assets/js/app.js?v=20260705-v153-cache-fix"></script><script src="./assets/js/report-wms-prototype.js?v=20260705-v153-cache-fix"></script>
 </body>
 </html>
