@@ -7256,6 +7256,10 @@ function makeBackupData(){
   try{
     for(let i=0;i<localStorage.length;i++){
       const k=localStorage.key(i);
+      // Не тащим в снимок сам ключ автобэкапов — иначе каждый новый автобэкап
+      // содержит внутри себя все предыдущие, а те — свои предыдущие, и т.д.
+      // (взрывной рост места вместо линейного, из-за него и кончалась квота).
+      if(k===AUTO_BACKUP_KEY)continue;
       localSnapshot[k]=localStorage.getItem(k);
     }
   }catch(e){}
@@ -7288,7 +7292,6 @@ function makeBackupData(){
     chat_cache:getObj('chat_cache'),
     chat_topics:getChatTopics(),
     localStorage_snapshot:localSnapshot,
-    catalog_snapshot:CATALOG,
     backup_version:23,
     exported_at:new Date().toISOString()
   };
