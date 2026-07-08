@@ -29,16 +29,30 @@ function mirrorKeyFor(key){
   return '';
 }
 const set = (key, val) => {
+  const json=JSON.stringify(val);
   try {
-    const json=JSON.stringify(val);
     localStorage.setItem(key, json);
     const mirror=mirrorKeyFor(key);
     if(mirror){
       localStorage.setItem(mirror, json);
       localStorage.setItem(key+'__saved_at', String(Date.now()));
     }
+    return;
   }
-  catch(e) { storageFail(key,e); }
+  catch(e) {
+    // Автобэкапы — самый большой кусок, который можно безопасно снести без
+    // потери реальных данных пользователя (это лишь страховочные копии).
+    // При переполнении квоты чистим их и пробуем записать ещё раз один
+    // раз, прежде чем показывать баннер об ошибке.
+    if(e && e.name==='QuotaExceededError' && key!==AUTO_BACKUP_KEY && localStorage.getItem(AUTO_BACKUP_KEY)){
+      try{
+        localStorage.removeItem(AUTO_BACKUP_KEY);
+        localStorage.setItem(key, json);
+        return;
+      }catch(e2){ storageFail(key,e2); return; }
+    }
+    storageFail(key,e);
+  }
 };
 function getSafeCredentials(){
   try{
@@ -8595,15 +8609,25 @@ function quickIntegrityCheck(){
   }
 
   function rawSetLocal(key, val){
+    var json = JSON.stringify(normalizeValueForKey(key, val));
     try{
-      var json = JSON.stringify(normalizeValueForKey(key, val));
       localStorage.setItem(key, json);
       var mirror = mirrorKeyForSync(key);
       if(mirror) localStorage.setItem(mirror, json);
       if(key === 'cells') localStorage.setItem('cells__saved_at', String(Date.now()));
       if(key === 'cell_favorites') localStorage.setItem('cell_favorites__saved_at', String(Date.now()));
     }catch(e){
+      // Та же страховка, что и в обычном set(): чистим автобэкапы (не
+      // реальные данные) и пробуем записать ещё раз перед тем как сдаться.
+      if(e && e.name==='QuotaExceededError' && key!==AUTO_BACKUP_KEY && localStorage.getItem(AUTO_BACKUP_KEY)){
+        try{
+          localStorage.removeItem(AUTO_BACKUP_KEY);
+          localStorage.setItem(key, json);
+          return;
+        }catch(e2){ try{ storageFail(key,e2); }catch(_){ } return; }
+      }
       try{ console.warn('sync local set failed', key, e); }catch(_){ }
+      try{ if(e && e.name==='QuotaExceededError') storageFail(key,e); }catch(_){ }
     }
   }
 
