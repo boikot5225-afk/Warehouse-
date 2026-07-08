@@ -22,6 +22,33 @@ function storageFail(key,e){
     if(b){b.style.display='block';b.textContent='Не удалось сохранить данные в браузере. Сделай JSON-бэкап и очисти лишнее.';}
   } catch(_){}
 }
+// Firebase SDK пишет свои служебные ключи (например firebase:previous_websocket_failure,
+// firebase:host:...) напрямую через localStorage.setItem, минуя set()/rawSetLocal() —
+// поэтому переполнение квоты там наш собственный retry не ловил. Патчим сам
+// Storage.prototype.setItem один раз: при QuotaExceededError сносим автобэкапы
+// (disposable, не реальные данные) и повторяем один раз — это работает для
+// абсолютно любого вызывающего кода, не только нашего.
+(function(){
+  try{
+    var AUTO_BACKUP_KEY_EARLY='lenfer_auto_backups_v1';
+    var origSetItem=Storage.prototype.setItem;
+    Storage.prototype.setItem=function(key,value){
+      try{
+        origSetItem.call(this,key,value);
+      }catch(e){
+        if(e && e.name==='QuotaExceededError' && key!==AUTO_BACKUP_KEY_EARLY && this.getItem(AUTO_BACKUP_KEY_EARLY)){
+          try{
+            origSetItem.call(this,AUTO_BACKUP_KEY_EARLY,'[]');
+            origSetItem.call(this,key,value);
+            return;
+          }catch(e2){ try{ storageFail(key,e2); }catch(_){ } throw e2; }
+        }
+        try{ if(e && e.name==='QuotaExceededError') storageFail(key,e); }catch(_){ }
+        throw e;
+      }
+    };
+  }catch(_){ }
+})();
 function mirrorKeyFor(key){
   if(key==='credentials')return 'credentials__mirror';
   if(key==='cells')return 'cells__mirror';
