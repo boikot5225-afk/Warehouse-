@@ -4846,13 +4846,11 @@ function saveNote(){
   const id=Date.now()+Math.floor(Math.random()*1000);
   const topicId=chatActiveTopicId||CHAT_GENERAL_TOPIC;
   const replyTo=chatReplyDraft?{id:chatReplyDraft.id,name:chatReplyDraft.name,uid:chatReplyDraft.uid,text:chatReplyDraft.text}:null;
-  // Канал 1: мгновенный чат Firebase (если доступен).
-  try{ if(typeof window.lenferChatSend==='function')window.lenferChatSend(text,img,id,{topicId:topicId,replyTo:replyTo}); }catch(_){}
-  // Канал 2: страховка — обычные заметки через общий sync (дубль схлопнется по id).
-  const notes=getNotes();
-  notes.unshift(createMeta({id:id,text,img,topicId:topicId,replyTo:replyTo,date:new Date().toLocaleString('ru',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'})}));
-  try{set('notes',notes);}catch(e){alert('Фото слишком большое, не хватает места.');return;}
-  try{ if(window.fbPushNow)window.fbPushNow(); }catch(_){}
+  // Раньше тут же дублировали сообщение в notes как страховку — на случай,
+  // если у чата нет прав на запись в базу. Тот баг с правилами давно починили
+  // (см. database.rules.json), а страховка продолжала бесконечно раздувать
+  // notes. Теперь только настоящий канал чата.
+  try{ window.lenferChatSend(text,img,id,{topicId:topicId,replyTo:replyTo}); }catch(e){ alert('Не получилось отправить: '+((e&&e.message)||e)); return; }
   const ta=document.getElementById('note-text');ta.value='';ta.style.height='auto';
   const p=document.getElementById('note-photo');p.innerHTML='📷';p.dataset.img='';
   chatClearReplyDraft();
@@ -4872,10 +4870,7 @@ function updateNote(){
   const text=document.getElementById('edit-note-text').value.trim();
   if(!text){alert('Введите текст');return;}
   const img=document.getElementById('edit-note-photo').dataset.img||'';
-  try{ if(typeof window.lenferChatEdit==='function')window.lenferChatEdit(id,text,img); }catch(_){}
-  // Правим и в страховочном канале, чтобы у всех сошлось при любых правилах базы.
-  try{set('notes',getNotes().map(n=>String(n.id)!==id?n:touchMeta({...n,text,img})));}catch(e){alert('Фото слишком большое.');return;}
-  try{ if(window.fbPushNow)window.fbPushNow(); }catch(_){}
+  try{ window.lenferChatEdit(id,text,img); }catch(e){ alert('Не получилось сохранить правку: '+((e&&e.message)||e)); return; }
   closeModal('edit-note-modal');
   renderNotes();
 }
@@ -4883,9 +4878,7 @@ function delNote(id){
   const note=chatListLocal().find(n=>String(n.id)===String(id));if(!note)return;
   if(!chatMsgIsMine(note)){alert('Это сообщение другого пользователя — удалить может только автор.');return;}
   if(!confirm('Удалить сообщение?'))return;
-  try{ if(typeof window.lenferChatDelete==='function')window.lenferChatDelete(id); }catch(_){}
-  set('notes',getNotes().filter(n=>String(n.id)!==String(id)));
-  try{ if(window.fbPushNow)window.fbPushNow(); }catch(_){}
+  try{ window.lenferChatDelete(id); }catch(e){ alert('Не получилось удалить: '+((e&&e.message)||e)); return; }
   renderNotes();
 }
 function chatMessageCard(n){
