@@ -20,11 +20,16 @@ function toggleTheme() {
 // работать без изменений — подмена происходит здесь, в одном месте:
 // синхронный доступ идёт через in-memory кэш, IndexedDB читается/пишется
 // под капотом асинхронно.
-var HEAVY_KEYS=['notes','members_dir','chat_cache'];
+// lenfer_auto_backups_v1 тоже сюда: даже без взрывного самовложения (см. ниже)
+// каждый автобэкап — это осознанно полная копия всех данных для восстановления,
+// включая заметки/чат/аватарки. До 7 таких копий в localStorage — и это стало
+// самым тяжёлым, что там лежало (4+ МБ), даже после того как notes/chat_cache/
+// members_dir сами по себе выехали в IndexedDB.
+var HEAVY_KEYS=['notes','members_dir','chat_cache','lenfer_auto_backups_v1'];
 var __heavyCache={};
 var __heavyReady={};
 function isHeavyKey(key){ return HEAVY_KEYS.indexOf(key)>=0; }
-function heavyDefaultFor(key){ return key==='notes' ? [] : {}; }
+function heavyDefaultFor(key){ return (key==='notes'||key==='lenfer_auto_backups_v1') ? [] : {}; }
 var IDB_DB_NAME='lenfer_idb_v1';
 var IDB_STORE='kv';
 var idbDbPromise=null;
@@ -7429,8 +7434,8 @@ function backupText(pretty){
   return JSON.stringify(makeBackupData(),null,pretty?2:0);
 }
 const AUTO_BACKUP_KEY='lenfer_auto_backups_v1';
-function getAutoBackups(){try{const v=JSON.parse(localStorage.getItem(AUTO_BACKUP_KEY)||'[]');return Array.isArray(v)?v:[];}catch(e){return [];}}
-function saveAutoBackups(arr){try{localStorage.setItem(AUTO_BACKUP_KEY,JSON.stringify((arr||[]).slice(0,7)));}catch(e){console.warn('auto backup save failed',e);}}
+function getAutoBackups(){try{const v=get(AUTO_BACKUP_KEY);return Array.isArray(v)?v:[];}catch(e){return [];}}
+function saveAutoBackups(arr){try{set(AUTO_BACKUP_KEY,(arr||[]).slice(0,7));}catch(e){console.warn('auto backup save failed',e);}}
 function createAutoBackup(label,throttleMs){
   try{
     const nowTs=Date.now();
@@ -8590,6 +8595,7 @@ HEAVY_KEYS.forEach(function(k){
         if(typeof chatRender==='function') chatRender();
         if(typeof chatUpdateBadge==='function') chatUpdateBadge();
       }
+      if(k==='lenfer_auto_backups_v1' && typeof renderAutoBackups==='function') renderAutoBackups();
     }catch(_){ }
   });
 });
