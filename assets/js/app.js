@@ -9542,26 +9542,7 @@ function quickIntegrityCheck(){
     chatRef.on('child_changed', function(snap){ var v = snap.val(); if(!v) return; chatMessages[snap.key] = v; chatCacheSave(); chatRender(); });
     chatRef.on('child_removed', function(snap){ delete chatMessages[snap.key]; chatCacheSave(); chatRender(); });
     migrateNotesToChat();
-    backfillChatToLegacy();
     setTimeout(function(){ chatStartupDone = true; }, 1500);
-  }
-  // Сообщения, которые успели попасть только в чат-кэш (v138), доливаем в обычные
-  // заметки: дальше их разнесёт проверенный sync-канал независимо от правил базы.
-  function backfillChatToLegacy(){
-    try{
-      var notes = parseJSON(localStorage.getItem('notes'), []) || [];
-      if(!Array.isArray(notes)) notes = [];
-      var have = {}; notes.forEach(function(n){ if(n && n.id != null) have[String(n.id)] = 1; });
-      var added = false;
-      Object.keys(chatMessages).forEach(function(k){
-        var m = chatMessages[k];
-        if(!m || m.id == null || have[String(m.id)]) return;
-        var iso = m.ts ? new Date(Number(m.ts)).toISOString() : '';
-        notes.unshift({id: (Number(m.id) || String(m.id)), text: String(m.text || ''), img: String(m.img || ''), date: m.dateRu || (m.ts ? new Date(Number(m.ts)).toLocaleString('ru', {day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}) : ''), createdByUid: String(m.uid || ''), createdByName: String(m.name || ''), createdAtIso: iso, updatedAtIso: iso});
-        added = true;
-      });
-      if(added) localStorage.setItem('notes', JSON.stringify(notes));
-    }catch(_){ }
   }
   function migrateNotesToChat(){
     // Старые заметки одноразово переносятся в чат. Ключ = старый id,
