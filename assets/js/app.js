@@ -13,8 +13,85 @@ function toggleTheme() {
 (function(){ try { const t=localStorage.getItem('theme'); if(t){document.documentElement.setAttribute('data-theme',t);} } catch(e){} })();
 
 // ── STORAGE ──
-const get = key => { try { return JSON.parse(localStorage.getItem(key)||'[]'); } catch(e) { return []; } };
-const getObj = key => { try { return JSON.parse(localStorage.getItem(key)||'{}'); } catch(e) { return {}; } };
+// Тяжёлые ключи (фото в заметках/чате, кэш аватарок) переехали в IndexedDB —
+// там лимит на порядки больше, чем 5-10 МБ localStorage, из-за которых и
+// ловили QuotaExceededError. Все существующие вызовы get('notes')/
+// getObj('members_dir')/set('notes',...) и т.п. по всему файлу продолжают
+// работать без изменений — подмена происходит здесь, в одном месте:
+// синхронный доступ идёт через in-memory кэш, IndexedDB читается/пишется
+// под капотом асинхронно.
+var HEAVY_KEYS=['notes','members_dir','chat_cache'];
+var __heavyCache={};
+var __heavyReady={};
+function isHeavyKey(key){ return HEAVY_KEYS.indexOf(key)>=0; }
+function heavyDefaultFor(key){ return key==='notes' ? [] : {}; }
+var IDB_DB_NAME='lenfer_idb_v1';
+var IDB_STORE='kv';
+var idbDbPromise=null;
+function idbOpen(){
+  if(idbDbPromise) return idbDbPromise;
+  idbDbPromise=new Promise(function(resolve){
+    try{
+      if(!window.indexedDB){ resolve(null); return; }
+      var req=indexedDB.open(IDB_DB_NAME,1);
+      req.onupgradeneeded=function(){ try{ req.result.createObjectStore(IDB_STORE); }catch(_){ } };
+      req.onsuccess=function(){ resolve(req.result); };
+      req.onerror=function(){ resolve(null); };
+    }catch(_){ resolve(null); }
+  });
+  return idbDbPromise;
+}
+function idbGet(key){
+  return idbOpen().then(function(db){
+    if(!db) return undefined;
+    return new Promise(function(resolve){
+      try{
+        var tx=db.transaction(IDB_STORE,'readonly');
+        var req=tx.objectStore(IDB_STORE).get(key);
+        req.onsuccess=function(){ resolve(req.result); };
+        req.onerror=function(){ resolve(undefined); };
+      }catch(_){ resolve(undefined); }
+    });
+  });
+}
+function idbSet(key,value){
+  return idbOpen().then(function(db){
+    if(!db) return false;
+    return new Promise(function(resolve){
+      try{
+        var tx=db.transaction(IDB_STORE,'readwrite');
+        tx.objectStore(IDB_STORE).put(value,key);
+        tx.oncomplete=function(){ resolve(true); };
+        tx.onerror=function(){ resolve(false); };
+      }catch(_){ resolve(false); }
+    });
+  }).catch(function(){ return false; });
+}
+function heavyLoadAsync(key){
+  if(__heavyReady[key]) return __heavyReady[key];
+  __heavyReady[key]=idbGet(key).then(function(v){
+    if(v!==undefined && v!==null){ __heavyCache[key]=v; return; }
+    // Первый запуск после обновления: если в IndexedDB ещё ничего нет, но
+    // в localStorage лежит старая копия — подхватываем её один раз и больше
+    // localStorage для этого ключа не используем (место освобождается сразу).
+    var raw=null;
+    try{ raw=localStorage.getItem(key); }catch(_){ }
+    var parsed=heavyDefaultFor(key);
+    if(raw){ try{ parsed=JSON.parse(raw); }catch(_){ } }
+    __heavyCache[key]=parsed;
+    try{ idbSet(key, parsed); }catch(_){ }
+    if(raw){ try{ localStorage.removeItem(key); }catch(_){ } }
+  }).catch(function(){ __heavyCache[key]=heavyDefaultFor(key); });
+  return __heavyReady[key];
+}
+const get = key => {
+  if(isHeavyKey(key)) return __heavyCache[key]!==undefined ? __heavyCache[key] : heavyDefaultFor(key);
+  try { return JSON.parse(localStorage.getItem(key)||'[]'); } catch(e) { return []; }
+};
+const getObj = key => {
+  if(isHeavyKey(key)) return __heavyCache[key]!==undefined ? __heavyCache[key] : heavyDefaultFor(key);
+  try { return JSON.parse(localStorage.getItem(key)||'{}'); } catch(e) { return {}; }
+};
 function storageFail(key,e){
   console.error('localStorage set failed:', key, e);
   try {
@@ -56,6 +133,14 @@ function mirrorKeyFor(key){
   return '';
 }
 const set = (key, val) => {
+  if(isHeavyKey(key)){
+    __heavyCache[key]=val;
+    try{ idbSet(key, val); }catch(_){ }
+    // На случай, если старая копия ещё лежала в localStorage (миграция ещё
+    // не успела отработать) — убираем её, раз актуальная версия теперь в IDB.
+    try{ localStorage.removeItem(key); }catch(_){ }
+    return;
+  }
   const json=JSON.stringify(val);
   try {
     localStorage.setItem(key, json);
@@ -8498,6 +8583,24 @@ function startAppStable(){
 startAppStable();
 window.__APP_STABLE_BUILD__='v143-eo-marks-live';
 
+// Подтягиваем тяжёлые ключи из IndexedDB (или мигрируем разово из localStorage,
+// если IDB ещё пустая) в фоне, не блокируя старт. Экраны, которые успели
+// отрисоваться раньше на дефолтном пустом значении, перерисовываются сами,
+// как только реальные данные подъедут.
+HEAVY_KEYS.forEach(function(k){
+  heavyLoadAsync(k).then(function(){
+    try{
+      if(k==='notes' && typeof renderNotes==='function') renderNotes();
+      if(k==='members_dir' && typeof renderCollabPanel==='function') renderCollabPanel();
+      if(k==='chat_cache' && typeof chatCacheLoad==='function'){
+        chatCacheLoad();
+        if(typeof chatRender==='function') chatRender();
+        if(typeof chatUpdateBadge==='function') chatUpdateBadge();
+      }
+    }catch(_){ }
+  });
+});
+
 function hideProductDropdownsOnOutsideClick(e){
   try{
     if(e.target.closest && e.target.closest('.smart-search-box'))return;
@@ -8637,6 +8740,12 @@ function quickIntegrityCheck(){
   }
 
   function localGet(key){
+    // 'notes' — единственный тяжёлый ключ (см. верх файла) из тех, что реально
+    // участвуют в SYNC_KEYS; читаем его из того же in-memory/IndexedDB кэша,
+    // а не напрямую из localStorage, где его больше нет после миграции.
+    if(typeof isHeavyKey==='function' && isHeavyKey(key)){
+      return __heavyCache[key]!==undefined ? __heavyCache[key] : null;
+    }
     return parseJSON(localStorage.getItem(key), null);
   }
 
@@ -8661,6 +8770,10 @@ function quickIntegrityCheck(){
   }
 
   function rawSetLocal(key, val){
+    if(typeof isHeavyKey==='function' && isHeavyKey(key)){
+      set(key, normalizeValueForKey(key, val));
+      return;
+    }
     var json = JSON.stringify(normalizeValueForKey(key, val));
     try{
       localStorage.setItem(key, json);
@@ -9079,7 +9192,7 @@ function quickIntegrityCheck(){
         var m=membersCache[uid]||{};
         dir[String(uid)]={name:m.name||'',email:m.email||'',avatar:m.avatar||'',lastSeen:m.lastSeen||0};
       });
-      localStorage.setItem('members_dir',JSON.stringify(dir));
+      set('members_dir', dir);
     }catch(_){ }
     renderCollabPanel();
     try{ if(typeof renderNotes==='function')renderNotes(); }catch(_){ }
@@ -9207,6 +9320,7 @@ function quickIntegrityCheck(){
     }catch(e){ status('Firebase: ошибка выхода — ' + (e.message || e)); }
   };
 
+  window.renderCollabPanel = function(){ return renderCollabPanel(); };
   function renderCollabPanel(){
     try{
       var nameEl=byId('profile-name-input'); if(nameEl && currentProfile) nameEl.value=currentProfile.name||'';
@@ -9505,7 +9619,9 @@ function quickIntegrityCheck(){
     return ws ? ('workspaces/' + ws + '/chat') : (USER_ROOT + '/' + currentUser.uid + '/chat');
   }
   function chatCacheLoad(){
-    var c = parseJSON(localStorage.getItem('chat_cache'), null);
+    // getObj — тяжёлый ключ, читает in-memory кэш IndexedDB (см. верх файла),
+    // а не localStorage напрямую.
+    var c = getObj('chat_cache');
     if(c && typeof c === 'object' && c.msgs && typeof c.msgs === 'object'){
       chatPathActive = String(c.path || '');
       chatMessages = c.msgs;
@@ -9514,6 +9630,7 @@ function quickIntegrityCheck(){
       chatMessages = {};
     }
   }
+  window.chatCacheLoad = chatCacheLoad;
   var chatCacheSaveT = null;
   var CHAT_CACHE_MAX = 150;
   function chatCacheSaveNow(){
@@ -9521,9 +9638,9 @@ function quickIntegrityCheck(){
       var keys = Object.keys(chatMessages);
       var msgsToSave = chatMessages;
       // limitToLast(400) переливает историю пачкой при каждом заходе в чат —
-      // без дебаунса это O(n^2) перезаписей localStorage подряд, а фото в
-      // сообщениях (img) раздували каждую такую запись. Кэшируем локально не
-      // больше последних CHAT_CACHE_MAX — полная история остаётся на сервере.
+      // без дебаунса это O(n^2) перезаписей подряд, а фото в сообщениях (img)
+      // раздували каждую такую запись. Кэшируем локально не больше последних
+      // CHAT_CACHE_MAX — полная история остаётся на сервере.
       if(keys.length > CHAT_CACHE_MAX){
         msgsToSave = {};
         keys.map(function(k){ return chatMessages[k]; })
@@ -9531,7 +9648,7 @@ function quickIntegrityCheck(){
           .slice(0, CHAT_CACHE_MAX)
           .forEach(function(m){ if(m && m.id != null) msgsToSave[m.id] = m; });
       }
-      localStorage.setItem('chat_cache', JSON.stringify({path: chatPathActive, msgs: msgsToSave}));
+      set('chat_cache', {path: chatPathActive, msgs: msgsToSave});
     }catch(_){ }
   }
   function chatCacheSave(){
@@ -9545,6 +9662,7 @@ function quickIntegrityCheck(){
       try{ if(typeof chatUpdateBadge === 'function') chatUpdateBadge(); }catch(_){ }
     }, 60);
   }
+  window.chatRender = chatRender;
   function stopChat(){ try{ if(chatRef) chatRef.off(); }catch(_){ } chatRef = null; }
   var chatStartupDone = false;
   function startChat(){
@@ -9576,7 +9694,7 @@ function quickIntegrityCheck(){
     // поэтому даже одновременная миграция с двух устройств не создаёт дублей.
     try{
       if(localStorage.getItem('notes_chat_migrated_v1')) return;
-      var old = parseJSON(localStorage.getItem('notes'), []) || [];
+      var old = getNotes() || [];
       if(!Array.isArray(old) || !old.length){ try{localStorage.setItem('notes_chat_migrated_v1','1');}catch(_){ } return; }
       var path = activeChatPath(); if(!path) return;
       var updates = {};
