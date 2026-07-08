@@ -8482,26 +8482,51 @@ document.addEventListener('click',hideProductDropdownsOnOutsideClick,true);
 
 // ── SERVICE DIAGNOSTICS ──
 function countDeletedLocal(){try{const d=JSON.parse(localStorage.getItem('__lenfer_sync_deleted_ids_v3')||'{}');const out={};Object.keys(d||{}).forEach(k=>out[k]=Object.keys(d[k]||{}).length);return out;}catch(e){return {};}}
+function fmtBytes(n){
+  n=Number(n)||0;
+  if(n>1024*1024)return (n/1024/1024).toFixed(2)+' МБ';
+  if(n>1024)return (n/1024).toFixed(0)+' КБ';
+  return n+' Б';
+}
+function localStorageSizeReport(){
+  const rows=[];let total=0;
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const k=localStorage.key(i);
+      const v=localStorage.getItem(k)||'';
+      // Грубая оценка в байтах (UTF-16, ×2) — для сравнения "что самое тяжёлое" точности достаточно.
+      const bytes=(k.length+v.length)*2;
+      total+=bytes;rows.push({k,bytes});
+    }
+  }catch(e){}
+  rows.sort((a,b)=>b.bytes-a.bytes);
+  return {rows,total};
+}
 function renderDiagnostics(){
   const box=document.getElementById('sync-diagnostics');if(!box)return;
   const d=(typeof window.lenferSyncDiagnostics==='function')?window.lenferSyncDiagnostics():{};
   const counts={products:getCustomItems().length,cells:getCells().length,notes:getNotes().length,reportDays:Object.keys(getReportAll()).length,hh:getHH11().length,rk:getRK().length,problems:getProblems().length,actions:getActionLog().length,audit:getAuditLog().length};
   const del=d.deletedCounts||countDeletedLocal();
   const fmt=ts=>ts?new Date(Number(ts)).toLocaleString('ru-RU'):'—';
+  const sizeReport=localStorageSizeReport();
+  const topSizeRows=sizeReport.rows.slice(0,10).map(r=>'<div class="diag-cell"><span>'+escHtml(r.k)+'</span><b>'+fmtBytes(r.bytes)+'</b></div>').join('');
   box.innerHTML='<div class="diag-grid">'+
-    '<div class="diag-cell"><span>Версия</span><b>'+escHtml(d.build||window.__APP_STABLE_BUILD__||'—')+'</b></div>'+ 
-    '<div class="diag-cell"><span>Аккаунт</span><b>'+escHtml(d.userName||d.user||'—')+'</b></div>'+ 
-    '<div class="diag-cell"><span>База</span><b>'+escHtml(d.workspaceId?('общая: '+d.workspaceId):'личная')+'</b></div>'+ '<div class="diag-cell"><span>Путь</span><b>'+escHtml(d.dbPath||'—')+'</b></div>'+ 
-    '<div class="diag-cell"><span>Realtime</span><b>'+(d.realtime?'подключён':'—')+'</b></div>'+ 
-    '<div class="diag-cell"><span>Очередь</span><b>'+(d.dirty?'есть':'0')+'</b></div>'+ 
-    '<div class="diag-cell"><span>Последнее получение</span><b>'+escHtml(fmt(d.lastPullAt))+'</b></div>'+ 
-    '<div class="diag-cell"><span>Товары</span><b>'+counts.products+'</b></div>'+ 
-    '<div class="diag-cell"><span>Ячейки</span><b>'+counts.cells+'</b></div>'+ 
-    '<div class="diag-cell"><span>HH</span><b>'+counts.hh+'</b></div>'+ 
-    '<div class="diag-cell"><span>РК</span><b>'+counts.rk+'</b></div>'+ '<div class="diag-cell"><span>Заметки</span><b>'+counts.notes+'</b></div>'+ '<div class="diag-cell"><span>Дней отчёта</span><b>'+counts.reportDays+'</b></div>'+ 
-    '<div class="diag-cell"><span>Проблемы</span><b>'+counts.problems+'</b></div>'+ '<div class="diag-cell"><span>Аудит</span><b>'+counts.audit+'</b></div>'+ 
-    '<div class="diag-cell"><span>Удаления</span><b>товары '+(del.custom_items||0)+' · HH '+(del.hh11_log||0)+' · РК '+(del.rk_log||0)+' · пробл. '+(del.problems_log||0)+'</b></div>'+ 
-    '</div>';
+    '<div class="diag-cell"><span>Версия</span><b>'+escHtml(d.build||window.__APP_STABLE_BUILD__||'—')+'</b></div>'+
+    '<div class="diag-cell"><span>Аккаунт</span><b>'+escHtml(d.userName||d.user||'—')+'</b></div>'+
+    '<div class="diag-cell"><span>База</span><b>'+escHtml(d.workspaceId?('общая: '+d.workspaceId):'личная')+'</b></div>'+ '<div class="diag-cell"><span>Путь</span><b>'+escHtml(d.dbPath||'—')+'</b></div>'+
+    '<div class="diag-cell"><span>Realtime</span><b>'+(d.realtime?'подключён':'—')+'</b></div>'+
+    '<div class="diag-cell"><span>Очередь</span><b>'+(d.dirty?'есть':'0')+'</b></div>'+
+    '<div class="diag-cell"><span>Последнее получение</span><b>'+escHtml(fmt(d.lastPullAt))+'</b></div>'+
+    '<div class="diag-cell"><span>Товары</span><b>'+counts.products+'</b></div>'+
+    '<div class="diag-cell"><span>Ячейки</span><b>'+counts.cells+'</b></div>'+
+    '<div class="diag-cell"><span>HH</span><b>'+counts.hh+'</b></div>'+
+    '<div class="diag-cell"><span>РК</span><b>'+counts.rk+'</b></div>'+ '<div class="diag-cell"><span>Заметки</span><b>'+counts.notes+'</b></div>'+ '<div class="diag-cell"><span>Дней отчёта</span><b>'+counts.reportDays+'</b></div>'+
+    '<div class="diag-cell"><span>Проблемы</span><b>'+counts.problems+'</b></div>'+ '<div class="diag-cell"><span>Аудит</span><b>'+counts.audit+'</b></div>'+
+    '<div class="diag-cell"><span>Удаления</span><b>товары '+(del.custom_items||0)+' · HH '+(del.hh11_log||0)+' · РК '+(del.rk_log||0)+' · пробл. '+(del.problems_log||0)+'</b></div>'+
+    '<div class="diag-cell"><span>Занято в localStorage</span><b>'+fmtBytes(sizeReport.total)+'</b></div>'+
+    '</div>'+
+    '<div style="margin-top:10px;font-size:11px;color:var(--muted);letter-spacing:.55px;">Самые тяжёлые ключи:</div>'+
+    '<div class="diag-grid" style="margin-top:6px;">'+topSizeRows+'</div>';
 }
 function quickIntegrityCheck(){
   const issues=[];
