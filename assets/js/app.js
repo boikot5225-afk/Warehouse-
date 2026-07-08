@@ -9462,8 +9462,29 @@ function quickIntegrityCheck(){
       chatMessages = {};
     }
   }
+  var chatCacheSaveT = null;
+  var CHAT_CACHE_MAX = 150;
+  function chatCacheSaveNow(){
+    try{
+      var keys = Object.keys(chatMessages);
+      var msgsToSave = chatMessages;
+      // limitToLast(400) переливает историю пачкой при каждом заходе в чат —
+      // без дебаунса это O(n^2) перезаписей localStorage подряд, а фото в
+      // сообщениях (img) раздували каждую такую запись. Кэшируем локально не
+      // больше последних CHAT_CACHE_MAX — полная история остаётся на сервере.
+      if(keys.length > CHAT_CACHE_MAX){
+        msgsToSave = {};
+        keys.map(function(k){ return chatMessages[k]; })
+          .sort(function(a,b){ return Number(b && b.ts || 0) - Number(a && a.ts || 0); })
+          .slice(0, CHAT_CACHE_MAX)
+          .forEach(function(m){ if(m && m.id != null) msgsToSave[m.id] = m; });
+      }
+      localStorage.setItem('chat_cache', JSON.stringify({path: chatPathActive, msgs: msgsToSave}));
+    }catch(_){ }
+  }
   function chatCacheSave(){
-    try{ localStorage.setItem('chat_cache', JSON.stringify({path: chatPathActive, msgs: chatMessages})); }catch(_){ }
+    clearTimeout(chatCacheSaveT);
+    chatCacheSaveT = setTimeout(chatCacheSaveNow, 300);
   }
   function chatRender(){
     clearTimeout(chatRenderT);
