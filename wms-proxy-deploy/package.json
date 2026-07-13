@@ -1,0 +1,17 @@
+{
+  "name": "lenfer-wms-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Server-side proxy so the Lenfer PWA can search WMS (wwh.samokat.ru) from a browser, mirroring what the Android LenferAndroidWms bridge does natively.",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
