@@ -698,7 +698,7 @@ const WMS_AUTO_UNAVAILABLE = 'Авто-поиск доступен только 
 // достаёт bearer-токен сотрудника и открывает PWA с ?wmsSession=<id>; отсюда
 // сессия сохраняется в localStorage и используется для запросов на прокси.
 // ЗАМЕНИ на реальный адрес своего сервера после деплоя (см. bookmarklet PROXY_URL).
-const WMS_PROXY_BASE_URL = ''; // например 'https://wms-proxy.мойдомен.ru'
+const WMS_PROXY_BASE_URL = 'https://wms.saintjust.space';
 function getWmsProxySessionId(){ try{ return localStorage.getItem('wms_proxy_session_id')||''; }catch(_){ return ''; } }
 function setWmsProxySessionId(id){ try{ if(id)localStorage.setItem('wms_proxy_session_id',id); else localStorage.removeItem('wms_proxy_session_id'); }catch(_){ } }
 (function captureWmsProxySessionFromUrl(){
