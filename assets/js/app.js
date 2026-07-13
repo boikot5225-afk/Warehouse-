@@ -691,7 +691,45 @@ let wmsRcSubTab = 'tasks';
 let wmsLastDiscrepancyResult = null;
 let wmsCheckedEmptyCells = new Set();
 let wmsStorageOnly = false;
-const WMS_AUTO_UNAVAILABLE = 'Авто-поиск доступен только в Android-обёртке с ВМС-входом. Обычная PWA в браузере не может сама ходить в ВМС.';
+const WMS_AUTO_UNAVAILABLE = 'Авто-поиск доступен только в Android-обёртке с ВМС-входом или через букмарклет-прокси. Открой wwh.samokat.ru, залогинься и нажми сохранённый букмарклет.';
+
+// ── WMS через браузерный прокси-сервер (вместо Android-моста) ──
+// См. wms-proxy/README.md в архиве Warehouse-1. Букмарклет на wwh.samokat.ru
+// достаёт bearer-токен сотрудника и открывает PWA с ?wmsSession=<id>; отсюда
+// сессия сохраняется в localStorage и используется для запросов на прокси.
+// ЗАМЕНИ на реальный адрес своего сервера после деплоя (см. bookmarklet PROXY_URL).
+const WMS_PROXY_BASE_URL = ''; // например 'https://wms-proxy.мойдомен.ru'
+function getWmsProxySessionId(){ try{ return localStorage.getItem('wms_proxy_session_id')||''; }catch(_){ return ''; } }
+function setWmsProxySessionId(id){ try{ if(id)localStorage.setItem('wms_proxy_session_id',id); else localStorage.removeItem('wms_proxy_session_id'); }catch(_){ } }
+(function captureWmsProxySessionFromUrl(){
+  try{
+    const params=new URLSearchParams(window.location.search);
+    const sid=params.get('wmsSession');
+    if(sid){
+      setWmsProxySessionId(sid);
+      params.delete('wmsSession');
+      const clean=window.location.pathname+(params.toString()?'?'+params.toString():'')+window.location.hash;
+      window.history.replaceState({},'',clean);
+    }
+  }catch(_){ }
+})();
+// Пока перенесён на прокси только универсальный поиск (lookupWmsByCode) —
+// самая используемая функция. Остальные ~15 нативных методов см. в
+// wms-proxy/README.md, при необходимости добавляются туда же по одному.
+function wmsCallViaProxy(method,args){
+  if(method!=='lookupWmsByCode') return null;
+  if(!WMS_PROXY_BASE_URL) return null;
+  const sid=getWmsProxySessionId();
+  if(!sid) return null;
+  const q=(args&&args[0])||'';
+  return fetch(WMS_PROXY_BASE_URL+'/api/wms/search?q='+encodeURIComponent(q),{headers:{'x-lenfer-session':sid}})
+    .then(r=>r.json().then(data=>({status:r.status,data})))
+    .then(({status,data})=>{
+      if(status===401){ setWmsProxySessionId(''); throw new Error('Сессия ВМС истекла — заново нажми букмарклет на wwh.samokat.ru.'); }
+      if(status>=400) throw new Error((data&&data.error)||'Прокси ВМС вернул ошибку');
+      return data;
+    });
+}
 
 
 // ── AI proxy (Yandex Cloud Function) ──
@@ -3844,6 +3882,13 @@ function wmsParseImport(){
 }
 function wmsCallNative(method,args,timeoutMs,onProgress){
   timeoutMs=timeoutMs||30000;
+  if(!(window.LenferAndroidWms && typeof window.LenferAndroidWms[method]==='function')){
+    // Нет нативного Android-моста (обычный браузер) — пробуем прокси-сервер,
+    // если для этого метода он реализован и есть активная сессия ВМС.
+    const viaProxy=wmsCallViaProxy(method,args);
+    if(viaProxy) return viaProxy;
+    return Promise.reject(new Error(WMS_AUTO_UNAVAILABLE));
+  }
   return new Promise((resolve,reject)=>{
     const id='wms_'+Date.now()+'_'+Math.floor(Math.random()*100000);
     if(!window.__lenferWmsNativeCallbacks)window.__lenferWmsNativeCallbacks={};
@@ -3851,7 +3896,6 @@ function wmsCallNative(method,args,timeoutMs,onProgress){
     const timer=setTimeout(()=>{delete window.__lenferWmsNativeCallbacks[id];reject(new Error('Android WebView-мост не ответил'));},timeoutMs);
     window.__lenferWmsNativeCallbacks[id].timer=timer;
     try{
-      if(!(window.LenferAndroidWms && typeof window.LenferAndroidWms[method]==='function'))throw new Error(WMS_AUTO_UNAVAILABLE);
       const ret=window.LenferAndroidWms[method](id,...args);
       if(ret){clearTimeout(timer);delete window.__lenferWmsNativeCallbacks[id];resolve(wmsLooseJsonParse(ret));}
     }catch(e){clearTimeout(timer);delete window.__lenferWmsNativeCallbacks[id];reject(e);}
