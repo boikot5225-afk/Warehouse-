@@ -8623,7 +8623,7 @@ function startAppStable(){
   safeStartPart('чат', typeof chatUpdateBadge==='function' ? chatUpdateBadge : null);
 }
 startAppStable();
-window.__APP_STABLE_BUILD__='v143-eo-marks-live';
+window.__APP_STABLE_BUILD__='v165-wms-proxy-live';
 
 // Подтягиваем тяжёлые ключи из IndexedDB (или мигрируем разово из localStorage,
 // если IDB ещё пустая) в фоне, не блокируя старт. Экраны, которые успели
