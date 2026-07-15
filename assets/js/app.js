@@ -788,7 +788,7 @@ function wmsOpenNativeLogin(){
       window.LenferAndroidWms.openWmsLogin();
       wmsSetStatus('Открыл WMS. Войди в аккаунт и вернись в приложение.','wait');
     }else{
-      wmsSetStatus('Android-обёртка не найдена. В обычном браузере автоматический вход ВМС недоступен.','err');
+      wmsSetStatus('Эта кнопка работает только в Android-приложении. В браузере: открой wwh.samokat.ru, залогинься там и нажми сохранённый букмарклет — он сам откроет PWA с активной сессией ВМС.','err');
     }
   }catch(e){wmsSetStatus('Не смог открыть ВМС: '+((e&&e.message)||e),'err');}
 }
