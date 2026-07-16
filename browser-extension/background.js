@@ -117,16 +117,17 @@ chrome.runtime.onConnect.addListener((port) => {
 
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
-    if (msg && msg.type === 'configureCurrentPwa') {
-      const tab = sender.tab || (await chrome.tabs.query({active: true, currentWindow: true}))[0];
-      if (!tab || !tab.url || !/^https?:/.test(tab.url)) throw new Error('Открой PWA в обычной вкладке браузера.');
-      const pattern = originPattern(tab.url);
-      const granted = await chrome.permissions.request({origins: [pattern]});
-      if (!granted) throw new Error('Браузер не дал доступ к этому адресу PWA.');
-      await chrome.storage.local.set({pwaPattern: pattern, pwaOrigin: new URL(tab.url).origin});
+    if (msg && msg.type === 'configurePwaOrigin') {
+      const url = String(msg.url || '');
+      const tabId = Number(msg.tabId);
+      if (!url || !/^https?:/.test(url) || !Number.isInteger(tabId)) throw new Error('Открой PWA в обычной вкладке браузера.');
+      const pattern = originPattern(url);
+      const hasPermission = await chrome.permissions.contains({origins: [pattern]});
+      if (!hasPermission) throw new Error('Нет разрешения на адрес PWA. Нажми подключение ещё раз.');
+      await chrome.storage.local.set({pwaPattern: pattern, pwaOrigin: new URL(url).origin});
       await registerPwaOrigin(pattern);
-      await chrome.scripting.executeScript({target: {tabId: tab.id}, files: ['pwa-page.js'], world: 'MAIN'});
-      await chrome.scripting.executeScript({target: {tabId: tab.id}, files: ['pwa-content.js'], world: 'ISOLATED'});
+      await chrome.scripting.executeScript({target: {tabId}, files: ['pwa-page.js'], world: 'MAIN'});
+      await chrome.scripting.executeScript({target: {tabId}, files: ['pwa-content.js'], world: 'ISOLATED'});
       sendResponse({ok: true, pattern});
       return;
     }
